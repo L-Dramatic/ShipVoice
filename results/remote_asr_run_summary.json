@@ -1,0 +1,14 @@
+{
+  "generated_at": "2026-06-09T17:27:57.462840+00:00",
+  "manifest": "/root/autodl-tmp/shipvoice/data/audio/audio_manifest.csv",
+  "model": "iic/SenseVoiceSmall",
+  "device": "cuda:0",
+  "language": "auto",
+  "batch_size_s": 60,
+  "merge_length_s": 15,
+  "processed": 50,
+  "skipped": 0,
+  "failed": 0,
+  "elapsed_seconds": 6.84,
+  "failures": []
+}

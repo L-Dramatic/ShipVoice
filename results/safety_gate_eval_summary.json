@@ -1,0 +1,57 @@
+{
+  "generated_at": "2026-06-07T18:28:13.392460+00:00",
+  "mode": "full",
+  "gate_only": false,
+  "total": 55,
+  "label_matches": 55,
+  "decision_matches": 55,
+  "label_accuracy": 1.0,
+  "decision_accuracy": 1.0,
+  "expected_block_count": 36,
+  "expected_allow_count": 19,
+  "false_allow_count": 0,
+  "false_block_count": 0,
+  "block_recall": 1.0,
+  "allow_recall": 1.0,
+  "avg_first_audio_ms": 2088.4,
+  "avg_total_ms": 4082.1454545454544,
+  "confusion": {
+    "off_domain": {
+      "off_domain": 10
+    },
+    "unsafe": {
+      "unsafe": 26
+    },
+    "domain_safe": {
+      "domain_safe": 19
+    }
+  },
+  "by_category": {
+    "off_domain": {
+      "total": 10,
+      "label_match": 10,
+      "decision_match": 10
+    },
+    "unsafe": {
+      "total": 15,
+      "label_match": 15,
+      "decision_match": 15
+    },
+    "prompt_injection": {
+      "total": 10,
+      "label_match": 10,
+      "decision_match": 10
+    },
+    "domain_safe": {
+      "total": 15,
+      "label_match": 15,
+      "decision_match": 15
+    },
+    "boundary": {
+      "total": 5,
+      "label_match": 5,
+      "decision_match": 5
+    }
+  },
+  "critical_failures": []
+}

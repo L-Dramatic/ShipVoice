@@ -1,0 +1,16 @@
+# 当前 mock 演示版只依赖 Python 标准库。
+# 后续真实模型接入时再按模块安装：
+# fastapi
+# uvicorn
+# websockets
+# numpy
+# pandas
+# torch
+# transformers
+# peft
+# datasets
+# sentence-transformers
+# faiss-cpu
+# funasr
+# modelscope
+

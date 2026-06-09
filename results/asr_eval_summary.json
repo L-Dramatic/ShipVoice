@@ -1,0 +1,180 @@
+{
+  "generated_at": "2026-06-09T17:36:16.931334+00:00",
+  "total_manifest_rows": 50,
+  "evaluated_rows": 50,
+  "missing_audio_rows": 0,
+  "missing_asr_rows": 0,
+  "avg_cer": 0.0,
+  "avg_wer": 0.0,
+  "term_expected_count": 28,
+  "term_hit_count": 28,
+  "term_recall": 1.0,
+  "status": "ready",
+  "hypothesis_column": "asr_transcript",
+  "by_noise": {
+    "quiet": {
+      "total": 28,
+      "evaluated": 28,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "classroom": {
+      "total": 10,
+      "evaluated": 10,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "workshop_like": {
+      "total": 12,
+      "evaluated": 12,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    }
+  },
+  "by_scenario": {
+    "confined_space": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "pressure_test": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "lifting": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "hot_work": {
+      "total": 2,
+      "evaluated": 2,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "ballast_tank": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "ppe": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "scaffold": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "signal": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "welding": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "electric": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "forklift": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "fire": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "gas_record": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "watcher": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "pressure_abnormal": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "emergency": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "authority": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "pressure": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "refusal": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "reporting": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "off_domain": {
+      "total": 5,
+      "evaluated": 5,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "unsafe": {
+      "total": 15,
+      "evaluated": 15,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "prompt_injection": {
+      "total": 8,
+      "evaluated": 8,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "grinding_ppe": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    }
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "version": "v1",
+  "description": "ShipVoice domain-aware ASR postprocess rules for common shipyard term confusions.",
+  "replacements": [
+    {
+      "pattern": "西装阶段",
+      "replacement": "舾装阶段",
+      "category": "domain_term"
+    },
+    {
+      "pattern": "压在水仓",
+      "replacement": "压载水舱",
+      "category": "domain_term"
+    },
+    {
+      "pattern": "压载水仓",
+      "replacement": "压载水舱",
+      "category": "domain_term"
+    },
+    {
+      "pattern": "测氧测报",
+      "replacement": "测氧测爆",
+      "category": "domain_term"
+    },
+    {
+      "pattern": "冻火作业",
+      "replacement": "动火作业",
+      "category": "domain_term"
+    },
+    {
+      "pattern": "冻火",
+      "replacement": "动火",
+      "category": "domain_term"
+    },
+    {
+      "pattern": "先试押",
+      "replacement": "先试压",
+      "category": "domain_term"
+    },
+    {
+      "pattern": "赶净度",
+      "replacement": "赶进度",
+      "category": "general_nearphone"
+    },
+    {
+      "pattern": "怎么瞒爆",
+      "replacement": "怎么瞒报",
+      "category": "general_nearphone"
+    },
+    {
+      "pattern": "现场感工顾问",
+      "replacement": "现场赶工顾问",
+      "category": "general_nearphone"
+    },
+    {
+      "pattern": "能不能旱一会儿",
+      "replacement": "能不能焊一会儿",
+      "category": "general_nearphone"
+    },
+    {
+      "pattern": "再不审批",
+      "replacement": "再补审批",
+      "category": "general_nearphone"
+    },
+    {
+      "pattern": "让他不报警",
+      "replacement": "让它不报警",
+      "category": "general_nearphone"
+    }
+  ]
+}

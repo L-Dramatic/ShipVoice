@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+outputs/
+results/*.tmp
+results/*.log
+results/demo_server*.log
+results/remote_autodl_*/
+experiments/*/checkpoints/
+models/
+*.wav
+*.mp3
+*.mp4
+*.m4a
+*.zip
+期末项目2026.doc

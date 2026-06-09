@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ShipVoice 船厂安全实时语音问答助手</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">SV</div>
+        <div>
+          <h1>ShipVoice</h1>
+          <p>安全感知实时语音问答助手</p>
+        </div>
+      </div>
+
+      <section class="control-group">
+        <h2>运行模式</h2>
+        <div class="segmented" role="tablist" aria-label="运行模式">
+          <button class="mode-button is-active" data-mode="full">安全 RAG</button>
+          <button class="mode-button" data-mode="streaming">流式</button>
+          <button class="mode-button" data-mode="baseline">基线</button>
+        </div>
+      </section>
+
+      <section class="control-group">
+        <h2>演示场景</h2>
+        <div id="scenarioList" class="scenario-list"></div>
+      </section>
+
+      <section class="control-group">
+        <h2>自定义输入</h2>
+        <textarea id="customQuestion" rows="4" placeholder="输入船厂安全问题，或测试危险请求 / prompt injection"></textarea>
+        <label class="file-control">
+          <input id="audioFile" type="file" accept="audio/*" />
+          <span>上传音频样例</span>
+        </label>
+        <p id="audioHint" class="hint">当前 demo 使用 transcript fallback；音频文件会进入会话日志。</p>
+      </section>
+
+      <div class="button-row">
+        <button id="runButton" class="primary-button">运行问答</button>
+        <button id="exportButton" class="secondary-button">导出日志</button>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Shipyard Safety Copilot</p>
+          <h2>高风险作业场景下的安全门控、证据检索与实时回答链路</h2>
+        </div>
+        <div id="statusBadge" class="status-badge">待机</div>
+      </header>
+
+      <section class="metrics-grid" aria-label="核心指标">
+        <article class="metric">
+          <span>首段音频延迟</span>
+          <strong id="firstAudioMetric">--</strong>
+        </article>
+        <article class="metric">
+          <span>总响应时间</span>
+          <strong id="totalMetric">--</strong>
+        </article>
+        <article class="metric">
+          <span>安全门控</span>
+          <strong id="gateMetric">--</strong>
+        </article>
+        <article class="metric">
+          <span>证据命中</span>
+          <strong id="evidenceMetric">--</strong>
+        </article>
+      </section>
+
+      <section class="main-grid">
+        <article class="panel transcript-panel">
+          <div class="panel-head">
+            <div>
+              <h3>输入 / 转写</h3>
+              <p>展示用户问题、音频占位和术语热词。</p>
+            </div>
+            <span id="asrState">等待输入</span>
+          </div>
+          <p id="questionText" class="question-text">请选择场景，或输入自定义问题。</p>
+          <div id="termHits" class="term-hits"></div>
+        </article>
+
+        <article class="panel gate-panel">
+          <div class="panel-head">
+            <div>
+              <h3>安全门控</h3>
+              <p>先判断风险，再决定是否进入生成。</p>
+            </div>
+            <span id="gateState">未运行</span>
+          </div>
+          <div id="gateCard" class="gate-card empty">尚未生成门控结果。</div>
+        </article>
+
+        <article class="panel answer-panel">
+          <div class="panel-head">
+            <div>
+              <h3>系统回答</h3>
+              <p>面向语音播报的保守、可执行回答。</p>
+            </div>
+            <span id="answerState">未生成</span>
+          </div>
+          <p id="answerText" class="answer-text"></p>
+        </article>
+
+        <article class="panel evidence-panel">
+          <div class="panel-head">
+            <div>
+              <h3>RAG 证据</h3>
+              <p>展示检索命中的船厂安全知识条目。</p>
+            </div>
+            <span id="ragState">未检索</span>
+          </div>
+          <div id="evidenceList" class="evidence-list"></div>
+        </article>
+
+        <article class="panel timeline-panel">
+          <div class="panel-head">
+            <div>
+              <h3>延迟瀑布</h3>
+              <p>用于展示实时交互和系统开销。</p>
+            </div>
+            <span id="timelineState">待运行</span>
+          </div>
+          <div id="timeline" class="timeline"></div>
+        </article>
+
+        <article class="panel log-panel">
+          <div class="panel-head">
+            <div>
+              <h3>会话日志</h3>
+              <p>评审可追踪输入、门控、证据和输出。</p>
+            </div>
+            <span id="logState">0 条</span>
+          </div>
+          <div id="sessionLog" class="session-log"></div>
+        </article>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
