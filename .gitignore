@@ -11,6 +11,7 @@ results/runtime_test/
 results/remote_autodl_*/
 experiments/*/checkpoints/
 models/
+configs/*.local.env
 *.wav
 *.mp3
 *.mp4

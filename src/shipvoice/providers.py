@@ -519,11 +519,12 @@ def build_tts(config: PipelineConfig) -> MockTTSProvider | HttpJsonTTSProvider:
     provider = os.environ.get("SHIPVOICE_TTS_PROVIDER", str(tts_config.get("provider", "mock"))).lower()
     if provider == "http_json":
         endpoint = os.environ.get("SHIPVOICE_TTS_ENDPOINT", str(tts_config.get("endpoint", ""))).strip()
+        voice = os.environ.get("SHIPVOICE_TTS_VOICE", str(tts_config.get("voice", "alloy"))).strip() or "alloy"
         if endpoint:
             return HttpJsonTTSProvider(
                 endpoint=endpoint,
                 timeout_s=int(tts_config.get("timeout_s", 60)),
-                voice=str(tts_config.get("voice", "alloy")),
+                voice=voice,
                 response_audio_path=str(tts_config.get("response_audio_path", "audio_base64")),
                 response_mime_path=str(tts_config.get("response_mime_path", "mime_type")),
                 fallback=fallback,

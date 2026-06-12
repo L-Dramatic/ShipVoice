@@ -2,6 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="${1:-/root/autodl-tmp/shipvoice}"
+PYTHON_BIN="${PYTHON_BIN:-python}"
 PORT="${VLLM_PORT:-11434}"
 MODEL="${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}"
 HOST="${VLLM_HOST:-0.0.0.0}"
@@ -34,7 +35,7 @@ if [[ -f logs/vllm_service.pid ]]; then
   exit 1
 fi
 
-nohup python -m vllm.entrypoints.openai.api_server \
+nohup "$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
   --host "$HOST" \
   --port "$PORT" \
   --model "$MODEL" \
