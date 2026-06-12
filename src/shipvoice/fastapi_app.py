@@ -92,6 +92,56 @@ def probe_http_url(url: str, timeout_s: int = 3) -> dict[str, Any]:
         }
 
 
+def openai_models_url(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/chat/completions"):
+        return normalized.removesuffix("/chat/completions") + "/models"
+    if normalized.endswith("/v1"):
+        return normalized + "/models"
+    return normalized + "/v1/models"
+
+
+def probe_openai_models(base_url: str, model: str, api_key: str = "", timeout_s: int = 5) -> dict[str, Any]:
+    url = openai_models_url(base_url)
+    headers: dict[str, str] = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        items = payload.get("data", []) if isinstance(payload, dict) else []
+        ids = [str(item.get("id", "")).strip() for item in items if isinstance(item, dict)]
+        listed = [item for item in ids if item][:8]
+        model_available = model in ids if model else False
+        return {
+            "reachable": True,
+            "http_status": 200,
+            "detail": "ok",
+            "probe_url": url,
+            "model_available": model_available,
+            "listed_models": listed,
+        }
+    except urllib.error.HTTPError as exc:
+        return {
+            "reachable": True,
+            "http_status": exc.code,
+            "detail": "http_error",
+            "probe_url": url,
+            "model_available": False,
+            "listed_models": [],
+        }
+    except (OSError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return {
+            "reachable": False,
+            "http_status": None,
+            "detail": str(exc),
+            "probe_url": url,
+            "model_available": False,
+            "listed_models": [],
+        }
+
+
 def provider_health_snapshot(pipeline: VoiceQAPipeline) -> dict[str, Any]:
     asr = pipeline.asr
     llm = pipeline.llm
@@ -101,25 +151,35 @@ def provider_health_snapshot(pipeline: VoiceQAPipeline) -> dict[str, Any]:
     llm_endpoint = llm._endpoint() if hasattr(llm, "_endpoint") else getattr(llm, "base_url", "")
     tts_endpoint = getattr(tts, "endpoint", "")
 
-    def item(name: str, provider: Any, endpoint: str = "", extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    def item(
+        name: str,
+        provider: Any,
+        endpoint: str = "",
+        extra: dict[str, Any] | None = None,
+        probe: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         extra = extra or {}
         is_mock = "mock" in getattr(provider, "name", "").lower() or getattr(provider, "name", "") == "transcript_fallback"
-        probe = {"reachable": None, "http_status": None, "detail": "mock_or_local_fallback"}
-        if endpoint:
-            probe = probe_http_url(endpoint, timeout_s=3)
+        probe_payload = probe or {"reachable": None, "http_status": None, "detail": "mock_or_local_fallback"}
+        if endpoint and probe is None:
+            probe_payload = probe_http_url(endpoint, timeout_s=3)
         return {
             "component": name,
             "provider": getattr(provider, "name", provider.__class__.__name__),
             "mode": "mock" if is_mock else "real",
             "endpoint": endpoint,
-            **probe,
+            **probe_payload,
             **extra,
         }
 
     llm_model = getattr(llm, "model", "")
+    llm_api_key = os.environ.get(getattr(llm, "api_key_env", ""), "") if getattr(llm, "api_key_env", "") else ""
+    llm_probe = None
+    if llm_endpoint:
+        llm_probe = probe_openai_models(getattr(llm, "base_url", llm_endpoint), llm_model, api_key=llm_api_key, timeout_s=5)
     return {
         "asr": item("ASR", asr, asr_endpoint),
-        "llm": item("LLM", llm, llm_endpoint, extra={"model": llm_model}),
+        "llm": item("LLM", llm, llm_endpoint, extra={"model": llm_model}, probe=llm_probe),
         "tts": item("TTS", tts, tts_endpoint),
         "updated_at": utc_now_iso(),
     }

@@ -15,6 +15,10 @@
     "service": "not_configured"
   },
   "tts_audio_base64_len": 0,
+  "llm_health": {
+    "ok": false,
+    "service": "not_configured"
+  },
   "pipeline_result": {
     "question": "密闭舱室动火作业前要检查什么？",
     "transcript": "密闭舱室动火作业前要检查什么？",
@@ -43,8 +47,8 @@
       "tts_provider": "mock_tts",
       "execution_profile": "demo",
       "timing_source": "simulated",
-      "first_audio_ms": 1536,
-      "total_ms": 2863,
+      "first_audio_ms": 1525,
+      "total_ms": 2847,
       "asr_ms": 0,
       "retrieval_ms": 173,
       "llm_first_token_ms": 420,

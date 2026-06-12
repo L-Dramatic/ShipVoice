@@ -23,15 +23,38 @@ def read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def http_json(method: str, url: str, payload: dict | None = None, timeout: int = 60) -> dict:
+def http_json(method: str, url: str, payload: dict | None = None, timeout: int = 60, headers: dict[str, str] | None = None) -> dict:
     body = None
-    headers: dict[str, str] = {}
+    request_headers = dict(headers or {})
     if payload is not None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(url, data=body, headers=headers, method=method)
+        request_headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=body, headers=request_headers, method=method)
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def openai_models_url(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/chat/completions"):
+        return normalized.removesuffix("/chat/completions") + "/models"
+    if normalized.endswith("/v1"):
+        return normalized + "/models"
+    return normalized + "/v1/models"
+
+
+def llm_health_check(base_url: str, api_key: str = "") -> dict:
+    headers: dict[str, str] = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    url = openai_models_url(base_url)
+    payload = http_json("GET", url, timeout=30, headers=headers)
+    models = payload.get("data", []) if isinstance(payload, dict) else []
+    return {
+        "ok": True,
+        "probe_url": url,
+        "models": [str(item.get("id", "")) for item in models if isinstance(item, dict)][:10],
+    }
 
 
 async def run_pipeline(question: str, audio_path: Path, mode: str) -> dict:
@@ -55,7 +78,7 @@ async def run_pipeline(question: str, audio_path: Path, mode: str) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Smoke test the real ShipVoice ASR/TTS chain.")
+    parser = argparse.ArgumentParser(description="Smoke test the real ShipVoice ASR/LLM/TTS chain.")
     parser.add_argument("--manifest", type=Path, default=ROOT / "data" / "audio" / "audio_manifest.csv")
     parser.add_argument("--sample-id", default="A001")
     parser.add_argument("--mode", default="full")
@@ -110,11 +133,20 @@ def main() -> None:
     if args.tts_endpoint:
         tts_health_url = args.tts_endpoint.rsplit("/", 1)[0] + "/health"
         tts_health = http_json("GET", tts_health_url)
-        tts_result = http_json("POST", args.tts_endpoint, {"text": "ShipVoice 服务检查。", "voice": "zh-CN-XiaoxiaoNeural"})
+        tts_result = http_json(
+            "POST",
+            args.tts_endpoint,
+            {"text": "ShipVoice 服务检查", "voice": "zh-CN-XiaoxiaoNeural"},
+        )
         tts_audio_len = len(tts_result.get("audio_base64", ""))
     else:
         tts_health = {"ok": False, "service": "not_configured"}
         tts_audio_len = 0
+
+    if args.llm_provider != "mock" and args.llm_base_url:
+        llm_health = llm_health_check(args.llm_base_url, api_key=os.environ.get("SHIPVOICE_OPENAI_API_KEY", ""))
+    else:
+        llm_health = {"ok": False, "service": "not_configured"}
 
     os.environ["SHIPVOICE_ASR_PROVIDER"] = "http_json" if args.asr_endpoint else "transcript_fallback"
     if args.asr_endpoint:
@@ -138,6 +170,7 @@ def main() -> None:
         "asr_result": asr_result,
         "tts_health": tts_health,
         "tts_audio_base64_len": tts_audio_len,
+        "llm_health": llm_health,
         "pipeline_result": pipeline_result,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
