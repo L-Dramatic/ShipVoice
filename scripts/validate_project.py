@@ -27,8 +27,12 @@ def main() -> None:
     run([sys.executable, "scripts/generate_sft_seed.py"])
     run([sys.executable, "scripts/build_audio_recording_pack.py"])
     run([sys.executable, "scripts/evaluate_asr_transcripts.py"])
+    run([sys.executable, "scripts/evaluate_multiturn.py"])
+    run([sys.executable, "scripts/build_evaluation_dashboard.py"])
+    run([sys.executable, "scripts/build_final_report.py"])
     run([sys.executable, "scripts/run_single.py", "密闭舱室动火作业前要检查什么？", "--mode", "full"])
-    run([sys.executable, "-m", "compileall", "src", "scripts", "run_demo.py"])
+    run([sys.executable, "-m", "compileall", "src", "scripts", "run_demo.py", "run_app.py"])
+    run([sys.executable, "scripts/smoke_fastapi_backend.py"])
     if args.full:
         run([sys.executable, "scripts/run_benchmark.py"])
     print("\nVALIDATION OK")

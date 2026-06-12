@@ -1,0 +1,9 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+results/runtime/*.log
+results/runtime/*.db-shm
+results/runtime/*.db-wal

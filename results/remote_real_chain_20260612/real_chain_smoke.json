@@ -1,0 +1,67 @@
+{
+  "sample_id": "A001",
+  "audio_path": "/root/autodl-tmp/shipvoice/data/audio/raw/A001.m4a",
+  "asr_health": {
+    "ok": "true",
+    "service": "funasr_asr",
+    "model": "iic/SenseVoiceSmall",
+    "device": "cuda:0"
+  },
+  "asr_result": {
+    "text": "密闭舱室动火作业前要检查什么？",
+    "provider": "funasr_sensevoice_service",
+    "audio_name": "A001.m4a"
+  },
+  "tts_health": {
+    "ok": "true",
+    "service": "edge_tts",
+    "voice": "zh-CN-XiaoxiaoNeural"
+  },
+  "tts_audio_base64_len": 17856,
+  "pipeline_result": {
+    "question": "密闭舱室动火作业前要检查什么？",
+    "transcript": "密闭舱室动火作业前要检查什么？",
+    "answer": "针对“密闭舱室动火作业前要检查什么？”，建议优先参考《密闭舱室与有限空间作业》。进入密闭舱室前，应完成作业审批、通风换气、测氧测爆、有毒有害气体检测、照明检查、通信确认和专人监护。氧含量、可燃气体浓度和有毒气体浓度均应满足现场安全规范后方可进入。动火作业前还应清理可燃物，准备灭火器材，并确认动火票有效。 执行时应保留审批记录、检测记录和现场监护记录；如果出现气体指标异常、压力异常或人员站位风险，应立即停止作业并复核。",
+    "gate": {
+      "label": "domain_safe",
+      "allowed": true,
+      "reason": "属于造船安全相关问题"
+    },
+    "provider_status": {
+      "input_mode": "audio",
+      "asr": "http_json_asr",
+      "llm": "mock_llm",
+      "tts": "mock_tts",
+      "execution_profile": "hybrid",
+      "timing_source": "observed"
+    },
+    "metrics": {
+      "question_id": "manual",
+      "mode": "full",
+      "category": "manual",
+      "gate_label": "domain_safe",
+      "input_mode": "audio",
+      "asr_provider": "http_json_asr",
+      "llm_provider": "mock_llm",
+      "tts_provider": "mock_tts",
+      "execution_profile": "hybrid",
+      "timing_source": "observed",
+      "first_audio_ms": 1123,
+      "total_ms": 1123,
+      "asr_ms": 314,
+      "retrieval_ms": 164,
+      "llm_first_token_ms": 1,
+      "tts_first_audio_ms": 524,
+      "answer_chars": 210,
+      "evidence_count": 3
+    },
+    "audio_output": {
+      "provider": "mock_tts",
+      "audio_segments": [
+        "mock_audio_segment_01.wav"
+      ],
+      "audio_base64": "",
+      "mime_type": ""
+    }
+  }
+}

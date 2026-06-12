@@ -112,7 +112,7 @@
     </article>
     
       </div>
-      <table><thead><tr><th>Mode</th><th>Samples</th><th>First audio avg(ms)</th><th>Total avg(ms)</th><th>Answer chars</th></tr></thead><tbody><tr><td>baseline</td><td>8</td><td>3303</td><td>3303</td><td>93.2</td></tr><tr><td>streaming</td><td>8</td><td>2030</td><td>3463</td><td>93.2</td></tr><tr><td>full</td><td>8</td><td>2138</td><td>4603</td><td>143.2</td></tr></tbody></table>
+      <table><thead><tr><th>Mode</th><th>Samples</th><th>Profile</th><th>Timing</th><th>First audio avg(ms)</th><th>Total avg(ms)</th><th>Answer chars</th></tr></thead><tbody><tr><td>baseline</td><td>8</td><td>demo</td><td>simulated</td><td>653</td><td>653</td><td>93.2</td></tr><tr><td>streaming</td><td>8</td><td>demo</td><td>simulated</td><td>1347</td><td>1875</td><td>93.2</td></tr><tr><td>full</td><td>8</td><td>demo</td><td>simulated</td><td>1451</td><td>2411</td><td>143.2</td></tr></tbody></table>
     </section>
 
     <section>
@@ -204,6 +204,85 @@
         </div>
       </div>
       <table><thead><tr><th>Rule</th><th>Hits</th></tr></thead><tbody><tr><td>先试押-&gt;先试压</td><td>1</td></tr><tr><td>再不审批-&gt;再补审批</td><td>1</td></tr><tr><td>冻火作业-&gt;动火作业</td><td>1</td></tr><tr><td>压在水仓-&gt;压载水舱</td><td>1</td></tr><tr><td>压载水仓-&gt;压载水舱</td><td>1</td></tr><tr><td>怎么瞒爆-&gt;怎么瞒报</td><td>1</td></tr><tr><td>测氧测报-&gt;测氧测爆</td><td>1</td></tr><tr><td>现场感工顾问-&gt;现场赶工顾问</td><td>1</td></tr></tbody></table>
+    </section>
+
+    <section>
+      <h2>Multi-turn Context Evaluation</h2>
+      
+        <div class="metrics">
+          
+    <article class="metric">
+      <span>Dialogs</span>
+      <strong>6</strong>
+      <em>multi-turn context scenarios</em>
+    </article>
+    
+          
+    <article class="metric">
+      <span>Turns</span>
+      <strong>18</strong>
+      <em>full-pipeline dialogue turns</em>
+    </article>
+    
+          
+    <article class="metric">
+      <span>Gate accuracy</span>
+      <strong>100.0%</strong>
+      <em>turn-level safety/domain decision</em>
+    </article>
+    
+          
+    <article class="metric">
+      <span>Follow-up grounding</span>
+      <strong>100.0%</strong>
+      <em>follow-up title hit with history</em>
+    </article>
+    
+        </div>
+        
+      <div class="callout">
+        Top-1 title accuracy is 100.0%, title hit@3 is 100.0%, and keyword recall is 97.2%. This measures whether the system can carry prior context into later turns instead of treating each question as isolated.
+      </div>
+    </section>
+
+    <section>
+      <h2>Remote Real Voice Chain</h2>
+      
+        <div class="metrics">
+          
+    <article class="metric">
+      <span>Verified remote samples</span>
+      <strong>3</strong>
+      <em>A001-A003 real audio end-to-end runs</em>
+    </article>
+    
+          
+    <article class="metric">
+      <span>ASR backend</span>
+      <strong>funasr_asr</strong>
+      <em>iic/SenseVoiceSmall</em>
+    </article>
+    
+          
+    <article class="metric">
+      <span>TTS backend</span>
+      <strong>chattts</strong>
+      <em>remote Chinese voice synthesis</em>
+    </article>
+    
+          
+    <article class="metric">
+      <span>Avg first audio</span>
+      <strong>15239 ms</strong>
+      <em>observed on RTX 4090 remote chain</em>
+    </article>
+    
+        </div>
+        
+      <div class="callout">
+        Verified a real voice service chain on remote GPU with provider status ASR=http_json_asr, LLM=mock_llm, TTS=http_json_tts, profile=hybrid. This is a hybrid production-style path: real audio I/O is online, while answer synthesis still uses the controlled local mock LLM layer over retrieved evidence.
+      </div>
+      <table><thead><tr><th>Sample</th><th>Transcript</th><th>ASR ms</th><th>Retrieval ms</th><th>TTS first audio ms</th><th>Total ms</th></tr></thead><tbody><tr><td>A001</td><td>密闭舱室动火作业前要检查什么？</td><td>129</td><td>165</td><td>16461</td><td>16876</td></tr><tr><td>A002</td><td>舾装阶段管路试压有哪些安全风险？</td><td>150</td><td>166</td><td>13324</td><td>13761</td></tr><tr><td>A003</td><td>船体分段吊装前，需要确认哪些事项？</td><td>195</td><td>166</td><td>14597</td><td>15080</td></tr></tbody></table>
     </section>
 
     <section>

@@ -108,3 +108,54 @@ python scripts\validate_project.py --quick
 python scripts\validate_project.py --full
 ```
 
+## 8. 真实 ASR / TTS 服务链路检查
+
+当远端服务已经启动后，可先做 health check 与整链 smoke：
+
+```powershell
+$env:SHIPVOICE_ASR_ENDPOINT="http://<server-ip>:8001/asr"
+$env:SHIPVOICE_TTS_ENDPOINT="http://<server-ip>:8002/tts"
+python scripts\check_real_service_chain.py --sample-id A001
+```
+
+输出文件：
+
+```text
+results\real_chain_smoke.json
+```
+
+这个脚本会同时检查：
+
+1. ASR `/health`
+2. TTS `/health`
+3. 一条真实录音的 ASR 返回
+4. 本地 pipeline 是否已走到 `http_json` ASR/TTS provider
+
+如果 `edge-tts` 在中文文本上返回 `No audio was received`，直接改用备用 backend：
+
+```bash
+TTS_BACKEND=gtts bash remote/start_shipvoice_real_services.sh /root/autodl-tmp/shipvoice
+```
+
+如果仍然不稳定，切换到本地中文 TTS 模型：
+
+```bash
+TTS_BACKEND=chattts bash remote/start_shipvoice_real_services.sh /root/autodl-tmp/shipvoice
+```
+
+如果远端机器访问官方 Hugging Face 不稳定，建议直接带镜像环境变量启动：
+```bash
+HF_ENDPOINT=https://hf-mirror.com CHATTTS_SOURCE=huggingface TTS_BACKEND=chattts bash remote/start_shipvoice_real_services.sh /root/autodl-tmp/shipvoice
+```
+
+当前仓库已经留存一轮验证结果：
+```text
+results\remote_real_chain_20260612_chattts_48359\
+```
+
+该目录包含：
+
+1. `real_chain_smoke.json`：单样本完整冒烟结果
+2. `A001.json / A002.json / A003.json`：三条真实录音端到端结果
+3. `summary.json`：平均 ASR、检索、首音和总耗时
+4. `asr_service.log / tts_service.log`：远端服务日志

@@ -40,7 +40,13 @@ $PYTHON_BIN -m pip install --no-cache-dir -U \
   "huggingface_hub<1.0" \
   "soundfile" \
   "librosa" \
-  "ffmpeg-python"
+  "ffmpeg-python" \
+  "fastapi" \
+  "uvicorn" \
+  "edge-tts" \
+  "gTTS" \
+  "pydub" \
+  "ChatTTS"
 
 $PYTHON_BIN -m pip install --no-cache-dir \
   "torchaudio==2.1.2" \
@@ -49,7 +55,7 @@ $PYTHON_BIN -m pip install --no-cache-dir \
 echo "[5/5] Validate imports"
 $PYTHON_BIN - <<'PY'
 import importlib.util
-mods = ["funasr", "modelscope", "soundfile", "librosa"]
+mods = ["funasr", "modelscope", "soundfile", "librosa", "fastapi", "uvicorn", "edge_tts", "gtts", "pydub", "ChatTTS"]
 for mod in mods:
     print(mod, bool(importlib.util.find_spec(mod)))
 print("torchaudio", bool(importlib.util.find_spec("torchaudio")))

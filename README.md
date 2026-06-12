@@ -24,6 +24,7 @@ http://127.0.0.1:8010
 ```
 
 演示面板会调用本地后端 `/api/run`，因此后续把 mock provider 替换为真实 ASR/LLM/TTS 后，面板仍然复用。
+当前接口也支持 `history` 多轮上下文字段，便于把 Part 1 的对话能力接到 Part 2 的语音链路中。
 
 运行 mock 延迟实验：
 
@@ -36,6 +37,116 @@ python scripts\run_benchmark.py
 ```text
 results\latency_metrics.csv
 ```
+
+## 接入真实 ASR / LLM / TTS
+
+当前版本已经支持通过环境变量切换 provider，并在 `/api/health` 与前端界面中显示当前实际使用的链路。
+
+### 1. 真实 LLM
+
+```powershell
+$env:SHIPVOICE_LLM_PROVIDER="openai_compatible"
+$env:SHIPVOICE_OPENAI_BASE_URL="http://127.0.0.1:11434/v1"
+$env:SHIPVOICE_LLM_MODEL="qwen2.5:7b-instruct"
+python run_demo.py
+```
+
+### 2. 真实 ASR
+
+后端支持 `http_json` ASR provider。约定向 ASR 服务发送：
+
+```json
+{
+  "audio_base64": "...",
+  "audio_name": "sample.wav",
+  "transcript_hint": "可选文本提示"
+}
+```
+
+并从响应 JSON 的 `text` 字段读取转写结果。
+
+```powershell
+$env:SHIPVOICE_ASR_PROVIDER="http_json"
+$env:SHIPVOICE_ASR_ENDPOINT="http://127.0.0.1:8001/asr"
+python run_demo.py
+```
+
+### 3. 真实 TTS
+
+后端支持 `http_json` TTS provider。约定向 TTS 服务发送：
+
+```json
+{
+  "text": "要合成的回答",
+  "voice": "alloy"
+}
+```
+
+并从响应 JSON 的 `audio_base64` 与 `mime_type` 字段读取音频结果。
+
+```powershell
+$env:SHIPVOICE_TTS_PROVIDER="http_json"
+$env:SHIPVOICE_TTS_ENDPOINT="http://127.0.0.1:8002/tts"
+python run_demo.py
+```
+
+如果真实服务不可用，系统仍保留 fallback，便于答辩现场兜底；但课程冲分阶段的主叙事必须切换到真实链路。
+
+### 4. 远端一键启动真实 ASR + TTS
+
+仓库已经提供远端服务脚本：
+
+- `remote/serve_funasr_asr.py`
+- `remote/serve_edge_tts.py`
+- `remote/start_shipvoice_real_services.sh`
+- `remote/stop_shipvoice_real_services.sh`
+
+在 GPU 机器上完成依赖安装后，可直接启动：
+
+```bash
+bash remote/autodl_setup_asr.sh /root/autodl-tmp/shipvoice
+bash remote/start_shipvoice_real_services.sh /root/autodl-tmp/shipvoice
+```
+
+如果 `edge-tts` 对中文播报不稳定，可直接切换备用中文 backend：
+
+```bash
+TTS_BACKEND=gtts bash remote/start_shipvoice_real_services.sh /root/autodl-tmp/shipvoice
+```
+
+如果需要真正的本地中文 TTS 模型，可进一步切到 `ChatTTS`：
+
+```bash
+TTS_BACKEND=chattts bash remote/start_shipvoice_real_services.sh /root/autodl-tmp/shipvoice
+```
+
+如果远端机器访问官方 Hugging Face 不稳定，建议显式指定镜像：
+```bash
+HF_ENDPOINT=https://hf-mirror.com CHATTTS_SOURCE=huggingface TTS_BACKEND=chattts bash remote/start_shipvoice_real_services.sh /root/autodl-tmp/shipvoice
+```
+
+然后在本地演示机上配置：
+
+```powershell
+$env:SHIPVOICE_ASR_PROVIDER="http_json"
+$env:SHIPVOICE_ASR_ENDPOINT="http://<server-ip>:8001/asr"
+$env:SHIPVOICE_TTS_PROVIDER="http_json"
+$env:SHIPVOICE_TTS_ENDPOINT="http://<server-ip>:8002/tts"
+python run_demo.py
+```
+
+### 已验证的真实语音链路
+
+2026-06-12 已完成一轮远端真实链路验证，结果归档于 `results/remote_real_chain_20260612_chattts_48359/`：
+
+- 远端 ASR：`FunASR / SenseVoiceSmall`
+- 远端 TTS：`ChatTTS`
+- 验证样本：`A001-A003` 共 3 条真实录音
+- 平均 ASR：`158 ms`
+- 平均检索：`165.67 ms`
+- 平均端到端首音：`15238.67 ms`
+
+这轮验证证明系统已经具备真实语音输入与真实语音输出能力；当前瓶颈是 `ChatTTS` 首音延迟较高，而不是 ASR 或检索。
 
 ## 目录结构
 

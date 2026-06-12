@@ -38,6 +38,8 @@ def latency_summary() -> list[dict[str, str]]:
             {
                 "mode": mode,
                 "count": str(len(items)),
+                "profile": ",".join(sorted({x.get("execution_profile", "unknown") for x in items})),
+                "timing": ",".join(sorted({x.get("timing_source", "unknown") for x in items})),
                 "first_audio": f"{statistics.mean(float(x['first_audio_ms']) for x in items):.0f}",
                 "total": f"{statistics.mean(float(x['total_ms']) for x in items):.0f}",
                 "answer_chars": f"{statistics.mean(float(x['answer_chars']) for x in items):.1f}",
@@ -115,6 +117,27 @@ def asr_postprocess_result() -> dict[str, object] | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def multiturn_eval_result() -> dict[str, object] | None:
+    path = ROOT / "results" / "multiturn_eval_summary.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def real_chain_result() -> dict[str, object] | None:
+    candidates = sorted(ROOT.glob("results/remote_real_chain_*"), key=lambda path: path.name, reverse=True)
+    for candidate in candidates:
+        summary_path = candidate / "summary.json"
+        smoke_path = candidate / "real_chain_smoke.json"
+        if summary_path.exists() and smoke_path.exists():
+            return {
+                "root": candidate,
+                "summary": json.loads(summary_path.read_text(encoding="utf-8")),
+                "smoke": json.loads(smoke_path.read_text(encoding="utf-8")),
+            }
+    return None
+
+
 def percent(value: object) -> str:
     return f"{float(value) * 100:.1f}%"
 
@@ -149,12 +172,14 @@ def build() -> None:
     asr_eval_raw = asr_eval_result("asr_eval_raw_summary.json")
     asr_eval = asr_eval_result()
     asr_post = asr_postprocess_result()
+    multiturn = multiturn_eval_result()
+    real_chain = real_chain_result()
     latency = latency_summary()
     lora = lora_summary()
 
     latency_table = table(
-        ["Mode", "Samples", "First audio avg(ms)", "Total avg(ms)", "Answer chars"],
-        [[x["mode"], x["count"], x["first_audio"], x["total"], x["answer_chars"]] for x in latency],
+        ["Mode", "Samples", "Profile", "Timing", "First audio avg(ms)", "Total avg(ms)", "Answer chars"],
+        [[x["mode"], x["count"], x["profile"], x["timing"], x["first_audio"], x["total"], x["answer_chars"]] for x in latency],
     )
     lora_table = table(
         ["Model", "Eval rows", "Avg answer length", "Observation"],
@@ -257,6 +282,78 @@ def build() -> None:
             "The audio manifest now contains 50 recording tasks across quiet, classroom, and workshop-like conditions. "
             "After recording, fill asr_transcript and run scripts/evaluate_asr_transcripts.py to report CER, WER, and domain-term recall."
         )
+
+    if multiturn:
+        multiturn_metric_cards = f"""
+        <div class="metrics">
+          {metric("Dialogs", str(multiturn["dialogs"]), "multi-turn context scenarios")}
+          {metric("Turns", str(multiturn["turns"]), "full-pipeline dialogue turns")}
+          {metric("Gate accuracy", percent(multiturn["gate_accuracy"]), "turn-level safety/domain decision")}
+          {metric("Follow-up grounding", percent(multiturn["followup_grounding_accuracy"]), "follow-up title hit with history")}
+        </div>
+        """
+        multiturn_callout = (
+            f"Top-1 title accuracy is {percent(multiturn['top1_title_accuracy'])}, "
+            f"title hit@3 is {percent(multiturn['title_hit_at_3'])}, and keyword recall is {percent(multiturn['keyword_recall'])}. "
+            "This measures whether the system can carry prior context into later turns instead of treating each question as isolated."
+        )
+    else:
+        multiturn_metric_cards = f"""
+        <div class="metrics">
+          {metric("Dialogs", "--", "run scripts/evaluate_multiturn.py")}
+          {metric("Turns", "--", "multi-turn context benchmark")}
+          {metric("Gate accuracy", "--", "pending multi-turn evaluation")}
+          {metric("Follow-up grounding", "--", "pending multi-turn evaluation")}
+        </div>
+        """
+        multiturn_callout = "Multi-turn benchmark has not been executed yet."
+
+    if real_chain:
+        real_summary = real_chain["summary"]
+        smoke = real_chain["smoke"]
+        provider_status = smoke["pipeline_result"]["provider_status"]
+        real_chain_metric_cards = f"""
+        <div class="metrics">
+          {metric("Verified remote samples", str(real_summary["num_samples"]), "A001-A003 real audio end-to-end runs")}
+          {metric("ASR backend", smoke["asr_health"]["service"], smoke["asr_health"]["model"])}
+          {metric("TTS backend", smoke["tts_health"]["service"], "remote Chinese voice synthesis")}
+          {metric("Avg first audio", f"{float(real_summary['avg_first_audio_ms']):.0f} ms", "observed on RTX 4090 remote chain")}
+        </div>
+        """
+        real_chain_table = table(
+            ["Sample", "Transcript", "ASR ms", "Retrieval ms", "TTS first audio ms", "Total ms"],
+            [
+                [
+                    row["sample_id"],
+                    row["transcript"],
+                    row["asr_ms"],
+                    row["retrieval_ms"],
+                    row["tts_first_audio_ms"],
+                    row["total_ms"],
+                ]
+                for row in real_summary["samples"]
+            ],
+        )
+        real_chain_callout = (
+            f"Verified a real voice service chain on remote GPU with provider status "
+            f"ASR={provider_status['asr']}, LLM={provider_status['llm']}, TTS={provider_status['tts']}, "
+            f"profile={provider_status['execution_profile']}. This is a hybrid production-style path: "
+            "real audio I/O is online, while answer synthesis still uses the controlled local mock LLM layer over retrieved evidence."
+        )
+    else:
+        real_chain_metric_cards = f"""
+        <div class="metrics">
+          {metric("Remote real chain", "Not verified", "run scripts/check_real_service_chain.py on a remote GPU host")}
+          {metric("ASR backend", "--", "pending remote validation")}
+          {metric("TTS backend", "--", "pending remote validation")}
+          {metric("Avg first audio", "--", "pending remote validation")}
+        </div>
+        """
+        real_chain_table = table(
+            ["Sample", "Transcript", "ASR ms", "Retrieval ms", "TTS first audio ms", "Total ms"],
+            [["Pending", "--", "--", "--", "--", "--"]],
+        )
+        real_chain_callout = "Remote real voice chain has not been verified yet."
 
     base_by_id = {row["id"]: row for row in lora["base"]}
     comparisons = []
@@ -369,6 +466,23 @@ def build() -> None:
         </div>
       </div>
       {correction_table}
+    </section>
+
+    <section>
+      <h2>Multi-turn Context Evaluation</h2>
+      {multiturn_metric_cards}
+      <div class="callout">
+        {html.escape(multiturn_callout)}
+      </div>
+    </section>
+
+    <section>
+      <h2>Remote Real Voice Chain</h2>
+      {real_chain_metric_cards}
+      <div class="callout">
+        {html.escape(real_chain_callout)}
+      </div>
+      {real_chain_table}
     </section>
 
     <section>

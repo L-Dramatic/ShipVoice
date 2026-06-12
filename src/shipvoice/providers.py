@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import math
 import os
@@ -12,27 +13,118 @@ from pathlib import Path
 from typing import Any
 
 from .config import PipelineConfig, project_path
-from .models import GateResult, RetrievalHit
+from .models import ASRResult, GateResult, RetrievalHit, TTSResult
 
 
-class MockASRProvider:
+def _extract_json_path(data: Any, path: str, default: Any = "") -> Any:
+    current = data
+    for part in [item for item in path.split(".") if item]:
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+            continue
+        return default
+    return current
+
+
+class TranscriptASRProvider:
+    name = "transcript_fallback"
+
+    async def transcribe(
+        self,
+        transcript_hint: str,
+        *,
+        audio_bytes: bytes | None = None,
+        audio_name: str = "",
+    ) -> ASRResult:
+        transcript = transcript_hint.strip()
+        if transcript:
+            source = "audio+hint" if audio_bytes else "text"
+            return ASRResult(transcript=transcript, provider=self.name, source=source)
+        if audio_bytes:
+            raise ValueError("ASR provider is transcript_fallback, but no transcript hint was provided.")
+        raise ValueError("Missing transcript input.")
+
+
+class MockASRProvider(TranscriptASRProvider):
+    name = "mock_asr"
+
     def __init__(self, latency_ms: int) -> None:
         self.latency_ms = latency_ms
 
-    async def transcribe(self, transcript_hint: str) -> str:
+    async def transcribe(
+        self,
+        transcript_hint: str,
+        *,
+        audio_bytes: bytes | None = None,
+        audio_name: str = "",
+    ) -> ASRResult:
         await asyncio.sleep(self.latency_ms / 1000)
-        return transcript_hint.strip()
+        result = await super().transcribe(transcript_hint, audio_bytes=audio_bytes, audio_name=audio_name)
+        return ASRResult(transcript=result.transcript, provider=self.name, source=result.source)
+
+
+class HttpJsonASRProvider:
+    name = "http_json_asr"
+
+    def __init__(
+        self,
+        *,
+        endpoint: str,
+        timeout_s: int,
+        response_text_path: str,
+        fallback: TranscriptASRProvider,
+    ) -> None:
+        self.endpoint = endpoint
+        self.timeout_s = timeout_s
+        self.response_text_path = response_text_path
+        self.fallback = fallback
+
+    async def transcribe(
+        self,
+        transcript_hint: str,
+        *,
+        audio_bytes: bytes | None = None,
+        audio_name: str = "",
+    ) -> ASRResult:
+        if not audio_bytes:
+            return await self.fallback.transcribe(transcript_hint, audio_bytes=None, audio_name=audio_name)
+
+        payload = {
+            "audio_base64": base64.b64encode(audio_bytes).decode("ascii"),
+            "audio_name": audio_name,
+            "transcript_hint": transcript_hint,
+        }
+
+        try:
+            data = await asyncio.to_thread(self._post_json, payload)
+            transcript = str(_extract_json_path(data, self.response_text_path, "")).strip()
+            if transcript:
+                return ASRResult(transcript=transcript, provider=self.name, source="audio")
+        except (OSError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, TimeoutError):
+            pass
+
+        return await self.fallback.transcribe(transcript_hint, audio_bytes=audio_bytes, audio_name=audio_name)
+
+    def _post_json(self, payload: dict[str, Any]) -> dict[str, Any]:
+        request = urllib.request.Request(
+            self.endpoint,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
+            return json.loads(response.read().decode("utf-8"))
 
 
 class TermCorrector:
-    """Small placeholder for ASR post-processing before real hotword support lands."""
+    """Auditable ASR post-processing for domain terminology."""
 
     def __init__(self, domain_terms: list[str]) -> None:
         self.domain_terms = domain_terms
         self.replacements = {
             "西装阶段": "舾装阶段",
-            "试压水": "管路试压",
-            "有限空间": "有限空间",
+            "试压水": "试压水",
+            "有限舱间": "有限空间",
             "测氧测报": "测氧测爆",
             "密闭仓室": "密闭舱室",
         }
@@ -72,10 +164,10 @@ class KeywordSafetyGate:
             return GateResult("domain_safe", True, "问题是在报告或制止违规行为，允许进入安全建议流程")
         for keyword in self.blocked_keywords:
             if keyword in text:
-                return GateResult("unsafe", False, f"命中危险或提示注入关键词：{keyword}")
+                return GateResult("unsafe", False, f"命中危险或提示注入关键词: {keyword}")
         for keyword in self.off_domain_keywords:
             if keyword in text:
-                return GateResult("off_domain", False, f"命中非造船安全领域关键词：{keyword}")
+                return GateResult("off_domain", False, f"命中非造船安全领域关键词: {keyword}")
         if any(term in text for term in self.domain_terms) or any(
             keyword in text for keyword in ["船", "舱", "焊", "吊装", "动火", "安全", "作业", "试压"]
         ):
@@ -180,11 +272,25 @@ class HybridRetriever:
 
 
 class MockLLMProvider:
+    name = "mock_llm"
+    uses_mock_timing = True
+
     def __init__(self, first_token_ms: int, chunk_ms: int) -> None:
         self.first_token_ms = first_token_ms
         self.chunk_ms = chunk_ms
 
-    def build_answer(self, question: str, evidence: list[RetrievalHit], gate: GateResult) -> str:
+    def build_answer(
+        self,
+        question: str,
+        evidence: list[RetrievalHit],
+        gate: GateResult,
+        history: list[dict[str, str]] | None = None,
+    ) -> str:
+        history = history or []
+        context_prefix = ""
+        last_user = next((item["content"] for item in reversed(history) if item.get("role") == "user"), "")
+        if last_user:
+            context_prefix = f"结合上一轮“{last_user}”的上下文，"
         if not gate.allowed:
             return (
                 "该请求不适合继续处理。系统已触发安全门控，不提供绕过安全制度、规避审批或危害现场安全的操作步骤。"
@@ -193,32 +299,23 @@ class MockLLMProvider:
         if evidence:
             lead = evidence[0]
             return (
-                f"针对“{question}”，建议优先参考《{lead.title}》。"
+                f"{context_prefix}针对“{question}”，建议优先参考《{lead.title}》。"
                 f"{lead.text} "
                 "执行时应保留审批记录、检测记录和现场监护记录；如果出现气体指标异常、压力异常或人员站位风险，应立即停止作业并复核。"
             )
         return (
-            f"针对“{question}”，应先确认它是否属于造船现场安全问题。"
+            f"{context_prefix}针对“{question}”，应先确认它是否属于造船现场安全问题。"
             "在缺少可靠知识库证据时，系统只给出保守建议：遵守审批流程、完成风险辨识、安排监护，并在条件不满足时停止作业。"
         )
 
     def split_chunks(self, answer: str) -> list[str]:
         chunks = [chunk for chunk in re.split(r"(?<=[。！？])", answer) if chunk.strip()]
-        if not chunks:
-            chunks = [answer]
-        return [chunk.strip() for chunk in chunks]
-
-    async def stream(self, answer: str) -> list[str]:
-        await asyncio.sleep(self.first_token_ms / 1000)
-        chunks = self.split_chunks(answer)
-        streamed: list[str] = []
-        for chunk in chunks:
-            await asyncio.sleep(self.chunk_ms / 1000)
-            streamed.append(chunk)
-        return streamed
+        return [chunk.strip() for chunk in chunks] or [answer]
 
 
 class OpenAICompatibleLLMProvider(MockLLMProvider):
+    uses_mock_timing = False
+
     def __init__(
         self,
         *,
@@ -234,15 +331,23 @@ class OpenAICompatibleLLMProvider(MockLLMProvider):
         self.api_key_env = api_key_env
         self.timeout_s = timeout_s
         self.fallback = fallback
+        self.name = f"openai_compatible:{self.model or 'unknown'}"
 
     def _endpoint(self) -> str:
         if self.base_url.endswith("/chat/completions"):
             return self.base_url
         return f"{self.base_url}/chat/completions"
 
-    def build_answer(self, question: str, evidence: list[RetrievalHit], gate: GateResult) -> str:
+    def build_answer(
+        self,
+        question: str,
+        evidence: list[RetrievalHit],
+        gate: GateResult,
+        history: list[dict[str, str]] | None = None,
+    ) -> str:
+        history = history or []
         if not gate.allowed:
-            return self.fallback.build_answer(question, evidence, gate)
+            return self.fallback.build_answer(question, evidence, gate, history=history)
 
         evidence_text = "\n".join(
             f"[{idx}] {hit.title}: {hit.text}" for idx, hit in enumerate(evidence, start=1)
@@ -257,11 +362,18 @@ class OpenAICompatibleLLMProvider(MockLLMProvider):
                     "回答适合语音播报，先给结论，再给检查要点。"
                 ),
             },
+        ]
+        for item in history[-6:]:
+            role = item.get("role", "")
+            content = str(item.get("content", "")).strip()
+            if role in {"user", "assistant"} and content:
+                messages.append({"role": role, "content": content})
+        messages.append(
             {
                 "role": "user",
-                "content": f"问题：{question}\n\n可用知识库证据：\n{evidence_text}",
-            },
-        ]
+                "content": f"问题: {question}\n\n可用知识库证据:\n{evidence_text}",
+            }
+        )
         payload = {
             "model": self.model,
             "messages": messages,
@@ -282,23 +394,92 @@ class OpenAICompatibleLLMProvider(MockLLMProvider):
             with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
                 data = json.loads(response.read().decode("utf-8"))
             content = data["choices"][0]["message"]["content"].strip()
-            return content or self.fallback.build_answer(question, evidence, gate)
+            return content or self.fallback.build_answer(question, evidence, gate, history=history)
         except (OSError, urllib.error.URLError, urllib.error.HTTPError, KeyError, IndexError, json.JSONDecodeError):
-            return self.fallback.build_answer(question, evidence, gate)
+            return self.fallback.build_answer(question, evidence, gate, history=history)
 
 
 class MockTTSProvider:
+    name = "mock_tts"
+    supports_streaming = True
+
     def __init__(self, first_audio_ms: int, chunk_ms: int) -> None:
         self.first_audio_ms = first_audio_ms
         self.chunk_ms = chunk_ms
 
-    async def synthesize_stream(self, chunks: list[str]) -> list[str]:
+    async def synthesize_stream(self, chunks: list[str]) -> TTSResult:
         audio_segments: list[str] = []
         for idx, _chunk in enumerate(chunks, start=1):
             delay = self.first_audio_ms if idx == 1 else self.chunk_ms
             await asyncio.sleep(delay / 1000)
             audio_segments.append(f"mock_audio_segment_{idx:02d}.wav")
-        return audio_segments
+        return TTSResult(provider=self.name, audio_segments=audio_segments)
+
+    async def synthesize(self, text: str) -> TTSResult:
+        return await self.synthesize_stream([text])
+
+
+class HttpJsonTTSProvider:
+    name = "http_json_tts"
+    supports_streaming = False
+
+    def __init__(
+        self,
+        *,
+        endpoint: str,
+        timeout_s: int,
+        voice: str,
+        response_audio_path: str,
+        response_mime_path: str,
+        fallback: MockTTSProvider,
+    ) -> None:
+        self.endpoint = endpoint
+        self.timeout_s = timeout_s
+        self.voice = voice
+        self.response_audio_path = response_audio_path
+        self.response_mime_path = response_mime_path
+        self.fallback = fallback
+
+    async def synthesize(self, text: str) -> TTSResult:
+        payload = {"text": text, "voice": self.voice}
+        try:
+            data = await asyncio.to_thread(self._post_json, payload)
+            audio_base64 = str(_extract_json_path(data, self.response_audio_path, "")).strip()
+            mime_type = str(_extract_json_path(data, self.response_mime_path, "audio/wav")).strip() or "audio/wav"
+            if audio_base64:
+                return TTSResult(provider=self.name, audio_base64=audio_base64, mime_type=mime_type)
+        except (OSError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, TimeoutError):
+            pass
+        return await self.fallback.synthesize(text)
+
+    def _post_json(self, payload: dict[str, Any]) -> dict[str, Any]:
+        request = urllib.request.Request(
+            self.endpoint,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+
+def build_asr(config: PipelineConfig) -> TranscriptASRProvider | MockASRProvider | HttpJsonASRProvider:
+    latency = config.mock_latency_ms
+    asr_config = config.asr
+    fallback = TranscriptASRProvider()
+    provider = os.environ.get("SHIPVOICE_ASR_PROVIDER", str(asr_config.get("provider", "transcript_fallback"))).lower()
+    if provider == "mock":
+        return MockASRProvider(latency["asr"])
+    if provider == "http_json":
+        endpoint = os.environ.get("SHIPVOICE_ASR_ENDPOINT", str(asr_config.get("endpoint", ""))).strip()
+        if endpoint:
+            return HttpJsonASRProvider(
+                endpoint=endpoint,
+                timeout_s=int(asr_config.get("timeout_s", 60)),
+                response_text_path=str(asr_config.get("response_text_path", "text")),
+                fallback=fallback,
+            )
+    return fallback
 
 
 def build_retriever(config: PipelineConfig) -> SimpleRetriever | HybridRetriever:
@@ -318,11 +499,33 @@ def build_llm(config: PipelineConfig) -> MockLLMProvider | OpenAICompatibleLLMPr
     llm_config = config.llm
     provider = os.environ.get("SHIPVOICE_LLM_PROVIDER", str(llm_config.get("provider", "mock"))).lower()
     if provider in {"openai", "openai_compatible", "ollama", "vllm"}:
-        return OpenAICompatibleLLMProvider(
-            base_url=os.environ.get("SHIPVOICE_OPENAI_BASE_URL", str(llm_config.get("openai_base_url", ""))),
-            model=os.environ.get("SHIPVOICE_LLM_MODEL", str(llm_config.get("model", ""))),
-            api_key_env=str(llm_config.get("api_key_env", "SHIPVOICE_OPENAI_API_KEY")),
-            timeout_s=int(llm_config.get("timeout_s", 60)),
-            fallback=fallback,
-        )
+        base_url = os.environ.get("SHIPVOICE_OPENAI_BASE_URL", str(llm_config.get("openai_base_url", ""))).strip()
+        model = os.environ.get("SHIPVOICE_LLM_MODEL", str(llm_config.get("model", ""))).strip()
+        if base_url and model:
+            return OpenAICompatibleLLMProvider(
+                base_url=base_url,
+                model=model,
+                api_key_env=str(llm_config.get("api_key_env", "SHIPVOICE_OPENAI_API_KEY")),
+                timeout_s=int(llm_config.get("timeout_s", 60)),
+                fallback=fallback,
+            )
+    return fallback
+
+
+def build_tts(config: PipelineConfig) -> MockTTSProvider | HttpJsonTTSProvider:
+    latency = config.mock_latency_ms
+    fallback = MockTTSProvider(latency["tts_first_audio"], latency["tts_chunk"])
+    tts_config = config.tts
+    provider = os.environ.get("SHIPVOICE_TTS_PROVIDER", str(tts_config.get("provider", "mock"))).lower()
+    if provider == "http_json":
+        endpoint = os.environ.get("SHIPVOICE_TTS_ENDPOINT", str(tts_config.get("endpoint", ""))).strip()
+        if endpoint:
+            return HttpJsonTTSProvider(
+                endpoint=endpoint,
+                timeout_s=int(tts_config.get("timeout_s", 60)),
+                voice=str(tts_config.get("voice", "alloy")),
+                response_audio_path=str(tts_config.get("response_audio_path", "audio_base64")),
+                response_mime_path=str(tts_config.get("response_mime_path", "mime_type")),
+                fallback=fallback,
+            )
     return fallback

@@ -12,7 +12,7 @@
         <div class="brand-mark">SV</div>
         <div>
           <h1>ShipVoice</h1>
-          <p>安全感知实时语音问答助手</p>
+          <p>船厂安全语音问答与可审计决策助手</p>
         </div>
       </div>
 
@@ -37,20 +37,21 @@
           <input id="audioFile" type="file" accept="audio/*" />
           <span>上传音频样例</span>
         </label>
-        <p id="audioHint" class="hint">当前 demo 使用 transcript fallback；音频文件会进入会话日志。</p>
+        <p id="audioHint" class="hint">支持文本提问，也支持上传音频接入真实 ASR。</p>
       </section>
 
       <div class="button-row">
         <button id="runButton" class="primary-button">运行问答</button>
         <button id="exportButton" class="secondary-button">导出日志</button>
       </div>
+      <a class="secondary-link" href="./admin.html">打开管理后台</a>
     </aside>
 
     <main class="workspace">
       <header class="topbar">
         <div>
           <p class="eyebrow">Shipyard Safety Copilot</p>
-          <h2>高风险作业场景下的安全门控、证据检索与实时回答链路</h2>
+          <h2>高风险作业场景下的安全门控、证据检索与实时语音回答链路</h2>
         </div>
         <div id="statusBadge" class="status-badge">待机</div>
       </header>
@@ -74,12 +75,14 @@
         </article>
       </section>
 
+      <div id="errorBanner" class="error-banner" hidden></div>
+
       <section class="main-grid">
         <article class="panel transcript-panel">
           <div class="panel-head">
             <div>
               <h3>输入 / 转写</h3>
-              <p>展示用户问题、音频占位和术语热词。</p>
+              <p>展示用户问题、音频入口和术语热词命中。</p>
             </div>
             <span id="asrState">等待输入</span>
           </div>
@@ -91,7 +94,7 @@
           <div class="panel-head">
             <div>
               <h3>安全门控</h3>
-              <p>先判断风险，再决定是否进入生成。</p>
+              <p>先判断风险，再决定是否进入生成回答链路。</p>
             </div>
             <span id="gateState">未运行</span>
           </div>
@@ -106,7 +109,9 @@
             </div>
             <span id="answerState">未生成</span>
           </div>
+          <div id="providerSummary" class="provider-summary"></div>
           <p id="answerText" class="answer-text"></p>
+          <audio id="ttsPlayer" class="tts-player" controls hidden></audio>
         </article>
 
         <article class="panel evidence-panel">
@@ -123,19 +128,56 @@
         <article class="panel timeline-panel">
           <div class="panel-head">
             <div>
-              <h3>延迟瀑布</h3>
-              <p>用于展示实时交互和系统开销。</p>
+              <h3>延迟分布</h3>
+              <p>实时显示一次交互中的各阶段系统开销。</p>
             </div>
             <span id="timelineState">待运行</span>
           </div>
           <div id="timeline" class="timeline"></div>
         </article>
 
+        <article class="panel runtime-panel">
+          <div class="panel-head">
+            <div>
+              <h3>运行元数据</h3>
+              <p>把这套系统从 demo 提升到可审计应用的基础信息面板。</p>
+            </div>
+            <span>Audit</span>
+          </div>
+          <dl class="meta-grid">
+            <div>
+              <dt>Session ID</dt>
+              <dd id="sessionIdValue">--</dd>
+            </div>
+            <div>
+              <dt>Run ID</dt>
+              <dd id="runIdValue">--</dd>
+            </div>
+            <div>
+              <dt>Started At</dt>
+              <dd id="runTimeValue">--</dd>
+            </div>
+            <div>
+              <dt>Mode</dt>
+              <dd id="modeValue">full</dd>
+            </div>
+            <div>
+              <dt>Session Runs</dt>
+              <dd id="sessionRunsValue">0</dd>
+            </div>
+            <div>
+              <dt>Last Gate</dt>
+              <dd id="lastGateValue">--</dd>
+            </div>
+          </dl>
+          <div id="healthSummary" class="provider-summary"></div>
+        </article>
+
         <article class="panel log-panel">
           <div class="panel-head">
             <div>
-              <h3>会话日志</h3>
-              <p>评审可追踪输入、门控、证据和输出。</p>
+              <h3>后端会话日志</h3>
+              <p>直接来自服务端审计记录，便于答辩、复现实验和风险追踪。</p>
             </div>
             <span id="logState">0 条</span>
           </div>

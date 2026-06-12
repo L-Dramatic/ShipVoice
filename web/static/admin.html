@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ShipVoice Admin Console</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="admin-body">
+    <aside class="sidebar admin-sidebar">
+      <div class="brand">
+        <div class="brand-mark">SV</div>
+        <div>
+          <h1>Admin Console</h1>
+          <p>知识库治理、评测监控与运行复盘</p>
+        </div>
+      </div>
+
+      <section class="control-group">
+        <h2>控制台动作</h2>
+        <div class="button-stack">
+          <button id="refreshAdminButton" class="primary-button">刷新总览</button>
+          <button id="reindexButton" class="secondary-button">重建知识索引</button>
+          <button id="reloadEvalButton" class="secondary-button">重载评测数据</button>
+          <button id="cleanupRunsButton" class="secondary-button">清理测试日志</button>
+          <button id="newRecordButton" class="secondary-button">新建知识条目</button>
+          <a class="secondary-link" href="./index.html">返回问答前台</a>
+        </div>
+      </section>
+
+      <section class="control-group">
+        <h2>知识库检索</h2>
+        <input id="knowledgeSearch" class="text-input" type="text" placeholder="搜索标题、标签或正文" />
+        <div id="tagFilters" class="chip-row"></div>
+      </section>
+
+      <section class="control-group">
+        <h2>运行日志筛选</h2>
+        <input id="runSearch" class="text-input" type="text" placeholder="搜索 session、问题或错误" />
+        <select id="runStatus" class="text-input">
+          <option value="">全部状态</option>
+          <option value="ok">仅成功</option>
+          <option value="error">仅失败</option>
+        </select>
+      </section>
+    </aside>
+
+    <main class="workspace admin-workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Governance Layer</p>
+          <h2>让 ShipVoice 成为可维护、可审计、可持续迭代的真实系统</h2>
+        </div>
+        <div id="adminStatus" class="status-badge">加载中</div>
+      </header>
+
+      <div id="adminError" class="error-banner" hidden></div>
+
+      <section class="metrics-grid admin-metrics">
+        <article class="metric">
+          <span>知识条目数</span>
+          <strong id="knowledgeCountMetric">--</strong>
+        </article>
+        <article class="metric">
+          <span>最近运行数</span>
+          <strong id="runCountMetric">--</strong>
+        </article>
+        <article class="metric">
+          <span>多轮门控准确率</span>
+          <strong id="gateAccuracyMetric">--</strong>
+        </article>
+        <article class="metric">
+          <span>真实链路首音</span>
+          <strong id="realLatencyMetric">--</strong>
+        </article>
+      </section>
+
+      <section class="main-grid admin-grid">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>知识库清单</h3>
+              <p>支持搜索、筛选、选择、编辑和重建索引。</p>
+            </div>
+            <span id="knowledgeListState">0 条</span>
+          </div>
+          <div id="knowledgeList" class="session-log admin-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>知识条目编辑器</h3>
+              <p>每次保存都会写回 JSONL，并立即重建 RAG 索引。</p>
+            </div>
+            <span id="editorState">未选择</span>
+          </div>
+          <form id="knowledgeForm" class="form-grid">
+            <label>
+              <span>ID</span>
+              <input id="recordId" class="text-input" type="text" />
+            </label>
+            <label>
+              <span>标题</span>
+              <input id="recordTitle" class="text-input" type="text" />
+            </label>
+            <label class="full-span">
+              <span>标签</span>
+              <input id="recordTags" class="text-input" type="text" placeholder="用英文逗号分隔，如：有限空间,动火,监护" />
+            </label>
+            <label class="full-span">
+              <span>正文</span>
+              <textarea id="recordText" rows="10"></textarea>
+            </label>
+            <div class="button-row form-actions full-span">
+              <button id="saveRecordButton" type="submit" class="primary-button">保存条目</button>
+              <button id="deleteRecordButton" type="button" class="secondary-button">删除条目</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>评测概览</h3>
+              <p>把课程指标和工程指标放在同一视图里持续跟踪。</p>
+            </div>
+            <span>Eval</span>
+          </div>
+          <div id="evaluationSummary" class="meta-grid admin-summary-grid"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>评测数据集</h3>
+              <p>已经入库的评测表，可点击查看样本级明细。</p>
+            </div>
+            <span id="datasetListState">0 个</span>
+          </div>
+          <div id="datasetList" class="session-log admin-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>评测样本明细</h3>
+              <p>用于复查错误样本、边界样本和高时延样本。</p>
+            </div>
+            <span id="datasetDetailState">未选择</span>
+          </div>
+          <div id="datasetSummary" class="meta-grid admin-summary-grid"></div>
+          <div id="datasetRows" class="session-log admin-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>后端配置</h3>
+              <p>直接查看和编辑 `configs/pipeline.json`，保存后热重载。</p>
+            </div>
+            <span id="configState">未加载</span>
+          </div>
+          <div id="configMeta" class="provider-summary"></div>
+          <form id="configForm" class="form-grid">
+            <label class="full-span">
+              <span>Config JSON</span>
+              <textarea id="configEditor" rows="14"></textarea>
+            </label>
+            <div class="button-row form-actions full-span">
+              <button id="saveConfigButton" type="submit" class="primary-button">保存并重载</button>
+              <button id="reloadConfigButton" type="button" class="secondary-button">重新读取文件</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Provider 健康</h3>
+              <p>区分 mock 与真实服务，并检查当前端点是否可达。</p>
+            </div>
+            <span id="providerHealthState">未加载</span>
+          </div>
+          <div id="providerHealthList" class="session-log admin-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>运行复盘</h3>
+              <p>定位失败、误拦截、异常回答和时延瓶颈。</p>
+            </div>
+            <span id="runListState">0 条</span>
+          </div>
+          <div id="runList" class="session-log admin-list"></div>
+        </article>
+      </section>
+    </main>
+
+    <script src="./admin.js"></script>
+  </body>
+</html>

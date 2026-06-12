@@ -161,6 +161,8 @@ def load_latency_metrics() -> dict[str, dict[str, float]]:
     for mode, rows in grouped.items():
         out[mode] = {
             "count": len(rows),
+            "profile": ",".join(sorted({r.get("execution_profile", "unknown") for r in rows})),
+            "timing_source": ",".join(sorted({r.get("timing_source", "unknown") for r in rows})),
             "first_audio_ms": statistics.mean(float(r["first_audio_ms"]) for r in rows),
             "total_ms": statistics.mean(float(r["total_ms"]) for r in rows),
             "answer_chars": statistics.mean(float(r["answer_chars"]) for r in rows),
@@ -247,6 +249,80 @@ def load_asr_metrics() -> dict[str, str]:
         "rows_changed": str(post_summary.get("rows_changed", 0)),
         "replacements_applied": str(post_summary.get("replacements_applied", 0)),
         "status": str(summary["status"]),
+    }
+
+
+def load_multiturn_metrics() -> dict[str, str]:
+    path = ROOT / "results" / "multiturn_eval_summary.json"
+    if not path.exists():
+        return {
+            "dialogs": "未运行",
+            "turns": "未运行",
+            "followup_turns": "未运行",
+            "gate_accuracy": "未运行",
+            "top1_title_accuracy": "未运行",
+            "title_hit_at_3": "未运行",
+            "keyword_recall": "未运行",
+            "followup_grounding_accuracy": "未运行",
+            "avg_total_ms": "未运行",
+        }
+    summary = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        "dialogs": str(summary["dialogs"]),
+        "turns": str(summary["turns"]),
+        "followup_turns": str(summary["followup_turns"]),
+        "gate_accuracy": f"{float(summary['gate_accuracy']) * 100:.1f}%",
+        "top1_title_accuracy": f"{float(summary['top1_title_accuracy']) * 100:.1f}%",
+        "title_hit_at_3": f"{float(summary['title_hit_at_3']) * 100:.1f}%",
+        "keyword_recall": f"{float(summary['keyword_recall']) * 100:.1f}%",
+        "followup_grounding_accuracy": f"{float(summary['followup_grounding_accuracy']) * 100:.1f}%",
+        "avg_total_ms": f"{float(summary['avg_total_ms']):.0f}",
+    }
+
+
+def load_real_chain_metrics() -> dict[str, object]:
+    candidates = sorted(ROOT.glob("results/remote_real_chain_*"), key=lambda path: path.name, reverse=True)
+    for candidate in candidates:
+        summary_path = candidate / "summary.json"
+        smoke_path = candidate / "real_chain_smoke.json"
+        if not summary_path.exists() or not smoke_path.exists():
+            continue
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+        provider_status = smoke["pipeline_result"]["provider_status"]
+        return {
+            "status": "verified",
+            "artifact_dir": str(candidate.relative_to(ROOT)),
+            "num_samples": str(summary["num_samples"]),
+            "avg_first_audio_ms": f"{float(summary['avg_first_audio_ms']):.0f}",
+            "avg_total_ms": f"{float(summary['avg_total_ms']):.0f}",
+            "avg_asr_ms": f"{float(summary['avg_asr_ms']):.0f}",
+            "avg_retrieval_ms": f"{float(summary['avg_retrieval_ms']):.0f}",
+            "avg_tts_first_audio_ms": f"{float(summary['avg_tts_first_audio_ms']):.0f}",
+            "asr_service": str(smoke["asr_health"]["service"]),
+            "asr_model": str(smoke["asr_health"]["model"]),
+            "tts_service": str(smoke["tts_health"]["service"]),
+            "execution_profile": str(provider_status["execution_profile"]),
+            "llm_provider": str(provider_status["llm"]),
+            "tts_provider": str(provider_status["tts"]),
+            "samples": summary["samples"],
+        }
+    return {
+        "status": "not_run",
+        "artifact_dir": "results/remote_real_chain_*",
+        "num_samples": "0",
+        "avg_first_audio_ms": "--",
+        "avg_total_ms": "--",
+        "avg_asr_ms": "--",
+        "avg_retrieval_ms": "--",
+        "avg_tts_first_audio_ms": "--",
+        "asr_service": "--",
+        "asr_model": "--",
+        "tts_service": "--",
+        "execution_profile": "--",
+        "llm_provider": "--",
+        "tts_provider": "--",
+        "samples": [],
     }
 
 
@@ -344,7 +420,14 @@ def add_cover(doc: Document) -> None:
     doc.add_page_break()
 
 
-def add_exec_summary(doc: Document, counts: dict[str, int], remote: dict[str, str], safety: dict[str, str], asr: dict[str, str]) -> None:
+def add_exec_summary(
+    doc: Document,
+    counts: dict[str, int],
+    remote: dict[str, str],
+    safety: dict[str, str],
+    asr: dict[str, str],
+    real_chain: dict[str, object],
+) -> None:
     doc.add_heading("1. 项目概述", level=1)
     add_body_paragraph(
         doc,
@@ -362,6 +445,7 @@ def add_exec_summary(doc: Document, counts: dict[str, int], remote: dict[str, st
             ["训练数据", f"{counts['sft_records']} 条 SFT seed，{counts['safety_gate_records']} 条安全门控 seed"],
             ["安全评测", f"{safety['total']} 条安全/离题/prompt-injection/domain-safe/boundary 样例，危险请求误放行 {safety['false_allow_count']}"],
             ["语音评测", f"{asr['manifest_rows']} 条真实录音已完成评测，当前 ASR 状态为 {asr['status']}"],
+            ["真实语音链路", f"远端已验证 {real_chain['num_samples']} 条真实样本，ASR={real_chain['asr_service']}，TTS={real_chain['tts_service']}，平均首音 {real_chain['avg_first_audio_ms']} ms"],
             ["远端微调", "RTX 4090 上完成 Qwen2.5-7B-Instruct 4-bit LoRA/QLoRA 训练"],
             ["评测闭环", f"Base eval {remote['base_rows']} 条，LoRA eval {remote['lora_rows']} 条，adapter 约 {remote['adapter_mb']} MB"],
             ["评测看板", "deliverables/ShipVoice_Evaluation_Dashboard.html 汇总 RAG、延迟、安全门控与 LoRA 对照"],
@@ -493,9 +577,89 @@ def add_audio_asr_readiness(doc: Document, asr: dict[str, str]) -> None:
     )
 
 
+def add_multiturn_evaluation(doc: Document, multiturn: dict[str, str]) -> None:
+    doc.add_heading("6.5 多轮上下文评测", level=1)
+    add_body_paragraph(doc, "为补齐作业中“多轮对话为主”的要求，项目新增了多轮上下文 benchmark。评测不再只看单轮命中，而是测试系统能否在后续追问中保持正确门控、延续前文主题，并继续命中对应安全知识条目。")
+    add_table(
+        doc,
+        ["指标", "结果", "说明"],
+        [
+            ["对话数", multiturn["dialogs"], "覆盖有限空间、试压、吊装、高处作业和临时用电等多轮场景"],
+            ["总轮次", multiturn["turns"], "包含首问与 follow-up turns"],
+            ["追问轮次", multiturn["followup_turns"], "需要依赖前文上下文才能稳定作答"],
+            ["门控准确率", multiturn["gate_accuracy"], "多轮条件下 domain/safety 决策是否稳定"],
+            ["Top-1 证据命中", multiturn["top1_title_accuracy"], "首条证据是否仍然对应正确主题"],
+            ["Title hit@3", multiturn["title_hit_at_3"], "前三条证据是否包含目标知识条目"],
+            ["关键词召回", multiturn["keyword_recall"], "回答是否覆盖预期安全要点"],
+            ["追问 grounding 准确率", multiturn["followup_grounding_accuracy"], "依赖历史上下文的轮次是否仍能命中正确证据"],
+            ["平均总耗时(ms)", multiturn["avg_total_ms"], "full pipeline 下的多轮平均响应耗时"],
+        ],
+        [1.4, 1.0, 3.8],
+    )
+    add_callout(
+        doc,
+        "评测意义",
+        "多轮 benchmark 让 Part 1 和 Part 2 真正接上：系统不再只是单句问答，而是能够在连续追问中保持领域一致性、安全边界和证据 grounding。",
+        fill=LIGHT_BLUE_FILL,
+    )
+
+
+def add_real_chain_validation(doc: Document, real_chain: dict[str, object]) -> None:
+    doc.add_heading("6.8 真实语音链路联调验证", level=1)
+    if real_chain["status"] != "verified":
+        add_body_paragraph(doc, "当前仓库尚未检测到远端真实语音链路验证结果。完成 GPU 联调后，应补充 ASR/TTS 服务健康检查、端到端样本结果和延迟统计。")
+        return
+
+    add_body_paragraph(
+        doc,
+        "为证明系统不是只有前端页面，本项目额外完成了一轮远端真实语音链路联调：在 RTX 4090 上启动 FunASR / SenseVoice ASR 服务与 ChatTTS 中文 TTS 服务，通过 HTTP provider 接回本地 ShipVoice pipeline，形成真实语音输入和真实语音回传。",
+    )
+    add_body_paragraph(
+        doc,
+        "本轮验证重点不是追求最低时延，而是留下可审计的工程证据。当前 provider status 为 hybrid：真实音频 I/O 已经在线，问答生成仍由受控 mock_llm 层承接检索证据，因此它证明了真实服务集成能力，也明确暴露了后续企业级改造的瓶颈位置。",
+    )
+    add_table(
+        doc,
+        ["指标", "结果", "说明"],
+        [
+            ["验证样本数", str(real_chain["num_samples"]), "A001-A003 三条真实录音端到端跑通"],
+            ["ASR 服务", str(real_chain["asr_service"]), str(real_chain["asr_model"])],
+            ["TTS 服务", str(real_chain["tts_service"]), f"provider={real_chain['tts_provider']}"],
+            ["执行形态", str(real_chain["execution_profile"]), f"LLM provider={real_chain['llm_provider']}"],
+            ["平均 ASR 耗时", f"{real_chain['avg_asr_ms']} ms", "真实语音转写阶段"],
+            ["平均检索耗时", f"{real_chain['avg_retrieval_ms']} ms", "RAG 证据检索阶段"],
+            ["平均 TTS 首音", f"{real_chain['avg_tts_first_audio_ms']} ms", "当前主要性能瓶颈"],
+            ["平均端到端首音", f"{real_chain['avg_first_audio_ms']} ms", "远端真实语音链路观察值"],
+        ],
+        [1.55, 1.35, 3.3],
+    )
+    sample_rows = []
+    for row in real_chain["samples"]:
+        sample_rows.append(
+            [
+                str(row["sample_id"]),
+                str(row["transcript"]),
+                f"{row['asr_ms']} / {row['retrieval_ms']} / {row['tts_first_audio_ms']}",
+                str(row["total_ms"]),
+            ]
+        )
+    add_table(
+        doc,
+        ["样本", "转写结果", "ASR/检索/TTS首音(ms)", "总耗时(ms)"],
+        sample_rows,
+        [0.8, 3.2, 1.3, 1.2],
+    )
+    add_callout(
+        doc,
+        "联调结论",
+        f"真实语音链路证据已归档至 {real_chain['artifact_dir']}。当前系统已经具备“真实语音输入 + 真实语音输出 + 可控安全问答”的工程形态；下一阶段的主要任务不是继续证明能跑，而是优化 TTS 延迟并替换 hybrid 中的 mock_llm。",
+        fill=LIGHT_BLUE_FILL,
+    )
+
+
 def add_latency(doc: Document, latency: dict[str, dict[str, float]]) -> None:
     doc.add_heading("7. 本地演示与延迟评估", level=1)
-    add_body_paragraph(doc, "本地演示使用 run_demo.py 启动后端和 Web 面板，默认 mock provider 可以模拟 ASR、LLM 和 TTS 的时延，使系统在没有 GPU 或外部 API 的情况下仍能展示完整链路。")
+    add_body_paragraph(doc, "本地演示使用 run_demo.py 启动后端和 Web 面板。当前版本已经把 provider 状态、execution profile 和 timing source 显式暴露出来，用于区分 demo/simulated 链路与真实 provider 调用链路。")
     rows = []
     for mode in ["baseline", "streaming", "full"]:
         if mode in latency:
@@ -503,15 +667,17 @@ def add_latency(doc: Document, latency: dict[str, dict[str, float]]) -> None:
             rows.append([
                 mode,
                 str(int(item["count"])),
+                str(item.get("profile", "unknown")),
+                str(item.get("timing_source", "unknown")),
                 f"{item['first_audio_ms']:.0f}",
                 f"{item['total_ms']:.0f}",
                 f"{item['answer_chars']:.1f}",
             ])
     add_table(
         doc,
-        ["模式", "样本数", "首段音频均值(ms)", "总耗时均值(ms)", "平均回答长度"],
+        ["模式", "样本数", "执行形态", "计时来源", "首段音频均值(ms)", "总耗时均值(ms)", "平均回答长度"],
         rows,
-        [1.1, 0.8, 1.55, 1.45, 1.6],
+        [0.9, 0.7, 1.0, 1.0, 1.35, 1.3, 1.35],
     )
     for image_name, caption in [
         ("demo_panel_safety.png", "图 1：安全问答场景演示面板"),
@@ -563,7 +729,7 @@ def add_lora_experiment(doc: Document, remote: dict[str, str]) -> None:
     )
 
 
-def add_reproducibility(doc: Document) -> None:
+def add_reproducibility(doc: Document, real_chain: dict[str, object]) -> None:
     doc.add_heading("9. 可复现性与工程质量", level=1)
     add_body_paragraph(doc, "项目保留了本地与远端两套复现路径。本地路径用于课程答辩现场稳定演示，远端路径用于 GPU 微调实验和模型对比。")
     add_table(
@@ -575,12 +741,14 @@ def add_reproducibility(doc: Document) -> None:
             ["检索评测", "python scripts\\evaluate_retrieval.py", "代表性问题 hit@1/hit@3 达标"],
             ["安全评测", "python scripts\\evaluate_safety_gate.py --fail-on-critical", "55 条 benchmark 通过且 false_allow_count = 0"],
             ["ASR 评测", "python scripts\\evaluate_asr_transcripts.py", "录音和 ASR 转写填入后输出 CER/WER/术语召回"],
+            ["多轮评测", "python scripts\\evaluate_multiturn.py --fail-on-threshold", "多轮 gate 与 follow-up grounding 达标"],
+            ["真实语音链路", "python scripts\\check_real_service_chain.py --sample-id A001", "ASR/TTS health 正常且 pipeline provider 变为 http_json"],
             ["远端训练", "remote/train_qwen_lora.py", "生成 LoRA adapter 与训练日志"],
             ["远端评测", "remote/evaluate_qwen_lora.py", "生成 base_eval.jsonl 与 lora_eval.jsonl"],
         ],
         [1.45, 2.65, 2.4],
     )
-    add_body_paragraph(doc, "核心证据位于 results/remote_autodl_20260608_final，包括训练日志、评测结果、adapter、artifact manifest 和 REMOTE_RUN_SUMMARY.md。")
+    add_body_paragraph(doc, f"核心远端证据位于 results/remote_autodl_20260608_final；真实语音链路证据位于 {real_chain['artifact_dir']}。前者证明微调实验，后者证明真实 ASR/TTS 服务联调。")
 
 
 def add_limitations(doc: Document) -> None:
@@ -588,7 +756,8 @@ def add_limitations(doc: Document) -> None:
     add_bullet(doc, "SFT seed 数据规模仍较小，LoRA 主要证明领域适配可行性，不应夸大为生产级模型。")
     add_bullet(doc, "LoRA 在 off-domain 问题上出现轻微领域模板化，因此正式系统必须保留安全门控。")
     add_bullet(doc, "50 条真实中文语音已经完成录制与 ASR 评测，但当前样本规模仍偏小，下一阶段应扩展到 100+ 条、多说话人和更强噪声条件。")
-    add_bullet(doc, "TTS 当前以句级播放和 mock latency 展示为主，后续可接入 CosyVoice 做真实语音播报。")
+    add_bullet(doc, "多轮 benchmark 已建立，但仍以结构化追问为主，下一阶段应加入更自由的口语化省略问句和 ASR 错字变体。")
+    add_bullet(doc, "远端真实 ChatTTS 链路已经打通，但当前平均 TTS 首音延迟仍在十秒级，后续应优先做流式返回、模型替换或推理缓存优化。")
     add_bullet(doc, "安全门控已扩展到 55 条 benchmark，但下一阶段仍应加入 100+ 对抗改写、真实语音 ASR 错字变体和轻量分类器。")
 
 
@@ -604,10 +773,13 @@ def add_appendix(doc: Document) -> None:
             ["报告大纲", "docs/FINAL_REPORT_OUTLINE_20260608.md"],
             ["知识库", "data/knowledge/ship_safety_corpus.jsonl"],
             ["测试问题", "data/tests/eval_questions.csv"],
+            ["多轮评测集", "data/tests/multiturn_eval.jsonl"],
             ["安全评测集", "data/tests/safety_eval.csv"],
             ["安全评测结果", "results/safety_gate_eval.csv / safety_gate_eval_summary.json / safety_gate_eval_report.md"],
+            ["多轮评测结果", "results/multiturn_eval.csv / multiturn_eval_summary.json / multiturn_eval_report.md"],
             ["录音任务", "data/audio/audio_manifest.csv / deliverables/ShipVoice_Audio_Recording_Pack.html"],
             ["ASR 评测结果", "results/asr_eval.csv / asr_eval_summary.json / asr_eval_report.md / asr_eval_raw_summary.json / asr_postprocess_summary.json"],
+            ["真实语音链路结果", "results/remote_real_chain_20260612_chattts_48359"],
             ["评测看板", "deliverables/ShipVoice_Evaluation_Dashboard.html"],
             ["SFT 数据", "data/training/sft_seed.jsonl"],
             ["安全门控数据", "data/training/safety_gate_seed.jsonl"],
@@ -625,20 +797,24 @@ def build() -> None:
     remote = load_remote_metrics()
     safety = load_safety_metrics()
     asr = load_asr_metrics()
+    multiturn = load_multiturn_metrics()
+    real_chain = load_real_chain_metrics()
 
     doc = Document()
     style_document(doc)
     add_header_footer(doc)
     add_cover(doc)
-    add_exec_summary(doc, counts, remote, safety, asr)
+    add_exec_summary(doc, counts, remote, safety, asr, real_chain)
     add_requirement_mapping(doc)
     add_architecture(doc)
     add_knowledge_and_safety(doc)
     add_safety_evaluation(doc, safety)
     add_audio_asr_readiness(doc, asr)
+    add_multiturn_evaluation(doc, multiturn)
+    add_real_chain_validation(doc, real_chain)
     add_latency(doc, latency)
     add_lora_experiment(doc, remote)
-    add_reproducibility(doc)
+    add_reproducibility(doc, real_chain)
     add_limitations(doc)
     add_appendix(doc)
 

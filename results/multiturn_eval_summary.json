@@ -1,0 +1,13 @@
+{
+  "dialogs": 6,
+  "turns": 18,
+  "followup_turns": 12,
+  "gate_accuracy": 1.0,
+  "top1_title_accuracy": 1.0,
+  "title_hit_at_3": 1.0,
+  "keyword_recall": 0.9722222222222222,
+  "followup_grounding_accuracy": 1.0,
+  "avg_total_ms": 2936.222222222222,
+  "avg_first_audio_ms": 1519.8333333333333,
+  "mode": "full"
+}

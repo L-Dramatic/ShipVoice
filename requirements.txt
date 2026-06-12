@@ -13,4 +13,5 @@
 # faiss-cpu
 # funasr
 # modelscope
-
+fastapi
+uvicorn

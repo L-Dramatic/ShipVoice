@@ -6,6 +6,8 @@ outputs/
 results/*.tmp
 results/*.log
 results/demo_server*.log
+results/runtime/
+results/runtime_test/
 results/remote_autodl_*/
 experiments/*/checkpoints/
 models/
