@@ -783,3 +783,547 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 }
+
+body.shipvoice-console {
+  color-scheme: dark;
+  grid-template-columns: 360px minmax(0, 1fr);
+  background: #0a0f14;
+  color: #e6edf3;
+  overflow-x: hidden;
+}
+
+.shipvoice-console::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent 82%);
+}
+
+.shipvoice-console .sidebar {
+  position: sticky;
+  top: 0;
+  min-height: 100vh;
+  border-right: 1px solid #22303a;
+  background: #0d151d;
+  box-shadow: 18px 0 46px rgba(0, 0, 0, 0.3);
+}
+
+.shipvoice-console .brand {
+  grid-template-columns: 54px 1fr;
+}
+
+.shipvoice-console .brand-mark {
+  width: 54px;
+  height: 54px;
+  border: 1px solid rgba(94, 234, 212, 0.7);
+  background: #0f2f2d;
+  color: #99f6e4;
+  box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.08);
+}
+
+.shipvoice-console .brand h1 {
+  color: #f8fafc;
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.shipvoice-console .brand p {
+  color: #8da2b5;
+  font-size: 12px;
+}
+
+.mission-brief {
+  padding: 14px;
+  border: 1px solid #263541;
+  border-radius: 8px;
+  background: #111c25;
+}
+
+.mission-brief strong,
+.mission-brief p {
+  margin: 0;
+}
+
+.mission-brief strong {
+  display: block;
+  margin: 6px 0;
+  color: #f8fafc;
+  font-size: 15px;
+}
+
+.mission-brief p {
+  color: #9fb0bf;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.mission-kicker {
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.shipvoice-console .control-group h2 {
+  color: #e2e8f0;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.shipvoice-console .segmented,
+.shipvoice-console .scenario-button,
+.shipvoice-console textarea,
+.shipvoice-console .file-control,
+.shipvoice-console .recording-status {
+  border: 1px solid #2a3b47;
+  background: #111c25;
+}
+
+.shipvoice-console .segmented {
+  padding: 5px;
+}
+
+.shipvoice-console .mode-button {
+  color: #9fb0bf;
+  font-size: 12px;
+}
+
+.shipvoice-console .mode-button.is-active {
+  color: #06201f;
+  background: #5eead4;
+}
+
+.shipvoice-console .scenario-list {
+  max-height: 300px;
+}
+
+.shipvoice-console .scenario-button {
+  color: #d7e2ec;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.shipvoice-console .scenario-button:hover {
+  border-color: #3b6170;
+  transform: translateY(-1px);
+}
+
+.shipvoice-console .scenario-button.is-active {
+  outline: none;
+  border-color: #5eead4;
+  background: #132b33;
+}
+
+.shipvoice-console .scenario-button span {
+  color: #7dd3fc;
+}
+
+.shipvoice-console textarea {
+  color: #f8fafc;
+}
+
+.shipvoice-console .file-control,
+.shipvoice-console .secondary-button,
+.shipvoice-console .secondary-link {
+  color: #dbeafe;
+  background: #172534;
+}
+
+.shipvoice-console .record-button {
+  color: #fff7ed;
+  background: #9a3412;
+}
+
+.shipvoice-console .record-button.is-recording {
+  color: #450a0a;
+  background: #fecaca;
+}
+
+.shipvoice-console .primary-button {
+  color: #052e2b;
+  background: #5eead4;
+  box-shadow: 0 10px 26px rgba(45, 212, 191, 0.18);
+}
+
+.shipvoice-console .workspace {
+  position: relative;
+  padding: 22px;
+  gap: 14px;
+}
+
+.shipvoice-console .topbar {
+  min-height: 74px;
+  padding: 0 2px;
+}
+
+.shipvoice-console .eyebrow {
+  color: #5eead4;
+}
+
+.shipvoice-console .topbar h2 {
+  max-width: 980px;
+  color: #f8fafc;
+  font-size: 25px;
+}
+
+.shipvoice-console .status-badge {
+  border: 1px solid #2a3b47;
+  color: #9fb0bf;
+  background: #111c25;
+}
+
+.shipvoice-console .status-badge.is-running {
+  border-color: #5eead4;
+  color: #042f2e;
+  background: #99f6e4;
+}
+
+.shipvoice-console .status-badge.is-blocked {
+  border-color: #fca5a5;
+  color: #fecaca;
+  background: #3f1012;
+}
+
+.ops-overview {
+  min-height: 142px;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.ops-visual,
+.stage-rail,
+.shipvoice-console .metric,
+.shipvoice-console .panel {
+  border: 1px solid #24333e;
+  border-radius: 8px;
+  background: #101820;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.26);
+}
+
+.ops-visual {
+  position: relative;
+  overflow: hidden;
+  min-height: 142px;
+  padding: 16px;
+}
+
+.ship-schematic {
+  position: relative;
+  height: 100%;
+  min-height: 110px;
+  border: 1px solid #28424b;
+  border-radius: 8px;
+  background:
+    repeating-linear-gradient(90deg, rgba(94, 234, 212, 0.08) 0 1px, transparent 1px 18px),
+    #0d151d;
+}
+
+.deck-line,
+.hull-line,
+.risk-beacon,
+.scan-line {
+  position: absolute;
+  display: block;
+}
+
+.deck-line {
+  left: 32px;
+  right: 38px;
+  top: 46px;
+  height: 2px;
+  background: #5eead4;
+}
+
+.hull-line {
+  left: 44px;
+  right: 28px;
+  bottom: 33px;
+  height: 28px;
+  border-bottom: 3px solid #8da2b5;
+  border-left: 3px solid #8da2b5;
+  transform: skewX(-18deg);
+}
+
+.risk-beacon {
+  width: 12px;
+  height: 12px;
+  right: 58px;
+  top: 38px;
+  border-radius: 50%;
+  background: #f97316;
+  box-shadow: 0 0 0 8px rgba(249, 115, 22, 0.14);
+}
+
+.scan-line {
+  left: 22px;
+  top: 18px;
+  bottom: 18px;
+  width: 2px;
+  background: #fbbf24;
+  opacity: 0.75;
+}
+
+.stage-rail {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0;
+  overflow: hidden;
+}
+
+.stage-node {
+  min-height: 142px;
+  padding: 16px 12px;
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  border-right: 1px solid #24333e;
+  color: #7d91a1;
+}
+
+.stage-node:last-child {
+  border-right: 0;
+}
+
+.stage-node span {
+  width: fit-content;
+  min-width: 46px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: #172534;
+  color: #9fb0bf;
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.stage-node strong {
+  color: #d7e2ec;
+  font-size: 14px;
+}
+
+.stage-node.is-active {
+  background: #132b33;
+}
+
+.stage-node.is-active span {
+  color: #052e2b;
+  background: #5eead4;
+}
+
+.stage-node.is-done span {
+  color: #dcfce7;
+  background: #14532d;
+}
+
+.stage-node.is-blocked {
+  background: #351619;
+}
+
+.stage-node.is-blocked span {
+  color: #fee2e2;
+  background: #991b1b;
+}
+
+.shipvoice-console .metrics-grid {
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+}
+
+.shipvoice-console .metric {
+  min-height: 96px;
+  padding: 15px;
+}
+
+.shipvoice-console .metric span {
+  color: #8da2b5;
+}
+
+.shipvoice-console .metric strong {
+  color: #f8fafc;
+  font-size: 27px;
+}
+
+.shipvoice-console .main-grid {
+  grid-template-columns: minmax(330px, 0.9fr) minmax(420px, 1.2fr) minmax(320px, 0.85fr);
+  grid-auto-rows: minmax(220px, auto);
+  align-items: stretch;
+}
+
+.shipvoice-console .panel {
+  color: #e6edf3;
+}
+
+.shipvoice-console .panel-head {
+  border-bottom-color: #24333e;
+}
+
+.shipvoice-console .panel h3 {
+  color: #f8fafc;
+}
+
+.shipvoice-console .panel p,
+.shipvoice-console .panel-head span {
+  color: #8da2b5;
+}
+
+.shipvoice-console .answer-panel {
+  grid-column: 2;
+  grid-row: span 2;
+}
+
+.shipvoice-console .evidence-panel {
+  grid-column: 3;
+  grid-row: span 2;
+}
+
+.shipvoice-console .log-panel {
+  grid-column: 1 / -1;
+}
+
+.shipvoice-console .runtime-panel {
+  grid-column: 1;
+}
+
+.shipvoice-console .timeline-panel {
+  grid-column: 2 / 4;
+}
+
+.shipvoice-console .question-text,
+.shipvoice-console .answer-text {
+  color: #e6edf3;
+}
+
+.shipvoice-console .answer-text {
+  padding: 12px;
+  border: 1px solid #24333e;
+  border-radius: 8px;
+  background: #0d151d;
+}
+
+.shipvoice-console .provider-chip {
+  border: 1px solid #25445a;
+  background: #102336;
+  color: #bae6fd;
+}
+
+.shipvoice-console .term-chip {
+  background: #0f3b2f;
+  color: #bbf7d0;
+}
+
+.shipvoice-console .gate-card,
+.shipvoice-console .evidence-item,
+.shipvoice-console .log-item,
+.shipvoice-console .meta-grid div {
+  border-color: #24333e;
+  background: #0d151d;
+}
+
+.shipvoice-console .gate-card.allowed {
+  border-left-color: #22c55e;
+}
+
+.shipvoice-console .gate-card.blocked {
+  border-left-color: #ef4444;
+  background: #2a1215;
+}
+
+.shipvoice-console .citation-badge {
+  background: #0f766e;
+  color: #ecfeff;
+}
+
+.shipvoice-console .evidence-meta,
+.shipvoice-console .evidence-item p,
+.shipvoice-console .log-item p,
+.shipvoice-console .meta-grid dt,
+.shipvoice-console .summary-detail {
+  color: #8da2b5;
+}
+
+.shipvoice-console .evidence-chip {
+  background: #0f2f47;
+  color: #bae6fd;
+}
+
+.shipvoice-console .evidence-chip.is-match {
+  background: #422006;
+  color: #fde68a;
+}
+
+.shipvoice-console .meta-grid dd {
+  color: #e6edf3;
+}
+
+.shipvoice-console .timeline-track {
+  background: #172534;
+}
+
+.shipvoice-console .timeline-bar {
+  background: #5eead4;
+}
+
+.shipvoice-console .timeline-name,
+.shipvoice-console .timeline-ms {
+  color: #9fb0bf;
+}
+
+.shipvoice-console .error-banner {
+  border-color: #7f1d1d;
+  background: #2a1215;
+  color: #fecaca;
+}
+
+@media (max-width: 1280px) {
+  body.shipvoice-console {
+    grid-template-columns: 320px minmax(0, 1fr);
+  }
+
+  .shipvoice-console .main-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .shipvoice-console .answer-panel,
+  .shipvoice-console .evidence-panel,
+  .shipvoice-console .runtime-panel,
+  .shipvoice-console .timeline-panel,
+  .shipvoice-console .log-panel {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .shipvoice-console .log-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1080px) {
+  body.shipvoice-console {
+    grid-template-columns: 1fr;
+  }
+
+  .shipvoice-console .sidebar {
+    position: relative;
+    min-height: auto;
+  }
+
+  .ops-overview,
+  .shipvoice-console .main-grid,
+  .shipvoice-console .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stage-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stage-node {
+    min-height: 86px;
+    border-right: 0;
+    border-bottom: 1px solid #24333e;
+  }
+}

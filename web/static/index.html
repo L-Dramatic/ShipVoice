@@ -4,16 +4,22 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ShipVoice 船厂安全实时语音问答助手</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=console-20260614" />
   </head>
-  <body>
+  <body class="shipvoice-console">
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark">SV</div>
         <div>
           <h1>ShipVoice</h1>
-          <p>船厂安全语音问答与可审计决策助手</p>
+          <p>Shipyard Safety Voice Command</p>
         </div>
+      </div>
+
+      <div class="mission-brief">
+        <span class="mission-kicker">Live Ops</span>
+        <strong>高风险作业语音问答控制台</strong>
+        <p>语音输入、风险门控、证据引用、语音播报和审计记录在同一条链路内闭环。</p>
       </div>
 
       <section class="control-group">
@@ -61,6 +67,25 @@
         </div>
         <div id="statusBadge" class="status-badge">待机</div>
       </header>
+
+      <section class="ops-overview" aria-label="系统链路总览">
+        <div class="ops-visual" aria-hidden="true">
+          <div class="ship-schematic">
+            <span class="deck-line"></span>
+            <span class="hull-line"></span>
+            <span class="risk-beacon"></span>
+            <span class="scan-line"></span>
+          </div>
+        </div>
+        <div class="stage-rail" aria-label="实时链路状态">
+          <div class="stage-node" data-stage-node="input"><span>Input</span><strong>输入接入</strong></div>
+          <div class="stage-node" data-stage-node="asr"><span>ASR</span><strong>语音转写</strong></div>
+          <div class="stage-node" data-stage-node="gate"><span>Gate</span><strong>安全门控</strong></div>
+          <div class="stage-node" data-stage-node="retrieval"><span>RAG</span><strong>证据检索</strong></div>
+          <div class="stage-node" data-stage-node="llm"><span>LLM</span><strong>答案生成</strong></div>
+          <div class="stage-node" data-stage-node="tts"><span>TTS</span><strong>语音输出</strong></div>
+        </div>
+      </section>
 
       <section class="metrics-grid" aria-label="核心指标">
         <article class="metric">
@@ -123,8 +148,8 @@
         <article class="panel evidence-panel">
           <div class="panel-head">
             <div>
-              <h3>RAG 证据</h3>
-              <p>展示检索命中的船厂安全知识条目。</p>
+              <h3>RAG 证据引用</h3>
+              <p>展示知识 ID、风险等级、置信度、来源和匹配词。</p>
             </div>
             <span id="ragState">未检索</span>
           </div>
@@ -192,6 +217,6 @@
       </section>
     </main>
 
-    <script src="./app.js"></script>
+    <script src="./app.js?v=console-20260614"></script>
   </body>
 </html>

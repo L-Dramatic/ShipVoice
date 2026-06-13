@@ -165,6 +165,7 @@ function renderScenario(scenario) {
   $("ragState").textContent = "未检索";
   $("gateState").textContent = "未运行";
   $("timelineState").textContent = "待运行";
+  resetStageRail();
 }
 
 function resetMetrics() {
@@ -178,6 +179,7 @@ function resetMetrics() {
   $("providerSummary").innerHTML = "";
   $("ttsPlayer").hidden = true;
   $("ttsPlayer").removeAttribute("src");
+  resetStageRail();
 }
 
 async function loadHealth() {
@@ -221,6 +223,8 @@ async function runDemo() {
   $("statusBadge").className = "status-badge is-running";
   $("asrState").textContent = "处理中";
   $("timelineState").textContent = "实时流式链路中";
+  setStageState("input", "done");
+  setStageState("asr", "active");
   $("runButton").disabled = true;
 
   try {
@@ -361,11 +365,13 @@ function renderLiveEvent(event) {
   if (stage === "asr") {
     $("asrState").textContent = "转写已完成";
     $("questionText").textContent = payload.transcript || $("questionText").textContent;
+    setStageState("asr", "done");
   }
   if (stage === "term" && Array.isArray(payload.term_hits)) {
     $("termHits").innerHTML = payload.term_hits.map((term) => `<span class="term-chip">${escapeHtml(term)}</span>`).join("");
   }
   if (stage === "gate") {
+    setStageState("gate", payload.allowed === false ? "blocked" : "done");
     $("gateState").textContent = payload.allowed === false ? "已拦截" : "已通过";
     renderGate({
       label: payload.label || "unknown",
@@ -375,15 +381,18 @@ function renderLiveEvent(event) {
     $("gateMetric").textContent = payload.allowed === false ? "拦截" : "通过";
   }
   if (stage === "retrieval") {
+    setStageState("retrieval", "done");
     $("ragState").textContent = Array.isArray(payload.hits) && payload.hits.length ? "检索完成" : "已跳过";
     if (Array.isArray(payload.hits)) {
       $("evidenceMetric").textContent = String(payload.hits.length);
     }
   }
   if (stage === "llm") {
+    setStageState("llm", "done");
     $("answerState").textContent = "生成中";
   }
   if (stage === "tts") {
+    setStageState("tts", "done");
     $("firstAudioMetric").textContent = `${payload.first_audio_ms ?? "--"} ms`;
     $("answerState").textContent = "语音输出中";
   }
@@ -425,6 +434,7 @@ function renderResult(result) {
   renderTimeline(result.events || []);
   renderProviderSummary(providers);
   renderAudioOutput(audioOutput);
+  finalizeStageRail(blocked, evidence.length);
 }
 
 function renderRuntimeMeta(result) {
@@ -577,6 +587,36 @@ function renderAudioOutput(audioOutput) {
   const mimeType = audioOutput.mime_type || "audio/wav";
   player.src = `data:${mimeType};base64,${audioBase64}`;
   player.hidden = false;
+}
+
+function resetStageRail() {
+  document.querySelectorAll("[data-stage-node]").forEach((node) => {
+    node.classList.remove("is-active", "is-done", "is-blocked");
+  });
+}
+
+function setStageState(stage, state) {
+  const node = document.querySelector(`[data-stage-node="${stage}"]`);
+  if (!node) {
+    return;
+  }
+  node.classList.remove("is-active", "is-done", "is-blocked");
+  if (state === "active") {
+    node.classList.add("is-active");
+  } else if (state === "done") {
+    node.classList.add("is-done");
+  } else if (state === "blocked") {
+    node.classList.add("is-blocked");
+  }
+}
+
+function finalizeStageRail(blocked, evidenceCount) {
+  setStageState("input", "done");
+  setStageState("asr", "done");
+  setStageState("gate", blocked ? "blocked" : "done");
+  setStageState("retrieval", blocked || !evidenceCount ? "blocked" : "done");
+  setStageState("llm", blocked ? "blocked" : "done");
+  setStageState("tts", blocked ? "blocked" : "done");
 }
 
 function initializeRecorderControls() {
