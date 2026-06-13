@@ -27,6 +27,12 @@ class RetrievalHit:
     title: str
     text: str
     score: int
+    record_id: str = ""
+    source: str = ""
+    tags: list[str] = field(default_factory=list)
+    risk_level: str = "medium"
+    matched_terms: list[str] = field(default_factory=list)
+    confidence: float = 0.0
 
 
 @dataclass

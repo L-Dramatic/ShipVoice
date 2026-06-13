@@ -15,6 +15,34 @@ from typing import Any
 from .config import PipelineConfig, project_path
 from .models import ASRResult, GateResult, RetrievalHit, TTSResult
 
+SIGNIFICANT_MATCH_TERMS = [
+    "有限空间",
+    "密闭舱室",
+    "气体检测",
+    "测氧测爆",
+    "通风",
+    "监护",
+    "动火",
+    "焊接",
+    "吊装",
+    "吊索具",
+    "警戒区",
+    "试压",
+    "泄漏",
+    "压力",
+    "高处",
+    "脚手架",
+    "气瓶",
+    "触电",
+    "消防",
+    "审批",
+    "隔离",
+    "救援",
+    "叉车",
+    "PPE",
+    "提示注入",
+]
+
 
 def _extract_json_path(data: Any, path: str, default: Any = "") -> Any:
     current = data
@@ -24,6 +52,18 @@ def _extract_json_path(data: Any, path: str, default: Any = "") -> Any:
             continue
         return default
     return current
+
+
+def citation_matched_terms(query: str, title: str, text: str, tags: list[str]) -> list[str]:
+    haystack = " ".join([title, text, " ".join(tags)]).lower()
+    query_text = query.lower()
+    candidates = [*tags, *SIGNIFICANT_MATCH_TERMS]
+    matched = []
+    for term in candidates:
+        normalized = str(term).strip()
+        if normalized and normalized.lower() in query_text and normalized.lower() in haystack:
+            matched.append(normalized)
+    return sorted(set(matched), key=lambda item: (-len(item), item))[:8]
 
 
 class TranscriptASRProvider:
@@ -181,28 +221,51 @@ class SimpleRetriever:
         self.latency_ms = latency_ms
         self.sections = self._load_sections()
 
-    def _load_sections(self) -> list[tuple[str, str]]:
+    def _load_sections(self) -> list[dict[str, Any]]:
         raw = self.knowledge_path.read_text(encoding="utf-8")
-        sections: list[tuple[str, str]] = []
+        sections: list[dict[str, Any]] = []
         current_title = "知识库"
         current_lines: list[str] = []
+        current_index = 1
         for line in raw.splitlines():
             if line.startswith("## "):
                 if current_lines:
-                    sections.append((current_title, "\n".join(current_lines).strip()))
+                    sections.append(
+                        {
+                            "id": f"MD{current_index:03d}",
+                            "title": current_title,
+                            "text": "\n".join(current_lines).strip(),
+                            "tags": [],
+                            "source": str(self.knowledge_path.name),
+                            "risk_level": infer_risk_level(current_title, "\n".join(current_lines), []),
+                        }
+                    )
+                    current_index += 1
                 current_title = line.removeprefix("## ").strip()
                 current_lines = []
             elif not line.startswith("# "):
                 current_lines.append(line)
         if current_lines:
-            sections.append((current_title, "\n".join(current_lines).strip()))
-        return [(title, text) for title, text in sections if text]
+            sections.append(
+                {
+                    "id": f"MD{current_index:03d}",
+                    "title": current_title,
+                    "text": "\n".join(current_lines).strip(),
+                    "tags": [],
+                    "source": str(self.knowledge_path.name),
+                    "risk_level": infer_risk_level(current_title, "\n".join(current_lines), []),
+                }
+            )
+        return [section for section in sections if section["text"]]
 
     async def retrieve(self, query: str, top_k: int = 2) -> list[RetrievalHit]:
         await asyncio.sleep(self.latency_ms / 1000)
         query_tokens = set(re.findall(r"[\u4e00-\u9fff]{2,}|[A-Za-z0-9]+", query))
-        hits: list[RetrievalHit] = []
-        for title, text in self.sections:
+        scored: list[tuple[dict[str, Any], int, list[str]]] = []
+        for section in self.sections:
+            title = str(section["title"])
+            text = str(section["text"])
+            tags = list(section.get("tags", []))
             score = 0
             for token in query_tokens:
                 if token in title:
@@ -212,9 +275,25 @@ class SimpleRetriever:
             for char in set(query):
                 if "\u4e00" <= char <= "\u9fff" and char in text:
                     score += 1
-            hits.append(RetrievalHit(title=title, text=text, score=score))
-        hits.sort(key=lambda item: item.score, reverse=True)
-        return hits[:top_k]
+            scored.append((section, score, citation_matched_terms(query, title, text, tags)))
+        scored.sort(key=lambda item: item[1], reverse=True)
+        top_score = max([score for _section, score, _terms in scored[:top_k]] or [0])
+        hits: list[RetrievalHit] = []
+        for section, score, matched_terms in scored[:top_k]:
+            hits.append(
+                RetrievalHit(
+                    title=str(section["title"]),
+                    text=str(section["text"]),
+                    score=score,
+                    record_id=str(section["id"]),
+                    source=str(section["source"]),
+                    tags=list(section.get("tags", [])),
+                    risk_level=str(section.get("risk_level", "medium")),
+                    matched_terms=matched_terms,
+                    confidence=round(score / top_score, 3) if top_score else 0.0,
+                )
+            )
+        return hits
 
 
 class HybridRetriever:
@@ -261,14 +340,50 @@ class HybridRetriever:
                 scores[doc_id] = scores.get(doc_id, 0.0) + exact_bonus
 
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+        top_score = float(ranked[0][1]) if ranked else 0.0
         hits: list[RetrievalHit] = []
         for doc_id, score in ranked[:top_k]:
             doc = self.documents[doc_id]
-            hits.append(RetrievalHit(title=str(doc["title"]), text=str(doc["text"]), score=int(round(score))))
+            hits.append(
+                RetrievalHit(
+                    title=str(doc["title"]),
+                    text=str(doc["text"]),
+                    score=int(round(score)),
+                    record_id=str(doc.get("id", "")),
+                    source=str(doc.get("source", "ship_safety_corpus.jsonl")),
+                    tags=list(doc.get("tags", [])),
+                    risk_level=str(doc.get("risk_level", infer_risk_level(str(doc["title"]), str(doc["text"]), doc.get("tags", [])))),
+                    matched_terms=citation_matched_terms(query, str(doc["title"]), str(doc["text"]), list(doc.get("tags", []))),
+                    confidence=round(float(score) / top_score, 3) if top_score else 0.0,
+                )
+            )
         if not hits:
             for doc in self.documents[:top_k]:
-                hits.append(RetrievalHit(title=str(doc["title"]), text=str(doc["text"]), score=0))
+                hits.append(
+                    RetrievalHit(
+                        title=str(doc["title"]),
+                        text=str(doc["text"]),
+                        score=0,
+                        record_id=str(doc.get("id", "")),
+                        source=str(doc.get("source", "ship_safety_corpus.jsonl")),
+                        tags=list(doc.get("tags", [])),
+                        risk_level=str(doc.get("risk_level", infer_risk_level(str(doc["title"]), str(doc["text"]), doc.get("tags", [])))),
+                        matched_terms=[],
+                        confidence=0.0,
+                    )
+                )
         return hits
+
+
+def infer_risk_level(title: str, text: str, tags: list[str]) -> str:
+    joined = " ".join([title, text, " ".join(tags)])
+    critical_terms = ["有限空间", "密闭舱室", "动火", "吊装", "触电", "火灾", "中毒", "爆炸", "泄漏"]
+    high_terms = ["试压", "高处", "脚手架", "气瓶", "叉车", "救援", "隔离"]
+    if any(term in joined for term in critical_terms):
+        return "critical"
+    if any(term in joined for term in high_terms):
+        return "high"
+    return "medium"
 
 
 class MockLLMProvider:
@@ -298,8 +413,9 @@ class MockLLMProvider:
             )
         if evidence:
             lead = evidence[0]
+            citation = lead.record_id or lead.title
             return (
-                f"{context_prefix}针对“{question}”，建议优先参考《{lead.title}》。"
+                f"{context_prefix}针对“{question}”，建议优先参考 [{citation}]《{lead.title}》。"
                 f"{lead.text} "
                 "执行时应保留审批记录、检测记录和现场监护记录；如果出现气体指标异常、压力异常或人员站位风险，应立即停止作业并复核。"
             )
@@ -350,7 +466,11 @@ class OpenAICompatibleLLMProvider(MockLLMProvider):
             return self.fallback.build_answer(question, evidence, gate, history=history)
 
         evidence_text = "\n".join(
-            f"[{idx}] {hit.title}: {hit.text}" for idx, hit in enumerate(evidence, start=1)
+            (
+                f"[{hit.record_id or idx}] {hit.title} "
+                f"(source={hit.source or 'unknown'}, risk={hit.risk_level}, confidence={hit.confidence:.2f}): {hit.text}"
+            )
+            for idx, hit in enumerate(evidence, start=1)
         ) or "无可用证据。"
         messages = [
             {

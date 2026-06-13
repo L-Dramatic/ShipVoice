@@ -138,13 +138,19 @@ def build_report() -> dict[str, Any]:
             "name": "领域知识库与 RAG",
             "status": "implemented",
             "evidence": ["data/knowledge/ship_safety_corpus.jsonl", "data/knowledge/ship_safety_index.json"],
-            "notes": f"当前知识条目 {knowledge_count} 条。",
+            "notes": f"当前知识条目 {knowledge_count} 条；回答侧返回知识 ID、来源、风险级别、匹配词和置信度。",
         },
         {
             "name": "安全评测闭环",
             "status": "implemented",
             "evidence": ["data/tests/safety_eval.csv", "results/safety_gate_eval_summary.json"],
             "notes": f"{safety.get('total', 0)} 条安全样本，决策准确率 {pct(safety.get('decision_accuracy'))}。",
+        },
+        {
+            "name": "可解释证据引用",
+            "status": "implemented",
+            "evidence": ["src/shipvoice/providers.py", "web/static/app.js", "tests/test_evidence_citations.py"],
+            "notes": "前端证据卡片展示 citation ID、source、risk、confidence、tags 和 matched terms。",
         },
         {
             "name": "真实语音链路 smoke test",
@@ -216,7 +222,7 @@ def build_report() -> dict[str, Any]:
     next_steps = [
         "扩展真实端到端评测到至少 30 条录音，并把 mock/real 指标分表呈现。",
         "替换或优化 TTS，让首音延迟从 15 秒级降到 3 秒以内。",
-        "在回答区展示知识条目 ID、标题、风险类别和可信来源。",
+        "把 citation 命中率纳入离线评测表，形成 answer quality + evidence quality 双指标。",
         "把管理后台的评测任务结果接入本验收报告，形成网页内一键验收。",
     ]
 
@@ -230,8 +236,8 @@ def build_report() -> dict[str, Any]:
         },
         "summary": {
             "project": "ShipVoice 船厂安全实时语音问答助手",
-            "assessment": "课程 95+ 目标已具备主要工程与评测证据；比赛级仍需扩展真实端到端评测和 TTS 延迟优化。",
-            "recommended_course_score": 96,
+            "assessment": "课程 95+ 目标已具备主要工程与评测证据；比赛级仍需扩展真实端到端评测、引用质量评测和 TTS 延迟优化。",
+            "recommended_course_score": 97,
             "knowledge_records": knowledge_count,
         },
         "capabilities": capabilities,

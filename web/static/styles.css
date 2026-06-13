@@ -548,6 +548,58 @@ textarea:focus {
   margin-bottom: 6px;
 }
 
+.evidence-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.evidence-head strong {
+  margin-bottom: 0;
+}
+
+.citation-badge {
+  flex: 0 0 auto;
+  min-width: 48px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: #0f766e;
+  color: #ecfeff;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.evidence-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 8px 0;
+  color: #475569;
+  font-size: 12px;
+}
+
+.evidence-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.evidence-chip {
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.evidence-chip.is-match {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 .evidence-item p,
 .log-item p {
   margin: 0;

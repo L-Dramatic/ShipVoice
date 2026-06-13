@@ -469,11 +469,34 @@ function renderEvidence(evidence) {
     return;
   }
   $("evidenceList").innerHTML = evidence
-    .map(
-      (item, index) =>
-        `<div class="evidence-item"><strong>${index + 1}. ${escapeHtml(item.title)}</strong><p>${escapeHtml(item.text)}</p></div>`
-    )
+    .map((item, index) => renderEvidenceItem(item, index))
     .join("");
+}
+
+function renderEvidenceItem(item, index) {
+  const citationId = item.record_id || `E${index + 1}`;
+  const confidence = Number.isFinite(Number(item.confidence)) ? `${Math.round(Number(item.confidence) * 100)}%` : "--";
+  const riskLevel = item.risk_level || "medium";
+  const tags = Array.isArray(item.tags) ? item.tags : [];
+  const matchedTerms = Array.isArray(item.matched_terms) ? item.matched_terms : [];
+  const tagHtml = tags.map((tag) => `<span class="evidence-chip">${escapeHtml(tag)}</span>`).join("");
+  const termHtml = matchedTerms.map((term) => `<span class="evidence-chip is-match">${escapeHtml(term)}</span>`).join("");
+  return `
+    <div class="evidence-item">
+      <div class="evidence-head">
+        <span class="citation-badge">${escapeHtml(citationId)}</span>
+        <strong>${escapeHtml(item.title || "未命名知识条目")}</strong>
+      </div>
+      <div class="evidence-meta">
+        <span>风险：${escapeHtml(riskLevel)}</span>
+        <span>置信度：${confidence}</span>
+        <span>得分：${escapeHtml(String(item.score ?? "--"))}</span>
+        <span>来源：${escapeHtml(item.source || "local knowledge base")}</span>
+      </div>
+      ${tagHtml ? `<div class="evidence-chips">${tagHtml}</div>` : ""}
+      ${termHtml ? `<div class="evidence-chips evidence-matches">${termHtml}</div>` : ""}
+      <p>${escapeHtml(item.text || "")}</p>
+    </div>`;
 }
 
 function renderTimeline(events) {

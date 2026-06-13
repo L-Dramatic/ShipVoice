@@ -104,7 +104,17 @@ class VoiceQAPipeline:
                 "retrieval",
                 "RAG retrieval completed",
                 latency_ms=retrieval_ms,
-                hits=[{"title": hit.title, "score": hit.score} for hit in evidence],
+                hits=[
+                    {
+                        "record_id": hit.record_id,
+                        "title": hit.title,
+                        "score": hit.score,
+                        "confidence": hit.confidence,
+                        "risk_level": hit.risk_level,
+                        "matched_terms": hit.matched_terms,
+                    }
+                    for hit in evidence
+                ],
             )
         elif not gate_result.allowed:
             await emit("retrieval", "Request blocked, retrieval skipped")

@@ -4,14 +4,14 @@
 
 ## 总体判断
 
-建议当前课程评分目标：96 / 100。
+建议当前课程评分目标：97 / 100。
 
 这个分数的依据不是页面观感，而是以下能力已经落地：
 
 - 前端：用户语音/文本问答页面、浏览器直接录音、音频上传、管理后台页面。
 - 后端：FastAPI 服务、主问答 API、Admin API、认证、配置热更新、评测任务、运行复盘。
 - 模型链路：支持 mock provider 和真实 ASR / LLM / TTS provider 切换。
-- 领域能力：船厂安全知识库、RAG 检索、安全门控、术语后处理、多轮上下文。
+- 领域能力：船厂安全知识库、RAG 检索、证据引用、安全门控、术语后处理、多轮上下文。
 - 实验证据：ASR 清单评测、安全门控评测、多轮评测、真实语音链路 smoke test。
 - 工程证据：Docker、运行手册、AutoDL 脚本、远程服务脚本、单元测试、审计日志和 SQLite 管理数据。
 
@@ -22,7 +22,7 @@
 | 选题价值与场景真实性 | 10 / 10 | `data/knowledge/ship_safety_corpus.jsonl`, `configs/pipeline.json` | 场景聚焦船厂安全作业，不是泛泛聊天机器人。知识、风险类别、术语、拒答策略都有领域约束。 |
 | 级联式语音问答主链路 | 18 / 20 | `src/shipvoice/pipeline.py`, `src/shipvoice/providers.py`, `web/static/index.html` | 已有 ASR -> 后处理 -> 安全门控 -> RAG -> LLM -> TTS 的完整链路，并支持真实 provider。扣分点是当前真实端到端样本数仍偏少。 |
 | 安全增强与信息安全相关性 | 15 / 15 | `results/safety_gate_eval_summary.json`, `data/tests/safety_eval.csv` | 55 条安全评测中门控决策准确率 1.0，覆盖 off-domain、unsafe、prompt injection、boundary 等类别。 |
-| 领域知识与 RAG | 13 / 15 | `data/knowledge/`, `scripts/evaluate_retrieval.py`, `results/multiturn_eval_summary.json` | 有领域知识库、索引构建、检索评测和后台知识治理。后续可加 citation 级别证据定位和更多真实规程来源。 |
+| 领域知识与 RAG | 14 / 15 | `data/knowledge/`, `scripts/evaluate_retrieval.py`, `results/multiturn_eval_summary.json`, `tests/test_evidence_citations.py` | 有领域知识库、索引构建、检索评测、证据引用和后台知识治理。后续可加更多真实规程来源与引用质量评测。 |
 | 多轮问答与上下文能力 | 9 / 10 | `data/tests/multiturn_eval.jsonl`, `results/multiturn_eval_summary.json` | 6 组对话、18 轮评测，followup grounding accuracy 为 1.0。后续可扩到更多复杂任务流。 |
 | 真实语音数据与评测闭环 | 12 / 15 | `data/audio/audio_manifest.csv`, `results/asr_eval_summary.json`, `results/remote_real_chain_20260612_chattts_48359/summary.json` | 50 条录音清单评测完整，真实远程链路已有 3 条样本 smoke test。高分足够，但比赛级还要扩大真实 ASR 批量评测。 |
 | 工程化程度 | 14 / 15 | `src/shipvoice/fastapi_app.py`, `src/shipvoice/sqlite_store.py`, `Dockerfile`, `docker-compose.app.yml`, `tests/test_admin_api.py` | 已经有前后端、认证、后台、任务、SQLite、Docker、测试。扣分点是还未拆成独立生产服务和 PostgreSQL。 |
@@ -148,7 +148,7 @@ results/safety_gate_eval_summary.json
 
 ## 答辩时推荐说法
 
-我们做的不是一个单纯的网页，而是一套面向船厂安全作业的语音问答系统。用户侧可以进行文本问答、音频上传和浏览器直接录音，系统内部经过 ASR、术语后处理、安全门控、RAG 检索、LLM 回答和 TTS 合成。管理侧可以维护知识库、查看 provider 健康状态、运行评测任务、复盘每次问答记录。我们同时保留 mock 模式保证现场演示稳定，也支持真实 ASR / LLM / TTS provider 接入，并已经在远程 GPU 环境跑通过真实语音链路。
+我们做的不是一个单纯的网页，而是一套面向船厂安全作业的语音问答系统。用户侧可以进行文本问答、音频上传和浏览器直接录音，系统内部经过 ASR、术语后处理、安全门控、RAG 检索、LLM 回答和 TTS 合成。每条回答都会展示知识条目 ID、来源、风险级别、匹配词和置信度，便于解释答案依据。管理侧可以维护知识库、查看 provider 健康状态、运行评测任务、复盘每次问答记录。我们同时保留 mock 模式保证现场演示稳定，也支持真实 ASR / LLM / TTS provider 接入，并已经在远程 GPU 环境跑通过真实语音链路。
 
 ## 当前仍应如实说明的边界
 
