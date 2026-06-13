@@ -1,18 +1,26 @@
 from __future__ import annotations
 
 import base64
+import csv
+import hashlib
+import hmac
+import io
 import json
 import os
+import subprocess
+import sys
+import threading
+import time
 import urllib.error
 import urllib.request
 import uuid
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
-from fastapi.requests import Request
 from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -24,6 +32,8 @@ from .sqlite_store import SQLiteAppStore, utc_now_iso
 
 WEB_ROOT = project_path("web", "static")
 CONFIG_PATH = project_path("configs", "pipeline.json")
+DEFAULT_ADMIN_PASSWORD = "shipvoice-admin"
+DEFAULT_ADMIN_SESSION_TTL_SECONDS = 8 * 60 * 60
 
 
 class RunRequest(BaseModel):
@@ -50,6 +60,16 @@ class RunCleanupPayload(BaseModel):
     query: str = ""
     delete_smoke: bool = True
     delete_mojibake: bool = True
+
+
+class AdminLoginPayload(BaseModel):
+    password: str
+
+
+class EvaluationRunPayload(BaseModel):
+    targets: list[str] = Field(default_factory=lambda: ["safety_gate", "asr", "multiturn", "dashboard"])
+    reload_after: bool = True
+    async_mode: bool = False
 
 
 def result_to_payload(run_id: str, session_id: str, created_at: str, result) -> dict[str, Any]:
@@ -185,6 +205,89 @@ def provider_health_snapshot(pipeline: VoiceQAPipeline) -> dict[str, Any]:
     }
 
 
+def admin_password() -> str:
+    return os.environ.get("SHIPVOICE_ADMIN_PASSWORD", "").strip() or DEFAULT_ADMIN_PASSWORD
+
+
+def admin_auth_mode() -> str:
+    return "configured_password" if os.environ.get("SHIPVOICE_ADMIN_PASSWORD", "").strip() else "demo_default"
+
+
+def admin_session_ttl_seconds() -> int:
+    raw_value = os.environ.get("SHIPVOICE_ADMIN_TOKEN_TTL_SECONDS", "").strip()
+    if raw_value.isdigit():
+        return max(300, int(raw_value))
+    return DEFAULT_ADMIN_SESSION_TTL_SECONDS
+
+
+def admin_session_secret() -> str:
+    configured = os.environ.get("SHIPVOICE_ADMIN_SESSION_SECRET", "").strip()
+    if configured:
+        return configured
+    return f"shipvoice-admin-secret:{CONFIG_PATH}:{WEB_ROOT}"
+
+
+def _b64url_encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _b64url_decode(text: str) -> bytes:
+    padding = "=" * (-len(text) % 4)
+    return base64.urlsafe_b64decode(text + padding)
+
+
+def issue_admin_token() -> dict[str, Any]:
+    issued_at = int(time.time())
+    payload = {
+        "sub": "shipvoice-admin",
+        "mode": admin_auth_mode(),
+        "iat": issued_at,
+        "exp": issued_at + admin_session_ttl_seconds(),
+    }
+    payload_blob = _b64url_encode(json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+    signature = hmac.new(
+        admin_session_secret().encode("utf-8"),
+        payload_blob.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    payload["token"] = f"{payload_blob}.{signature}"
+    return payload
+
+
+def verify_admin_token(token: str) -> dict[str, Any]:
+    if "." not in token:
+        raise HTTPException(status_code=401, detail={"error": "invalid admin token"})
+    payload_blob, signature = token.split(".", 1)
+    expected = hmac.new(
+        admin_session_secret().encode("utf-8"),
+        payload_blob.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        raise HTTPException(status_code=401, detail={"error": "invalid admin token signature"})
+    try:
+        payload = json.loads(_b64url_decode(payload_blob).decode("utf-8"))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=401, detail={"error": "invalid admin token payload"}) from exc
+    if int(payload.get("exp", 0)) <= int(time.time()):
+        raise HTTPException(status_code=401, detail={"error": "admin token expired"})
+    return payload
+
+
+def extract_admin_token(request: Request) -> str:
+    auth_header = request.headers.get("Authorization", "").strip()
+    if auth_header.lower().startswith("bearer "):
+        return auth_header[7:].strip()
+    return request.headers.get("X-Admin-Token", "").strip()
+
+
+def require_admin(request: Request) -> dict[str, Any]:
+    token = extract_admin_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail={"error": "admin authentication required"})
+    return verify_admin_token(token)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="ShipVoice API", version="0.2.0")
     runtime: dict[str, VoiceQAPipeline] = {"pipeline": VoiceQAPipeline()}
@@ -197,6 +300,134 @@ def create_app() -> FastAPI:
         load_config(CONFIG_PATH)
         runtime["pipeline"] = VoiceQAPipeline()
         return runtime["pipeline"]
+
+    def run_evaluation_scripts(
+        targets: list[str],
+        *,
+        progress_callback: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        project_root = project_path()
+        script_specs = {
+            "safety_gate": project_path("scripts", "evaluate_safety_gate.py"),
+            "asr": project_path("scripts", "evaluate_asr_transcripts.py"),
+            "multiturn": project_path("scripts", "evaluate_multiturn.py"),
+            "dashboard": project_path("scripts", "build_evaluation_dashboard.py"),
+        }
+        unknown = [target for target in targets if target not in script_specs]
+        if unknown:
+            raise HTTPException(status_code=400, detail={"error": f"unknown evaluation targets: {', '.join(unknown)}"})
+
+        reports: list[dict[str, Any]] = []
+        total_targets = len(targets)
+        for index, target in enumerate(targets, start=1):
+            script_path = script_specs[target]
+            started = time.perf_counter()
+            try:
+                completed = subprocess.run(
+                    [sys.executable, str(script_path)],
+                    cwd=str(project_root),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=1800,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise HTTPException(
+                    status_code=504,
+                    detail={"error": f"evaluation target timed out: {target}", "target": target},
+                ) from exc
+            reports.append(
+                {
+                    "target": target,
+                    "script": str(script_path),
+                    "returncode": int(completed.returncode),
+                    "duration_ms": int((time.perf_counter() - started) * 1000),
+                    "stdout_tail": completed.stdout[-4000:],
+                    "stderr_tail": completed.stderr[-4000:],
+                    "ok": completed.returncode == 0,
+                }
+            )
+            if progress_callback is not None:
+                progress_callback(index, total_targets, reports[-1])
+            if completed.returncode != 0:
+                raise HTTPException(
+                    status_code=500,
+                    detail={
+                        "error": f"evaluation target failed: {target}",
+                        "target": target,
+                        "stdout_tail": completed.stdout[-4000:],
+                        "stderr_tail": completed.stderr[-4000:],
+                    },
+                )
+        return reports
+
+    def launch_evaluation_job(payload: EvaluationRunPayload, admin: dict[str, Any]) -> dict[str, Any]:
+        targets = list(dict.fromkeys([item.strip() for item in payload.targets if item.strip()]))
+        if not targets:
+            raise HTTPException(status_code=400, detail={"error": "no evaluation targets specified"})
+
+        job_id = f"eval-{uuid.uuid4().hex[:12]}"
+        store.create_admin_job(
+            job_id=job_id,
+            job_type="evaluation",
+            label="离线批量评测",
+            payload={
+                "targets": targets,
+                "reload_after": bool(payload.reload_after),
+                "requested_by": admin.get("subject", "shipvoice-admin"),
+            },
+        )
+
+        def worker() -> None:
+            store.update_admin_job(job_id, status="running", progress=5, started_at=utc_now_iso(), error="")
+            partial_reports: list[dict[str, Any]] = []
+            try:
+                def on_progress(index: int, total: int, report: dict[str, Any]) -> None:
+                    partial_reports.append(report)
+                    store.update_admin_job(
+                        job_id,
+                        progress=max(10, min(95, int(index / max(total, 1) * 90))),
+                        result={"targets": targets, "reports": list(partial_reports)},
+                    )
+
+                reports = run_evaluation_scripts(targets, progress_callback=on_progress)
+                reload_payload = store.reload_evaluations() if payload.reload_after else None
+                store.update_admin_job(
+                    job_id,
+                    status="completed",
+                    progress=100,
+                    completed_at=utc_now_iso(),
+                    result={
+                        "targets": targets,
+                        "reports": reports,
+                        "reload": reload_payload,
+                        "updated_at": utc_now_iso(),
+                    },
+                    error="",
+                )
+            except Exception as exc:
+                detail = exc.detail if isinstance(exc, HTTPException) else {"error": str(exc)}
+                message = detail.get("error", str(exc)) if isinstance(detail, dict) else str(detail)
+                store.update_admin_job(
+                    job_id,
+                    status="failed",
+                    progress=100,
+                    completed_at=utc_now_iso(),
+                    result={
+                        "targets": targets,
+                        "reports": list(partial_reports),
+                        "failure": detail if isinstance(detail, dict) else {"error": message},
+                    },
+                    error=message,
+                )
+
+        threading.Thread(target=worker, name=f"shipvoice-eval-{job_id}", daemon=True).start()
+        job = store.get_admin_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=500, detail={"error": "failed to create evaluation job"})
+        return job
 
     @app.exception_handler(HTTPException)
     async def custom_http_exception_handler(request: Request, exc: HTTPException):  # type: ignore[override]
@@ -329,8 +560,43 @@ def create_app() -> FastAPI:
                 },
             ) from exc
 
+    @app.get("/api/admin/auth/status")
+    def admin_auth_status() -> dict[str, Any]:
+        return {
+            "ok": True,
+            "auth": {
+                "mode": admin_auth_mode(),
+                "token_ttl_seconds": admin_session_ttl_seconds(),
+            },
+        }
+
+    @app.post("/api/admin/auth/login")
+    def admin_auth_login(payload: AdminLoginPayload) -> dict[str, Any]:
+        if payload.password != admin_password():
+            raise HTTPException(status_code=401, detail={"error": "invalid admin password"})
+        session = issue_admin_token()
+        return {
+            "ok": True,
+            "token": session["token"],
+            "expires_at": session["exp"],
+            "issued_at": session["iat"],
+            "mode": session["mode"],
+        }
+
+    @app.get("/api/admin/auth/session")
+    def admin_auth_session(admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "session": {
+                "subject": admin.get("sub", ""),
+                "mode": admin.get("mode", ""),
+                "issued_at": admin.get("iat", 0),
+                "expires_at": admin.get("exp", 0),
+            },
+        }
+
     @app.get("/api/admin/overview")
-    def admin_overview() -> dict[str, Any]:
+    def admin_overview(admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         evaluation = store.evaluation_overview()
         config_payload = read_config()
         pipeline = current_pipeline()
@@ -341,6 +607,7 @@ def create_app() -> FastAPI:
             "providers": health()["providers"],
             "provider_health": provider_health_snapshot(pipeline),
             "evaluation": evaluation,
+            "jobs": store.admin_job_summary(job_type="evaluation"),
             "config": {
                 "project_name": config_payload["config"].get("project_name", ""),
                 "llm_provider": config_payload["config"].get("llm", {}).get("provider", ""),
@@ -350,22 +617,105 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/admin/provider-health")
-    def admin_provider_health() -> dict[str, Any]:
+    def admin_provider_health(admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         return {
             "ok": True,
             "providers": provider_health_snapshot(current_pipeline()),
         }
 
+    @app.get("/api/admin/jobs")
+    def admin_jobs(
+        job_type: str = "",
+        limit: int = 20,
+        admin: dict[str, Any] = Depends(require_admin),
+    ) -> dict[str, Any]:
+        jobs = store.list_admin_jobs(job_type=job_type, limit=limit)
+        return {
+            "ok": True,
+            "jobs": jobs,
+            "summary": store.admin_job_summary(job_type=job_type),
+        }
+
+    @app.get("/api/admin/jobs/{job_id}")
+    def admin_job_detail(job_id: str, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
+        job = store.get_admin_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail={"error": f"admin job not found: {job_id}"})
+        return {"ok": True, "job": job}
+
     @app.get("/api/admin/runs")
-    def admin_runs(query: str = "", status: str = "", gate_label: str = "", limit: int = 50) -> dict[str, Any]:
+    def admin_runs(
+        query: str = "",
+        status: str = "",
+        gate_label: str = "",
+        limit: int = 50,
+        admin: dict[str, Any] = Depends(require_admin),
+    ) -> dict[str, Any]:
         return {
             "ok": True,
             "stats": store.audit_stats(),
             "runs": store.search_runs(query=query, status=status, gate_label=gate_label, limit=limit),
         }
 
+    @app.get("/api/admin/runs/export")
+    def admin_runs_export(
+        format: str = "jsonl",
+        query: str = "",
+        status: str = "",
+        gate_label: str = "",
+        limit: int = 500,
+        admin: dict[str, Any] = Depends(require_admin),
+    ) -> Response:
+        runs = store.search_runs(query=query, status=status, gate_label=gate_label, limit=limit)
+        timestamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+        export_format = format.strip().lower()
+        if export_format == "csv":
+            buffer = io.StringIO()
+            fieldnames = [
+                "run_id",
+                "session_id",
+                "status",
+                "created_at",
+                "mode",
+                "question",
+                "transcript",
+                "gate_label",
+                "gate_allowed",
+                "answer_preview",
+                "providers",
+                "metrics",
+                "error",
+                "evidence_titles",
+                "audio_name",
+            ]
+            writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+            writer.writeheader()
+            for item in runs:
+                writer.writerow(
+                    {
+                        **item,
+                        "providers": json.dumps(item.get("providers", {}), ensure_ascii=False),
+                        "metrics": json.dumps(item.get("metrics", {}), ensure_ascii=False),
+                        "evidence_titles": json.dumps(item.get("evidence_titles", []), ensure_ascii=False),
+                    }
+                )
+            content = buffer.getvalue().encode("utf-8-sig")
+            filename = f"shipvoice-runs-{timestamp}.csv"
+            media_type = "text/csv"
+        elif export_format == "jsonl":
+            content = ("\n".join(json.dumps(item, ensure_ascii=False) for item in runs) + ("\n" if runs else "")).encode("utf-8")
+            filename = f"shipvoice-runs-{timestamp}.jsonl"
+            media_type = "application/x-ndjson"
+        else:
+            raise HTTPException(status_code=400, detail={"error": f"unsupported export format: {format}"})
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     @app.post("/api/admin/runs/cleanup")
-    def admin_runs_cleanup(payload: RunCleanupPayload) -> dict[str, Any]:
+    def admin_runs_cleanup(payload: RunCleanupPayload, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         result = store.cleanup_runs(
             query=payload.query,
             delete_smoke=payload.delete_smoke,
@@ -378,7 +728,12 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/admin/knowledge")
-    def admin_knowledge(query: str = "", tag: str = "", limit: int = 100) -> dict[str, Any]:
+    def admin_knowledge(
+        query: str = "",
+        tag: str = "",
+        limit: int = 100,
+        admin: dict[str, Any] = Depends(require_admin),
+    ) -> dict[str, Any]:
         return {
             "ok": True,
             "summary": store.knowledge_summary(),
@@ -386,55 +741,92 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/admin/knowledge/{record_id}")
-    def admin_knowledge_detail(record_id: str) -> dict[str, Any]:
+    def admin_knowledge_detail(record_id: str, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         record = store.get_knowledge(record_id)
         if record is None:
             raise HTTPException(status_code=404, detail={"error": f"knowledge record not found: {record_id}"})
         return {"ok": True, "record": record}
 
     @app.post("/api/admin/knowledge")
-    def admin_knowledge_create(payload: KnowledgePayload) -> dict[str, Any]:
+    def admin_knowledge_create(payload: KnowledgePayload, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         return store.upsert_knowledge(_payload_to_dict(payload))
 
     @app.put("/api/admin/knowledge/{record_id}")
-    def admin_knowledge_update(record_id: str, payload: KnowledgePayload) -> dict[str, Any]:
+    def admin_knowledge_update(
+        record_id: str,
+        payload: KnowledgePayload,
+        admin: dict[str, Any] = Depends(require_admin),
+    ) -> dict[str, Any]:
         return store.upsert_knowledge(_payload_to_dict(payload), record_id=record_id)
 
     @app.delete("/api/admin/knowledge/{record_id}")
-    def admin_knowledge_delete(record_id: str) -> dict[str, Any]:
+    def admin_knowledge_delete(record_id: str, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         try:
             return store.delete_knowledge(record_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"error": f"knowledge record not found: {record_id}"}) from exc
 
     @app.post("/api/admin/reindex")
-    def admin_reindex() -> dict[str, Any]:
+    def admin_reindex(admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         return {"ok": True, "index": store.sync_knowledge_files()}
 
     @app.get("/api/admin/evaluations")
-    def admin_evaluations() -> dict[str, Any]:
+    def admin_evaluations(admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         return {
             "ok": True,
             "datasets": store.list_evaluation_datasets(),
         }
 
     @app.get("/api/admin/evaluations/{dataset_name}")
-    def admin_evaluation_dataset(dataset_name: str, query: str = "", limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    def admin_evaluation_dataset(
+        dataset_name: str,
+        query: str = "",
+        limit: int = 50,
+        offset: int = 0,
+        admin: dict[str, Any] = Depends(require_admin),
+    ) -> dict[str, Any]:
         dataset = store.get_evaluation_dataset(dataset_name, query=query, limit=limit, offset=offset)
         if dataset is None:
             raise HTTPException(status_code=404, detail={"error": f"evaluation dataset not found: {dataset_name}"})
         return {"ok": True, **dataset}
 
     @app.post("/api/admin/evaluations/reload")
-    def admin_evaluations_reload() -> dict[str, Any]:
+    def admin_evaluations_reload(admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         return {"ok": True, "reload": store.reload_evaluations()}
 
+    @app.post("/api/admin/evaluations/run")
+    def admin_evaluations_run(
+        payload: EvaluationRunPayload,
+        admin: dict[str, Any] = Depends(require_admin),
+    ) -> dict[str, Any]:
+        if payload.async_mode:
+            job = launch_evaluation_job(payload, admin)
+            return {
+                "ok": True,
+                "mode": "async",
+                "job": job,
+                "updated_at": utc_now_iso(),
+            }
+        targets = list(dict.fromkeys([item.strip() for item in payload.targets if item.strip()]))
+        if not targets:
+            raise HTTPException(status_code=400, detail={"error": "no evaluation targets specified"})
+        reports = run_evaluation_scripts(targets)
+        reload_payload = store.reload_evaluations() if payload.reload_after else None
+        return {
+            "ok": True,
+            "mode": "sync",
+            "targets": targets,
+            "reports": reports,
+            "reload": reload_payload,
+            "updated_at": utc_now_iso(),
+        }
+
     @app.get("/api/admin/config")
-    def admin_config() -> dict[str, Any]:
+    def admin_config(admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         return {"ok": True, **read_config()}
 
     @app.post("/api/admin/config")
-    def admin_config_save(payload: ConfigPayload) -> dict[str, Any]:
+    def admin_config_save(payload: ConfigPayload, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         try:
             data = json.loads(payload.raw_text)
         except json.JSONDecodeError as exc:
@@ -452,7 +844,7 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/api/admin/config/reload")
-    def admin_config_reload() -> dict[str, Any]:
+    def admin_config_reload(admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         pipeline = reload_pipeline_from_disk()
         payload = read_config()
         return {
@@ -613,6 +1005,7 @@ def read_config() -> dict[str, Any]:
         "SHIPVOICE_TTS_PROVIDER": os.environ.get("SHIPVOICE_TTS_PROVIDER", ""),
         "SHIPVOICE_TTS_ENDPOINT": os.environ.get("SHIPVOICE_TTS_ENDPOINT", ""),
         "SHIPVOICE_ENV_FILE": os.environ.get("SHIPVOICE_ENV_FILE", ""),
+        "SHIPVOICE_ADMIN_AUTH_MODE": admin_auth_mode(),
     }
     return {
         "config": data,

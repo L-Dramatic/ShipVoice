@@ -12,9 +12,22 @@
         <div class="brand-mark">SV</div>
         <div>
           <h1>Admin Console</h1>
-          <p>知识库治理、评测监控与运行复盘</p>
+          <p>知识治理、评测触发、运行审计</p>
         </div>
       </div>
+
+      <section class="control-group">
+        <h2>管理认证</h2>
+        <div class="auth-card">
+          <div id="adminAuthState" class="status-badge">未登录</div>
+          <p id="adminAuthMeta" class="summary-detail">请先输入后台口令。</p>
+          <input id="adminPassword" class="text-input" type="password" placeholder="输入后台口令" />
+          <div class="button-row">
+            <button id="adminLoginButton" class="primary-button" type="button">登录后台</button>
+            <button id="adminLogoutButton" class="secondary-button" type="button">退出</button>
+          </div>
+        </div>
+      </section>
 
       <section class="control-group">
         <h2>控制台动作</h2>
@@ -22,6 +35,9 @@
           <button id="refreshAdminButton" class="primary-button">刷新总览</button>
           <button id="reindexButton" class="secondary-button">重建知识索引</button>
           <button id="reloadEvalButton" class="secondary-button">重载评测数据</button>
+          <button id="runEvalButton" class="secondary-button">执行批量评测</button>
+          <button id="exportRunsJsonlButton" class="secondary-button">导出日志 JSONL</button>
+          <button id="exportRunsCsvButton" class="secondary-button">导出日志 CSV</button>
           <button id="cleanupRunsButton" class="secondary-button">清理测试日志</button>
           <button id="newRecordButton" class="secondary-button">新建知识条目</button>
           <a class="secondary-link" href="./index.html">返回问答前台</a>
@@ -49,9 +65,9 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">Governance Layer</p>
-          <h2>让 ShipVoice 成为可维护、可审计、可持续迭代的真实系统</h2>
+          <h2>把 ShipVoice 做成可控、可审计、可复现的真实系统</h2>
         </div>
-        <div id="adminStatus" class="status-badge">加载中</div>
+        <div id="adminStatus" class="status-badge">未登录</div>
       </header>
 
       <div id="adminError" class="error-banner" hidden></div>
@@ -66,7 +82,7 @@
           <strong id="runCountMetric">--</strong>
         </article>
         <article class="metric">
-          <span>多轮门控准确率</span>
+          <span>门控准确率</span>
           <strong id="gateAccuracyMetric">--</strong>
         </article>
         <article class="metric">
@@ -91,7 +107,7 @@
           <div class="panel-head">
             <div>
               <h3>知识条目编辑器</h3>
-              <p>每次保存都会写回 JSONL，并立即重建 RAG 索引。</p>
+              <p>保存后会写回 JSONL，并立即刷新检索索引。</p>
             </div>
             <span id="editorState">未选择</span>
           </div>
@@ -123,7 +139,7 @@
           <div class="panel-head">
             <div>
               <h3>评测概览</h3>
-              <p>把课程指标和工程指标放在同一视图里持续跟踪。</p>
+              <p>把课程指标和运行指标放在同一视图里持续跟踪。</p>
             </div>
             <span>Eval</span>
           </div>
@@ -133,8 +149,20 @@
         <article class="panel">
           <div class="panel-head">
             <div>
+              <h3>后台作业</h3>
+              <p>跟踪批量评测任务的排队、执行进度与结果摘要。</p>
+            </div>
+            <span id="jobListState">0 个</span>
+          </div>
+          <div id="jobSummary" class="meta-grid admin-summary-grid"></div>
+          <div id="jobList" class="session-log admin-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
               <h3>评测数据集</h3>
-              <p>已经入库的评测表，可点击查看样本级明细。</p>
+              <p>已入库的评测表，可点击查看样本级明细。</p>
             </div>
             <span id="datasetListState">0 个</span>
           </div>
@@ -157,7 +185,7 @@
           <div class="panel-head">
             <div>
               <h3>后端配置</h3>
-              <p>直接查看和编辑 `configs/pipeline.json`，保存后热重载。</p>
+              <p>直接编辑 `configs/pipeline.json`，保存后热重载。</p>
             </div>
             <span id="configState">未加载</span>
           </div>
@@ -178,7 +206,7 @@
           <div class="panel-head">
             <div>
               <h3>Provider 健康</h3>
-              <p>区分 mock 与真实服务，并检查当前端点是否可达。</p>
+              <p>区分 mock 与真实服务，并检查端点是否可达。</p>
             </div>
             <span id="providerHealthState">未加载</span>
           </div>

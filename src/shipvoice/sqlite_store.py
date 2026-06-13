@@ -93,6 +93,21 @@ class SQLiteAppStore:
                     payload_json TEXT NOT NULL,
                     PRIMARY KEY (dataset_name, row_key)
                 );
+
+                CREATE TABLE IF NOT EXISTS admin_jobs (
+                    job_id TEXT PRIMARY KEY,
+                    job_type TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    progress INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    error TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    completed_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -600,10 +615,168 @@ class SQLiteAppStore:
         datasets = {item["dataset_name"]: item for item in self.list_evaluation_datasets()}
         return {
             "datasets": list(datasets.values()),
+            "safety": datasets.get("safety_gate_eval", {}).get("summary", {}),
             "asr": datasets.get("asr_eval", {}).get("summary", {}),
             "multiturn": datasets.get("multiturn_eval", {}).get("summary", {}),
             "latency": datasets.get("latency_metrics", {}).get("summary", {}),
             "real_chain": datasets.get("real_chain_samples", {}).get("summary", {}),
+        }
+
+    def create_admin_job(
+        self,
+        *,
+        job_id: str,
+        job_type: str,
+        label: str,
+        payload: dict[str, Any] | None = None,
+        status: str = "queued",
+    ) -> dict[str, Any]:
+        now = utc_now_iso()
+        record = {
+            "job_id": job_id,
+            "job_type": job_type,
+            "label": label,
+            "status": status,
+            "progress": 0,
+            "payload": payload or {},
+            "result": {},
+            "error": "",
+            "created_at": now,
+            "started_at": "",
+            "updated_at": now,
+            "completed_at": "",
+        }
+        with self._lock:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO admin_jobs (
+                        job_id, job_type, label, status, progress, payload_json,
+                        result_json, error, created_at, started_at, updated_at, completed_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record["job_id"],
+                        record["job_type"],
+                        record["label"],
+                        record["status"],
+                        record["progress"],
+                        json.dumps(record["payload"], ensure_ascii=False),
+                        json.dumps(record["result"], ensure_ascii=False),
+                        record["error"],
+                        record["created_at"],
+                        record["started_at"],
+                        record["updated_at"],
+                        record["completed_at"],
+                    ),
+                )
+                conn.commit()
+        return record
+
+    def update_admin_job(
+        self,
+        job_id: str,
+        *,
+        status: str | None = None,
+        progress: int | None = None,
+        started_at: str | None = None,
+        completed_at: str | None = None,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        current = self.get_admin_job(job_id)
+        if current is None:
+            raise KeyError(job_id)
+        updated = {
+            **current,
+            "status": status or current["status"],
+            "progress": current["progress"] if progress is None else max(0, min(100, int(progress))),
+            "started_at": current["started_at"] if started_at is None else started_at,
+            "completed_at": current["completed_at"] if completed_at is None else completed_at,
+            "result": current["result"] if result is None else result,
+            "error": current["error"] if error is None else error,
+            "updated_at": utc_now_iso(),
+        }
+        with self._lock:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE admin_jobs
+                    SET status = ?, progress = ?, result_json = ?, error = ?,
+                        started_at = ?, updated_at = ?, completed_at = ?
+                    WHERE job_id = ?
+                    """,
+                    (
+                        updated["status"],
+                        updated["progress"],
+                        json.dumps(updated["result"], ensure_ascii=False),
+                        updated["error"],
+                        updated["started_at"],
+                        updated["updated_at"],
+                        updated["completed_at"],
+                        job_id,
+                    ),
+                )
+                conn.commit()
+        return updated
+
+    def list_admin_jobs(self, *, job_type: str = "", limit: int = 20) -> list[dict[str, Any]]:
+        sql = """
+            SELECT job_id, job_type, label, status, progress, payload_json,
+                   result_json, error, created_at, started_at, updated_at, completed_at
+            FROM admin_jobs
+        """
+        params: list[Any] = []
+        if job_type.strip():
+            sql += " WHERE job_type = ?"
+            params.append(job_type.strip())
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_admin_job(row) for row in rows]
+
+    def get_admin_job(self, job_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT job_id, job_type, label, status, progress, payload_json,
+                       result_json, error, created_at, started_at, updated_at, completed_at
+                FROM admin_jobs
+                WHERE job_id = ?
+                """,
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_admin_job(row)
+
+    def admin_job_summary(self, *, job_type: str = "") -> dict[str, Any]:
+        jobs = self.list_admin_jobs(job_type=job_type, limit=10)
+        active = next((item for item in jobs if item["status"] in {"queued", "running"}), None)
+        latest = jobs[0] if jobs else None
+        return {
+            "total_jobs": len(jobs),
+            "active_jobs": sum(1 for item in jobs if item["status"] in {"queued", "running"}),
+            "latest_job": latest,
+            "active_job": active,
+        }
+
+    def _row_to_admin_job(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "job_id": row["job_id"],
+            "job_type": row["job_type"],
+            "label": row["label"],
+            "status": row["status"],
+            "progress": int(row["progress"] or 0),
+            "payload": json.loads(row["payload_json"] or "{}"),
+            "result": json.loads(row["result_json"] or "{}"),
+            "error": row["error"],
+            "created_at": row["created_at"],
+            "started_at": row["started_at"],
+            "updated_at": row["updated_at"],
+            "completed_at": row["completed_at"],
         }
 
     def _row_to_audit_dict(self, row: sqlite3.Row) -> dict[str, Any]:
@@ -730,6 +903,13 @@ class SQLiteAppStore:
 
     def _evaluation_specs(self) -> list[dict[str, str]]:
         return [
+            {
+                "dataset_name": "safety_gate_eval",
+                "display_name": "Safety Gate Evaluation",
+                "type": "csv",
+                "rows_path": str(project_path("results", "safety_gate_eval.csv")),
+                "summary_path": str(project_path("results", "safety_gate_eval_summary.json")),
+            },
             {
                 "dataset_name": "asr_eval",
                 "display_name": "ASR Evaluation",
