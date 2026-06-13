@@ -187,6 +187,53 @@ textarea:focus {
   display: none;
 }
 
+.record-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 94px;
+  gap: 8px;
+}
+
+.record-button {
+  min-height: 40px;
+  border-radius: 8px;
+  color: #fee2e2;
+  background: #7f1d1d;
+  font-weight: 800;
+}
+
+.record-button.is-recording {
+  color: #450a0a;
+  background: #fca5a5;
+}
+
+.record-button:disabled,
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.small-button {
+  min-height: 40px;
+  font-size: 12px;
+}
+
+.recording-status {
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: #cbd5e1;
+  background: rgba(30, 41, 59, 0.55);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.recording-preview {
+  width: 100%;
+  min-height: 38px;
+}
+
 .hint {
   margin: 0;
   color: #94a3b8;

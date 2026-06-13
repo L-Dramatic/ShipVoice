@@ -37,7 +37,13 @@
           <input id="audioFile" type="file" accept="audio/*" />
           <span>上传音频样例</span>
         </label>
-        <p id="audioHint" class="hint">支持文本提问，也支持上传音频接入真实 ASR。</p>
+        <div class="record-control">
+          <button id="recordButton" class="record-button" type="button">开始录音</button>
+          <button id="clearRecordingButton" class="secondary-button small-button" type="button" disabled>清除录音</button>
+        </div>
+        <div id="recordingStatus" class="recording-status">麦克风录音可直接送入 ASR。</div>
+        <audio id="recordingPreview" class="recording-preview" controls hidden></audio>
+        <p id="audioHint" class="hint">支持文本提问、上传音频，也支持浏览器直接录音接入真实 ASR。</p>
       </section>
 
       <div class="button-row">

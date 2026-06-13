@@ -62,6 +62,11 @@ let lastResult = null;
 let healthSnapshot = null;
 let recentRuns = [];
 let liveEvents = [];
+let mediaRecorder = null;
+let recordingStream = null;
+let recordingChunks = [];
+let recordedAudio = null;
+let discardRecording = false;
 const localRuns = [];
 const clientSessionId = ensureSessionId();
 
@@ -73,7 +78,10 @@ function init() {
   $("runButton").addEventListener("click", () => runDemo());
   $("exportButton").addEventListener("click", () => exportLog());
   $("audioFile").addEventListener("change", updateAudioHint);
+  $("recordButton").addEventListener("click", () => toggleRecording());
+  $("clearRecordingButton").addEventListener("click", () => clearRecording());
   $("customQuestion").addEventListener("input", syncQuestionPreview);
+  initializeRecorderControls();
   renderScenario(currentScenario);
   resetMetrics();
   renderRuntimeMeta({ session_id: clientSessionId, transport: "websocket" });
@@ -136,9 +144,12 @@ function syncQuestionPreview() {
 
 function updateAudioHint() {
   const file = $("audioFile").files?.[0];
-  $("audioHint").textContent = file
-    ? `已选择音频：${file.name}。提交后会直接送入后端 ASR，格式转换由浏览器和后端自动处理。`
-    : "支持文本提问，也支持上传音频接入真实 ASR。";
+  if (file) {
+    clearRecording({ keepFile: true });
+    $("audioHint").textContent = `已选择音频：${file.name}。提交后会直接送入后端 ASR。`;
+    return;
+  }
+  updateAudioSourceHint();
 }
 
 function renderScenario(scenario) {
@@ -202,7 +213,7 @@ async function refreshAuditPanel() {
 async function runDemo() {
   const token = ++runToken;
   const question = activeQuestion();
-  const audioFile = $("audioFile").files?.[0] || null;
+  const audioSource = currentAudioSource();
   renderScenario({ ...currentScenario, question });
   resetMetrics();
   clearError();
@@ -213,7 +224,7 @@ async function runDemo() {
   $("runButton").disabled = true;
 
   try {
-    const audioPayload = audioFile ? await readFileAsBase64(audioFile) : { audio_base64: "", audio_name: "" };
+    const audioPayload = await buildAudioPayload(audioSource);
     const requestPayload = {
       session_id: clientSessionId,
       question,
@@ -228,7 +239,7 @@ async function runDemo() {
     lastResult = {
       ...payload,
       mode: currentMode,
-      audio_file: audioFile?.name || "",
+      audio_file: audioSource?.name || "",
       client_timestamp: new Date().toISOString()
     };
     localRuns.unshift(lastResult);
@@ -237,14 +248,14 @@ async function runDemo() {
     await refreshAuditPanel();
   } catch (error) {
     try {
-      const fallbackPayload = await runViaHttp(question, audioFile, token);
+      const fallbackPayload = await runViaHttp(question, audioSource, token);
       if (token !== runToken) {
         return;
       }
       lastResult = {
         ...fallbackPayload,
         mode: currentMode,
-        audio_file: audioFile?.name || "",
+        audio_file: audioSource?.name || "",
         client_timestamp: new Date().toISOString()
       };
       localRuns.unshift(lastResult);
@@ -319,8 +330,8 @@ async function runViaWebSocket(requestPayload, token) {
   });
 }
 
-async function runViaHttp(question, audioFile, token) {
-  const audioPayload = audioFile ? await readFileAsBase64(audioFile) : { audio_base64: "", audio_name: "" };
+async function runViaHttp(question, audioSource, token) {
+  const audioPayload = await buildAudioPayload(audioSource);
   const response = await fetch("/api/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -543,6 +554,225 @@ function renderAudioOutput(audioOutput) {
   const mimeType = audioOutput.mime_type || "audio/wav";
   player.src = `data:${mimeType};base64,${audioBase64}`;
   player.hidden = false;
+}
+
+function initializeRecorderControls() {
+  const canRecord =
+    Boolean(navigator.mediaDevices?.getUserMedia) &&
+    typeof window.MediaRecorder === "function";
+  if (!canRecord) {
+    $("recordButton").disabled = true;
+    $("recordingStatus").textContent = "当前浏览器不支持直接录音，请使用音频文件上传。";
+    return;
+  }
+  $("recordingStatus").textContent = "点击开始录音，浏览器会请求麦克风权限。";
+}
+
+async function toggleRecording() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    stopRecording();
+    return;
+  }
+  await startRecording();
+}
+
+async function startRecording() {
+  clearError();
+  if (!navigator.mediaDevices?.getUserMedia || typeof window.MediaRecorder !== "function") {
+    showError("当前浏览器不支持直接录音，请改用音频文件上传。");
+    return;
+  }
+  try {
+    clearRecording();
+    discardRecording = false;
+    recordingStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
+    const mimeType = selectRecorderMimeType();
+    const options = mimeType ? { mimeType } : undefined;
+    mediaRecorder = new MediaRecorder(recordingStream, options);
+    const activeRecorder = mediaRecorder;
+    recordingChunks = [];
+    activeRecorder.addEventListener("dataavailable", (event) => {
+      if (event.data && event.data.size > 0) {
+        recordingChunks.push(event.data);
+      }
+    });
+    activeRecorder.addEventListener("stop", () => finalizeRecording(activeRecorder.mimeType || mimeType || "audio/webm"));
+    activeRecorder.start();
+    $("recordButton").textContent = "停止录音";
+    $("recordButton").classList.add("is-recording");
+    $("clearRecordingButton").disabled = true;
+    $("recordingStatus").textContent = "正在录音...再次点击停止。";
+    $("audioHint").textContent = "正在录音，停止后会自动作为本次音频输入。";
+  } catch (error) {
+    stopRecordingTracks();
+    mediaRecorder = null;
+    recordingChunks = [];
+    showError(`无法开始录音：${error.message}`);
+    $("recordingStatus").textContent = "录音启动失败，请检查浏览器麦克风权限。";
+  }
+}
+
+function stopRecording() {
+  if (!mediaRecorder || mediaRecorder.state !== "recording") {
+    stopRecordingTracks();
+    return;
+  }
+  $("recordingStatus").textContent = "正在整理录音...";
+  mediaRecorder.stop();
+}
+
+function finalizeRecording(mimeType) {
+  if (discardRecording) {
+    discardRecording = false;
+    recordingChunks = [];
+    mediaRecorder = null;
+    stopRecordingTracks();
+    return;
+  }
+  const type = mimeType || "audio/webm";
+  const blob = new Blob(recordingChunks, { type });
+  stopRecordingTracks();
+  mediaRecorder = null;
+  $("recordButton").textContent = "重新录音";
+  $("recordButton").classList.remove("is-recording");
+  if (!blob.size) {
+    recordedAudio = null;
+    $("clearRecordingButton").disabled = true;
+    $("recordingStatus").textContent = "录音为空，请重新录制。";
+    return;
+  }
+  const extension = audioExtensionFromMime(type);
+  recordedAudio = {
+    blob,
+    mimeType: type,
+    name: `shipvoice-recording-${Date.now()}.${extension}`,
+    objectUrl: URL.createObjectURL(blob)
+  };
+  $("recordingPreview").src = recordedAudio.objectUrl;
+  $("recordingPreview").hidden = false;
+  $("clearRecordingButton").disabled = false;
+  $("audioFile").value = "";
+  updateAudioSourceHint();
+}
+
+function clearRecording(options = {}) {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    discardRecording = true;
+    mediaRecorder.stop();
+  } else {
+    mediaRecorder = null;
+  }
+  stopRecordingTracks();
+  if (recordedAudio?.objectUrl) {
+    URL.revokeObjectURL(recordedAudio.objectUrl);
+  }
+  recordedAudio = null;
+  recordingChunks = [];
+  $("recordButton").textContent = "开始录音";
+  $("recordButton").classList.remove("is-recording");
+  $("clearRecordingButton").disabled = true;
+  $("recordingPreview").hidden = true;
+  $("recordingPreview").removeAttribute("src");
+  $("recordingStatus").textContent = "点击开始录音，浏览器会请求麦克风权限。";
+  if (!options.keepFile) {
+    $("audioFile").value = "";
+  }
+  updateAudioSourceHint();
+}
+
+function stopRecordingTracks() {
+  if (recordingStream) {
+    recordingStream.getTracks().forEach((track) => track.stop());
+  }
+  recordingStream = null;
+}
+
+function selectRecorderMimeType() {
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+}
+
+function audioExtensionFromMime(mimeType) {
+  const normalized = String(mimeType || "").toLowerCase();
+  if (normalized.includes("ogg")) {
+    return "ogg";
+  }
+  if (normalized.includes("mp4") || normalized.includes("mpeg")) {
+    return "m4a";
+  }
+  if (normalized.includes("wav")) {
+    return "wav";
+  }
+  return "webm";
+}
+
+function currentAudioSource() {
+  const file = $("audioFile").files?.[0] || null;
+  if (file) {
+    return { kind: "file", file, name: file.name };
+  }
+  if (recordedAudio) {
+    return { kind: "recording", ...recordedAudio };
+  }
+  return null;
+}
+
+function updateAudioSourceHint() {
+  const file = $("audioFile").files?.[0];
+  if (file) {
+    $("audioHint").textContent = `已选择音频：${file.name}。提交后会直接送入后端 ASR。`;
+    return;
+  }
+  if (recordedAudio) {
+    $("recordingStatus").textContent = `录音已就绪：${formatBytes(recordedAudio.blob.size)}，可预听或直接运行问答。`;
+    $("audioHint").textContent = `将使用浏览器录音：${recordedAudio.name}。`;
+    return;
+  }
+  $("audioHint").textContent = "支持文本提问、上传音频，也支持浏览器直接录音接入真实 ASR。";
+}
+
+async function buildAudioPayload(audioSource) {
+  if (!audioSource) {
+    return { audio_base64: "", audio_name: "" };
+  }
+  if (audioSource.kind === "file") {
+    return await readFileAsBase64(audioSource.file);
+  }
+  const audio_base64 = await blobToBase64(audioSource.blob);
+  return {
+    audio_base64,
+    audio_name: audioSource.name
+  };
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const parts = result.split(",", 2);
+      resolve(parts.length === 2 ? parts[1] : "");
+    };
+    reader.onerror = () => reject(new Error("录音读取失败"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function buildHistory() {
