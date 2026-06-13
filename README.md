@@ -25,6 +25,7 @@ http://127.0.0.1:8010
 
 演示面板会调用本地后端 `/api/run`，因此后续把 mock provider 替换为真实 ASR/LLM/TTS 后，面板仍然复用。
 当前接口也支持 `history` 多轮上下文字段，便于把 Part 1 的对话能力接到 Part 2 的语音链路中。
+用户端支持三种输入方式：文本提问、音频文件上传、浏览器麦克风直接录音。直接录音使用浏览器 MediaRecorder 生成音频，再按和上传文件相同的 `audio_base64` 协议送入后端 ASR。
 
 运行 mock 延迟实验：
 
@@ -36,6 +37,19 @@ python scripts\run_benchmark.py
 
 ```text
 results\latency_metrics.csv
+```
+
+生成课程验收报告：
+
+```powershell
+python scripts\build_acceptance_report.py
+```
+
+输出文件：
+
+```text
+results\project_acceptance_report.md
+results\project_acceptance_report.json
 ```
 
 ## 接入真实 ASR / LLM / TTS
@@ -183,3 +197,4 @@ web/static/              答辩演示面板
 
 - 课程高分评分证据：[docs/PHASE1_SCORECARD.md](docs/PHASE1_SCORECARD.md)
 - 演示与运维操作手册：[docs/OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)
+- 一键验收报告：[results/project_acceptance_report.md](results/project_acceptance_report.md)

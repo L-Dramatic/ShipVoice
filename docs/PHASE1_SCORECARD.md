@@ -8,7 +8,7 @@
 
 这个分数的依据不是页面观感，而是以下能力已经落地：
 
-- 前端：用户语音/文本问答页面、管理后台页面。
+- 前端：用户语音/文本问答页面、浏览器直接录音、音频上传、管理后台页面。
 - 后端：FastAPI 服务、主问答 API、Admin API、认证、配置热更新、评测任务、运行复盘。
 - 模型链路：支持 mock provider 和真实 ASR / LLM / TTS provider 切换。
 - 领域能力：船厂安全知识库、RAG 检索、安全门控、术语后处理、多轮上下文。
@@ -50,6 +50,19 @@
 
 ```powershell
 python run_app.py
+```
+
+生成项目验收报告：
+
+```powershell
+python scripts\build_acceptance_report.py
+```
+
+输出：
+
+```text
+results/project_acceptance_report.md
+results/project_acceptance_report.json
 ```
 
 ### 2. 是否只有网页演示
@@ -135,7 +148,7 @@ results/safety_gate_eval_summary.json
 
 ## 答辩时推荐说法
 
-我们做的不是一个单纯的网页，而是一套面向船厂安全作业的语音问答系统。用户侧可以进行语音或文本问答，系统内部经过 ASR、术语后处理、安全门控、RAG 检索、LLM 回答和 TTS 合成。管理侧可以维护知识库、查看 provider 健康状态、运行评测任务、复盘每次问答记录。我们同时保留 mock 模式保证现场演示稳定，也支持真实 ASR / LLM / TTS provider 接入，并已经在远程 GPU 环境跑通过真实语音链路。
+我们做的不是一个单纯的网页，而是一套面向船厂安全作业的语音问答系统。用户侧可以进行文本问答、音频上传和浏览器直接录音，系统内部经过 ASR、术语后处理、安全门控、RAG 检索、LLM 回答和 TTS 合成。管理侧可以维护知识库、查看 provider 健康状态、运行评测任务、复盘每次问答记录。我们同时保留 mock 模式保证现场演示稳定，也支持真实 ASR / LLM / TTS provider 接入，并已经在远程 GPU 环境跑通过真实语音链路。
 
 ## 当前仍应如实说明的边界
 

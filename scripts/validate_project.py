@@ -29,6 +29,7 @@ def main() -> None:
     run([sys.executable, "scripts/evaluate_asr_transcripts.py"])
     run([sys.executable, "scripts/evaluate_multiturn.py"])
     run([sys.executable, "scripts/build_evaluation_dashboard.py"])
+    run([sys.executable, "scripts/build_acceptance_report.py"])
     run([sys.executable, "scripts/build_final_report.py"])
     run([sys.executable, "scripts/run_single.py", "密闭舱室动火作业前要检查什么？", "--mode", "full"])
     run([sys.executable, "-m", "compileall", "src", "scripts", "run_demo.py", "run_app.py"])
