@@ -24,6 +24,32 @@ KNOWLEDGE_STATUSES = (
     "archived",
 )
 
+RUN_CASE_STATUSES = (
+    "open",
+    "investigating",
+    "resolved",
+    "accepted_risk",
+    "ignored",
+)
+
+RUN_CASE_SEVERITIES = (
+    "low",
+    "medium",
+    "high",
+    "critical",
+)
+
+RUN_CASE_TYPES = (
+    "normal",
+    "safety_gate",
+    "error",
+    "latency",
+    "quality",
+    "asr",
+    "llm",
+    "tts",
+)
+
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -101,7 +127,15 @@ class SQLiteAppStore:
                     metrics_json TEXT NOT NULL,
                     error TEXT NOT NULL,
                     evidence_titles_json TEXT NOT NULL,
-                    audio_name TEXT NOT NULL
+                    audio_name TEXT NOT NULL,
+                    case_status TEXT NOT NULL DEFAULT 'resolved',
+                    case_severity TEXT NOT NULL DEFAULT 'low',
+                    case_type TEXT NOT NULL DEFAULT 'normal',
+                    case_owner TEXT NOT NULL DEFAULT '',
+                    case_note TEXT NOT NULL DEFAULT '',
+                    case_reviewer TEXT NOT NULL DEFAULT '',
+                    case_reviewed_at TEXT NOT NULL DEFAULT '',
+                    case_updated_at TEXT NOT NULL DEFAULT ''
                 );
 
                 CREATE TABLE IF NOT EXISTS evaluation_datasets (
@@ -138,6 +172,7 @@ class SQLiteAppStore:
                 """
             )
             self._ensure_knowledge_schema(conn)
+            self._ensure_run_case_schema(conn)
 
     def _ensure_knowledge_schema(self, conn: sqlite3.Connection) -> None:
         columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(knowledge_records)").fetchall()}
@@ -160,6 +195,50 @@ class SQLiteAppStore:
         conn.execute("UPDATE knowledge_records SET last_reviewer = COALESCE(last_reviewer, '')")
         conn.execute("UPDATE knowledge_records SET last_reviewed_at = COALESCE(last_reviewed_at, '')")
         conn.execute("UPDATE knowledge_records SET current_version = COALESCE(current_version, 1)")
+        conn.commit()
+
+    def _ensure_run_case_schema(self, conn: sqlite3.Connection) -> None:
+        columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(run_audits)").fetchall()}
+        required_columns = {
+            "case_status": "TEXT NOT NULL DEFAULT 'resolved'",
+            "case_severity": "TEXT NOT NULL DEFAULT 'low'",
+            "case_type": "TEXT NOT NULL DEFAULT 'normal'",
+            "case_owner": "TEXT NOT NULL DEFAULT ''",
+            "case_note": "TEXT NOT NULL DEFAULT ''",
+            "case_reviewer": "TEXT NOT NULL DEFAULT ''",
+            "case_reviewed_at": "TEXT NOT NULL DEFAULT ''",
+            "case_updated_at": "TEXT NOT NULL DEFAULT ''",
+        }
+        for column_name, column_spec in required_columns.items():
+            if column_name not in columns:
+                conn.execute(f"ALTER TABLE run_audits ADD COLUMN {column_name} {column_spec}")
+        rows = conn.execute("SELECT * FROM run_audits").fetchall()
+        for row in rows:
+            inferred = self._infer_run_case_fields(row)
+            conn.execute(
+                """
+                UPDATE run_audits
+                SET case_status = CASE WHEN COALESCE(case_updated_at, '') = '' THEN ? ELSE COALESCE(NULLIF(case_status, ''), ?) END,
+                    case_severity = CASE WHEN COALESCE(case_updated_at, '') = '' THEN ? ELSE COALESCE(NULLIF(case_severity, ''), ?) END,
+                    case_type = CASE WHEN COALESCE(case_updated_at, '') = '' THEN ? ELSE COALESCE(NULLIF(case_type, ''), ?) END,
+                    case_owner = COALESCE(case_owner, ''),
+                    case_note = COALESCE(case_note, ''),
+                    case_reviewer = COALESCE(case_reviewer, ''),
+                    case_reviewed_at = COALESCE(case_reviewed_at, ''),
+                    case_updated_at = COALESCE(NULLIF(case_updated_at, ''), ?)
+                WHERE run_id = ?
+                """,
+                (
+                    inferred["case_status"],
+                    inferred["case_status"],
+                    inferred["case_severity"],
+                    inferred["case_severity"],
+                    inferred["case_type"],
+                    inferred["case_type"],
+                    utc_now_iso(),
+                    row["run_id"],
+                ),
+            )
         conn.commit()
 
     def _bootstrap_if_needed(self) -> None:
@@ -626,14 +705,37 @@ class SQLiteAppStore:
                 handle.write(json.dumps(asdict(record), ensure_ascii=False) + "\n")
 
     def _insert_audit_locked(self, conn: sqlite3.Connection, record: AuditRecord) -> None:
+        inferred_case = self._infer_run_case_fields(
+            {
+                "status": record.status,
+                "gate_allowed": None if record.gate_allowed is None else int(bool(record.gate_allowed)),
+                "gate_label": record.gate_label,
+                "metrics_json": json.dumps(record.metrics, ensure_ascii=False),
+                "error": record.error,
+            }
+        )
+        existing = conn.execute(
+            "SELECT case_status, case_severity, case_type, case_owner, case_note, case_reviewer, case_reviewed_at, case_updated_at FROM run_audits WHERE run_id = ?",
+            (record.run_id,),
+        ).fetchone()
+        case_status = existing["case_status"] if existing and existing["case_status"] else inferred_case["case_status"]
+        case_severity = existing["case_severity"] if existing and existing["case_severity"] else inferred_case["case_severity"]
+        case_type = existing["case_type"] if existing and existing["case_type"] else inferred_case["case_type"]
+        case_owner = existing["case_owner"] if existing else ""
+        case_note = existing["case_note"] if existing else ""
+        case_reviewer = existing["case_reviewer"] if existing else ""
+        case_reviewed_at = existing["case_reviewed_at"] if existing else ""
+        case_updated_at = existing["case_updated_at"] if existing and existing["case_updated_at"] else utc_now_iso()
         conn.execute(
             """
             INSERT OR REPLACE INTO run_audits (
                 run_id, session_id, status, created_at, mode, question, transcript,
                 gate_label, gate_allowed, answer_preview, providers_json, metrics_json,
-                error, evidence_titles_json, audio_name
+                error, evidence_titles_json, audio_name, case_status, case_severity,
+                case_type, case_owner, case_note, case_reviewer, case_reviewed_at,
+                case_updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.run_id,
@@ -651,6 +753,14 @@ class SQLiteAppStore:
                 record.error,
                 json.dumps(record.evidence_titles, ensure_ascii=False),
                 record.audio_name,
+                case_status,
+                case_severity,
+                case_type,
+                case_owner,
+                case_note,
+                case_reviewer,
+                case_reviewed_at,
+                case_updated_at,
             ),
         )
 
@@ -715,6 +825,9 @@ class SQLiteAppStore:
         query: str = "",
         status: str = "",
         gate_label: str = "",
+        case_status: str = "",
+        case_severity: str = "",
+        case_type: str = "",
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         clauses: list[str] = []
@@ -725,6 +838,15 @@ class SQLiteAppStore:
         if gate_label:
             clauses.append("gate_label = ?")
             params.append(gate_label)
+        if case_status:
+            clauses.append("case_status = ?")
+            params.append(self._validate_run_case_status(case_status))
+        if case_severity:
+            clauses.append("case_severity = ?")
+            params.append(self._validate_run_case_severity(case_severity))
+        if case_type:
+            clauses.append("case_type = ?")
+            params.append(self._validate_run_case_type(case_type))
         sql = "SELECT * FROM run_audits"
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
@@ -746,11 +868,60 @@ class SQLiteAppStore:
                     str(item.get("transcript", "")),
                     str(item.get("answer_preview", "")),
                     str(item.get("error", "")),
+                    str(item.get("case_owner", "")),
+                    str(item.get("case_note", "")),
+                    str(item.get("case_type", "")),
                 ]
             ).lower()
             if query in haystack:
                 matched.append(item)
         return matched
+
+    def update_run_case(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            with self._connect() as conn:
+                row = conn.execute("SELECT * FROM run_audits WHERE run_id = ?", (run_id,)).fetchone()
+                if row is None:
+                    raise KeyError(run_id)
+                case_status = self._validate_run_case_status(str(payload.get("case_status", row["case_status"])).strip())
+                case_severity = self._validate_run_case_severity(str(payload.get("case_severity", row["case_severity"])).strip())
+                case_type = self._validate_run_case_type(str(payload.get("case_type", row["case_type"])).strip())
+                case_owner = str(payload.get("case_owner", row["case_owner"] or "")).strip()
+                case_note = str(payload.get("case_note", row["case_note"] or "")).strip()
+                case_reviewer = str(payload.get("case_reviewer", row["case_reviewer"] or "")).strip()
+                now = utc_now_iso()
+                case_reviewed_at = str(row["case_reviewed_at"] or "")
+                if case_reviewer or case_status in {"resolved", "accepted_risk", "ignored"}:
+                    case_reviewed_at = now
+                conn.execute(
+                    """
+                    UPDATE run_audits
+                    SET case_status = ?,
+                        case_severity = ?,
+                        case_type = ?,
+                        case_owner = ?,
+                        case_note = ?,
+                        case_reviewer = ?,
+                        case_reviewed_at = ?,
+                        case_updated_at = ?
+                    WHERE run_id = ?
+                    """,
+                    (
+                        case_status,
+                        case_severity,
+                        case_type,
+                        case_owner,
+                        case_note,
+                        case_reviewer,
+                        case_reviewed_at,
+                        now,
+                        run_id,
+                    ),
+                )
+                updated_row = conn.execute("SELECT * FROM run_audits WHERE run_id = ?", (run_id,)).fetchone()
+                self._rewrite_audit_log_locked(conn)
+                conn.commit()
+        return self._row_to_audit_dict(updated_row)
 
     def cleanup_runs(
         self,
@@ -792,6 +963,8 @@ class SQLiteAppStore:
                     COUNT(*) AS total_runs,
                     SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS error_runs,
                     SUM(CASE WHEN gate_allowed = 0 THEN 1 ELSE 0 END) AS blocked_runs,
+                    SUM(CASE WHEN case_status IN ('open', 'investigating') THEN 1 ELSE 0 END) AS open_cases,
+                    SUM(CASE WHEN case_severity IN ('high', 'critical') AND case_status NOT IN ('resolved', 'ignored') THEN 1 ELSE 0 END) AS high_priority_cases,
                     AVG(CASE
                         WHEN json_extract(metrics_json, '$.total_ms') IS NOT NULL
                         THEN CAST(json_extract(metrics_json, '$.total_ms') AS REAL)
@@ -807,6 +980,8 @@ class SQLiteAppStore:
             "error_runs": error_runs,
             "blocked_runs": blocked_runs,
             "ok_runs": total_runs - error_runs,
+            "open_cases": int(counts["open_cases"] or 0),
+            "high_priority_cases": int(counts["high_priority_cases"] or 0),
             "avg_total_ms": round(float(counts["avg_total_ms"] or 0), 2),
         }
 
@@ -1075,7 +1250,35 @@ class SQLiteAppStore:
             "error": row["error"],
             "evidence_titles": json.loads(row["evidence_titles_json"] or "[]"),
             "audio_name": row["audio_name"],
+            "case_status": row["case_status"],
+            "case_severity": row["case_severity"],
+            "case_type": row["case_type"],
+            "case_owner": row["case_owner"],
+            "case_note": row["case_note"],
+            "case_reviewer": row["case_reviewer"],
+            "case_reviewed_at": row["case_reviewed_at"],
+            "case_updated_at": row["case_updated_at"],
         }
+
+    def _audit_record_payload(self, item: dict[str, Any]) -> dict[str, Any]:
+        keys = [
+            "run_id",
+            "session_id",
+            "status",
+            "created_at",
+            "mode",
+            "question",
+            "transcript",
+            "gate_label",
+            "gate_allowed",
+            "answer_preview",
+            "providers",
+            "metrics",
+            "error",
+            "evidence_titles",
+            "audio_name",
+        ]
+        return {key: item.get(key) for key in keys}
 
     def _normalize_tags(self, raw: Any) -> list[str]:
         if isinstance(raw, str):
@@ -1093,7 +1296,7 @@ class SQLiteAppStore:
         rows = conn.execute("SELECT * FROM run_audits ORDER BY created_at ASC").fetchall()
         with self.audit_log_path.open("w", encoding="utf-8") as handle:
             for row in rows:
-                handle.write(json.dumps(self._row_to_audit_dict(row), ensure_ascii=False) + "\n")
+                handle.write(json.dumps(self._audit_record_payload(self._row_to_audit_dict(row)), ensure_ascii=False) + "\n")
 
     def _should_delete_run(
         self,
@@ -1128,8 +1331,70 @@ class SQLiteAppStore:
                 str(item.get("transcript", "")),
                 str(item.get("answer_preview", "")),
                 str(item.get("error", "")),
+                str(item.get("case_owner", "")),
+                str(item.get("case_note", "")),
+                str(item.get("case_type", "")),
             ]
         ).lower()
+
+    def _validate_run_case_status(self, status: str) -> str:
+        normalized = status.strip().lower() or "open"
+        if normalized not in RUN_CASE_STATUSES:
+            raise ValueError(f"unsupported run case status: {status}")
+        return normalized
+
+    def _validate_run_case_severity(self, severity: str) -> str:
+        normalized = severity.strip().lower() or "low"
+        if normalized not in RUN_CASE_SEVERITIES:
+            raise ValueError(f"unsupported run case severity: {severity}")
+        return normalized
+
+    def _validate_run_case_type(self, case_type: str) -> str:
+        normalized = case_type.strip().lower() or "normal"
+        if normalized not in RUN_CASE_TYPES:
+            raise ValueError(f"unsupported run case type: {case_type}")
+        return normalized
+
+    def _infer_run_case_fields(self, row_or_payload: Any) -> dict[str, str]:
+        status = str(self._row_value(row_or_payload, "status", "") or "")
+        gate_allowed = self._row_value(row_or_payload, "gate_allowed", None)
+        gate_label = str(self._row_value(row_or_payload, "gate_label", "") or "")
+        error = str(self._row_value(row_or_payload, "error", "") or "")
+        metrics = self._decode_json_field(self._row_value(row_or_payload, "metrics_json", "{}"), default={})
+        total_ms = self._numeric_metric(metrics, "total_ms")
+        first_audio_ms = self._numeric_metric(metrics, "first_audio_ms")
+
+        if status == "error" or error:
+            return {"case_status": "open", "case_severity": "high", "case_type": "error"}
+        if gate_allowed == 0 or gate_allowed is False:
+            return {"case_status": "open", "case_severity": "medium", "case_type": "safety_gate"}
+        if total_ms >= 12000 or first_audio_ms >= 5000:
+            return {"case_status": "open", "case_severity": "medium", "case_type": "latency"}
+        if gate_label and gate_label not in {"domain_safe", "safe", "allowed"}:
+            return {"case_status": "investigating", "case_severity": "low", "case_type": "quality"}
+        return {"case_status": "resolved", "case_severity": "low", "case_type": "normal"}
+
+    def _row_value(self, row_or_payload: Any, key: str, default: Any = None) -> Any:
+        if isinstance(row_or_payload, dict):
+            return row_or_payload.get(key, default)
+        try:
+            return row_or_payload[key]
+        except (IndexError, KeyError, TypeError):
+            return default
+
+    def _decode_json_field(self, raw: Any, *, default: Any) -> Any:
+        if isinstance(raw, (dict, list)):
+            return raw
+        try:
+            return json.loads(str(raw or ""))
+        except json.JSONDecodeError:
+            return default
+
+    def _numeric_metric(self, metrics: dict[str, Any], key: str) -> float:
+        try:
+            return float(metrics.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            return 0.0
 
     def _looks_like_mojibake(self, text: str) -> bool:
         compact = "".join(ch for ch in text if not ch.isspace())

@@ -68,6 +68,15 @@ class RunCleanupPayload(BaseModel):
     delete_mojibake: bool = True
 
 
+class RunCasePayload(BaseModel):
+    case_status: str = "open"
+    case_severity: str = "medium"
+    case_type: str = "quality"
+    case_owner: str = ""
+    case_note: str = ""
+    case_reviewer: str = ""
+
+
 class AdminLoginPayload(BaseModel):
     password: str
 
@@ -654,14 +663,25 @@ def create_app() -> FastAPI:
         query: str = "",
         status: str = "",
         gate_label: str = "",
+        case_status: str = "",
+        case_severity: str = "",
+        case_type: str = "",
         limit: int = 50,
         admin: dict[str, Any] = Depends(require_admin),
     ) -> dict[str, Any]:
-        return {
-            "ok": True,
-            "stats": store.audit_stats(),
-            "runs": store.search_runs(query=query, status=status, gate_label=gate_label, limit=limit),
-        }
+        try:
+            runs = store.search_runs(
+                query=query,
+                status=status,
+                gate_label=gate_label,
+                case_status=case_status,
+                case_severity=case_severity,
+                case_type=case_type,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        return {"ok": True, "stats": store.audit_stats(), "runs": runs}
 
     @app.get("/api/admin/runs/export")
     def admin_runs_export(
@@ -669,10 +689,24 @@ def create_app() -> FastAPI:
         query: str = "",
         status: str = "",
         gate_label: str = "",
+        case_status: str = "",
+        case_severity: str = "",
+        case_type: str = "",
         limit: int = 500,
         admin: dict[str, Any] = Depends(require_admin),
     ) -> Response:
-        runs = store.search_runs(query=query, status=status, gate_label=gate_label, limit=limit)
+        try:
+            runs = store.search_runs(
+                query=query,
+                status=status,
+                gate_label=gate_label,
+                case_status=case_status,
+                case_severity=case_severity,
+                case_type=case_type,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
         timestamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
         export_format = format.strip().lower()
         if export_format == "csv":
@@ -693,6 +727,14 @@ def create_app() -> FastAPI:
                 "error",
                 "evidence_titles",
                 "audio_name",
+                "case_status",
+                "case_severity",
+                "case_type",
+                "case_owner",
+                "case_note",
+                "case_reviewer",
+                "case_reviewed_at",
+                "case_updated_at",
             ]
             writer = csv.DictWriter(buffer, fieldnames=fieldnames)
             writer.writeheader()
@@ -719,6 +761,20 @@ def create_app() -> FastAPI:
             media_type=media_type,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
+
+    @app.put("/api/admin/runs/{run_id}/case")
+    def admin_run_case_update(
+        run_id: str,
+        payload: RunCasePayload,
+        admin: dict[str, Any] = Depends(require_admin),
+    ) -> dict[str, Any]:
+        try:
+            run = store.update_run_case(run_id, _payload_to_dict(payload))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"error": f"run not found: {run_id}"}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        return {"ok": True, "run": run, "stats": store.audit_stats()}
 
     @app.post("/api/admin/runs/cleanup")
     def admin_runs_cleanup(payload: RunCleanupPayload, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:

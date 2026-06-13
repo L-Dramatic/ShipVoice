@@ -66,6 +66,21 @@
           <option value="ok">仅成功</option>
           <option value="error">仅失败</option>
         </select>
+        <select id="runCaseStatus" class="text-input">
+          <option value="">全部处置状态</option>
+          <option value="open">待处理</option>
+          <option value="investigating">调查中</option>
+          <option value="resolved">已关闭</option>
+          <option value="accepted_risk">接受风险</option>
+          <option value="ignored">忽略</option>
+        </select>
+        <select id="runCaseSeverity" class="text-input">
+          <option value="">全部严重级别</option>
+          <option value="critical">严重</option>
+          <option value="high">高</option>
+          <option value="medium">中</option>
+          <option value="low">低</option>
+        </select>
       </section>
     </aside>
 
@@ -272,6 +287,65 @@
             <span id="runListState">0 条</span>
           </div>
           <div id="runList" class="session-log admin-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>问题处置</h3>
+              <p>把运行异常沉淀为可分派、可跟进、可关闭的复盘记录。</p>
+            </div>
+            <span id="runCaseState">未选择</span>
+          </div>
+          <form id="runCaseForm" class="form-grid">
+            <label>
+              <span>处置状态</span>
+              <select id="caseStatus" class="text-input">
+                <option value="open">待处理</option>
+                <option value="investigating">调查中</option>
+                <option value="resolved">已关闭</option>
+                <option value="accepted_risk">接受风险</option>
+                <option value="ignored">忽略</option>
+              </select>
+            </label>
+            <label>
+              <span>严重级别</span>
+              <select id="caseSeverity" class="text-input">
+                <option value="critical">严重</option>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+            </label>
+            <label>
+              <span>问题类型</span>
+              <select id="caseType" class="text-input">
+                <option value="normal">正常</option>
+                <option value="safety_gate">安全门控</option>
+                <option value="error">系统错误</option>
+                <option value="latency">时延瓶颈</option>
+                <option value="quality">回答质量</option>
+                <option value="asr">ASR</option>
+                <option value="llm">LLM</option>
+                <option value="tts">TTS</option>
+              </select>
+            </label>
+            <label>
+              <span>负责人</span>
+              <input id="caseOwner" class="text-input" type="text" />
+            </label>
+            <label>
+              <span>复核人</span>
+              <input id="caseReviewer" class="text-input" type="text" />
+            </label>
+            <label class="full-span">
+              <span>处置说明</span>
+              <textarea id="caseNote" rows="6"></textarea>
+            </label>
+            <div class="button-row form-actions full-span">
+              <button id="saveRunCaseButton" type="submit" class="primary-button">保存处置</button>
+            </div>
+          </form>
         </article>
       </section>
     </main>

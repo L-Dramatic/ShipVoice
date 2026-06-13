@@ -7,6 +7,7 @@ const state = {
   selectedId: "",
   activeTag: "",
   runs: [],
+  selectedRunId: "",
   jobs: [],
   currentJobId: "",
   currentJobStatus: "",
@@ -69,6 +70,16 @@ function init() {
   $("runSearch").addEventListener("input", debounce(() => loadRuns(), 200));
   $("runStatus").addEventListener("change", () => {
     void loadRuns();
+  });
+  $("runCaseStatus").addEventListener("change", () => {
+    void loadRuns();
+  });
+  $("runCaseSeverity").addEventListener("change", () => {
+    void loadRuns();
+  });
+  $("runCaseForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    void saveRunCase();
   });
   $("adminPassword").addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -146,6 +157,7 @@ function logoutAdmin(showMessage = true) {
   state.records = [];
   state.history = [];
   state.runs = [];
+  state.selectedRunId = "";
   state.jobs = [];
   state.datasets = [];
   state.selectedId = "";
@@ -191,6 +203,8 @@ function resetAdminView() {
   $("historyState").textContent = "未选择";
   $("providerHealthList").innerHTML = '<div class="log-item">登录后加载。</div>';
   $("runList").innerHTML = '<div class="log-item">登录后加载。</div>';
+  $("runCaseState").textContent = "未选择";
+  $("runCaseForm").reset();
   $("datasetList").innerHTML = '<div class="log-item">登录后加载。</div>';
   $("datasetRows").innerHTML = '<div class="log-item">登录后加载。</div>';
   $("datasetSummary").innerHTML = "";
@@ -198,6 +212,8 @@ function resetAdminView() {
   $("configMeta").innerHTML = "";
   $("configState").textContent = "未加载";
   $("knowledgeStatusFilter").value = "";
+  $("runCaseStatus").value = "";
+  $("runCaseSeverity").value = "";
   prepareNewRecord();
 }
 
@@ -237,11 +253,19 @@ async function loadKnowledge() {
 async function loadRuns() {
   const query = $("runSearch").value.trim();
   const status = $("runStatus").value;
+  const caseStatus = $("runCaseStatus").value;
+  const caseSeverity = $("runCaseSeverity").value;
   const payload = await fetchJson(
-    `/api/admin/runs?query=${encodeURIComponent(query)}&status=${encodeURIComponent(status)}&limit=50`
+    `/api/admin/runs?query=${encodeURIComponent(query)}&status=${encodeURIComponent(status)}&case_status=${encodeURIComponent(caseStatus)}&case_severity=${encodeURIComponent(caseSeverity)}&limit=50`
   );
   state.runs = payload.runs || [];
   renderRuns(payload.stats || {}, state.runs);
+  if (state.selectedRunId && !state.runs.some((item) => item.run_id === state.selectedRunId)) {
+    prepareRunCase();
+  }
+  if (!state.selectedRunId && state.runs.length) {
+    selectRun(state.runs[0].run_id);
+  }
 }
 
 async function loadJobs() {
@@ -352,9 +376,11 @@ async function exportRuns(format) {
   setStatus(`导出 ${format.toUpperCase()} 中`, true);
   const query = $("runSearch").value.trim();
   const status = $("runStatus").value;
+  const caseStatus = $("runCaseStatus").value;
+  const caseSeverity = $("runCaseSeverity").value;
   const token = getAdminToken();
   const response = await fetch(
-    `/api/admin/runs/export?format=${encodeURIComponent(format)}&query=${encodeURIComponent(query)}&status=${encodeURIComponent(status)}&limit=500`,
+    `/api/admin/runs/export?format=${encodeURIComponent(format)}&query=${encodeURIComponent(query)}&status=${encodeURIComponent(status)}&case_status=${encodeURIComponent(caseStatus)}&case_severity=${encodeURIComponent(caseSeverity)}&limit=500`,
     {
       headers: buildHeaders(token, false)
     }
@@ -529,6 +555,7 @@ function renderOverview(payload) {
     summaryCard("延迟评测", `rows ${latency.rows ?? 0}`, `first audio ${roundMetric(latency.avg_first_audio_ms)} ms · total ${roundMetric(latency.avg_total_ms)} ms`),
     summaryCard("真实链路", `samples ${realChain.num_samples ?? realChain.rows ?? 0}`, `ASR ${roundMetric(realChain.avg_asr_ms)} ms · 首音 ${roundMetric(realChain.avg_first_audio_ms)} ms`),
     summaryCard("当前配置", `LLM ${config.llm_provider || "--"}`, `ASR ${config.asr_provider || "--"} · TTS ${config.tts_provider || "--"}`),
+    summaryCard("复盘台账", `open ${audit.open_cases ?? 0}`, `high ${audit.high_priority_cases ?? 0} · total ${audit.total_runs ?? 0}`),
     summaryCard("后台作业", `active ${jobs.active_jobs ?? 0}`, `latest ${jobs.latest_job?.status || "--"} · total ${jobs.total_jobs ?? 0}`)
   ].join("");
   renderProviderHealth(providerHealth);
@@ -660,14 +687,71 @@ function renderRuns(stats, runs) {
     .map((run) => {
       const detail = run.error || run.answer_preview || run.question || "";
       return `
-        <div class="log-item ${run.status === "error" ? "is-error" : ""}">
+        <button class="log-item admin-item ${run.run_id === state.selectedRunId ? "is-selected" : ""} ${run.status === "error" ? "is-error" : ""}" data-run-id="${escapeHtml(run.run_id || "")}">
           <strong>${escapeHtml(run.question || run.transcript || "未命名请求")}</strong>
           <p>${escapeHtml(run.session_id || "--")} · ${escapeHtml(run.mode || "--")} · ${escapeHtml(run.gate_label || "--")}</p>
+          <p>${escapeHtml(caseStatusLabel(run.case_status))} · ${escapeHtml(caseSeverityLabel(run.case_severity))} · ${escapeHtml(caseTypeLabel(run.case_type))} · ${escapeHtml(run.case_owner || "未指派")}</p>
           <p>${escapeHtml(trimText(detail, 180))}</p>
           <p class="muted-line">${escapeHtml(run.run_id || "--")} · ${escapeHtml(formatTimestamp(run.created_at || ""))}</p>
-        </div>`;
+        </button>`;
     })
     .join("");
+  document.querySelectorAll("[data-run-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectRun(button.dataset.runId || "");
+    });
+  });
+}
+
+function selectRun(runId) {
+  const run = state.runs.find((item) => item.run_id === runId);
+  if (!run) {
+    return;
+  }
+  state.selectedRunId = runId;
+  $("runCaseState").textContent = `${run.run_id} · ${caseStatusLabel(run.case_status)}`;
+  $("caseStatus").value = run.case_status || "open";
+  $("caseSeverity").value = run.case_severity || "medium";
+  $("caseType").value = run.case_type || "quality";
+  $("caseOwner").value = run.case_owner || "";
+  $("caseReviewer").value = run.case_reviewer || "";
+  $("caseNote").value = run.case_note || "";
+  renderRuns(state.overview?.audit || {}, state.runs);
+}
+
+function prepareRunCase() {
+  state.selectedRunId = "";
+  $("runCaseState").textContent = "未选择";
+  $("runCaseForm").reset();
+  renderRuns(state.overview?.audit || {}, state.runs);
+}
+
+async function saveRunCase() {
+  ensureLoggedIn();
+  if (!state.selectedRunId) {
+    showError("请先选择一条运行记录。");
+    return;
+  }
+  const payload = {
+    case_status: $("caseStatus").value,
+    case_severity: $("caseSeverity").value,
+    case_type: $("caseType").value,
+    case_owner: $("caseOwner").value.trim(),
+    case_reviewer: $("caseReviewer").value.trim(),
+    case_note: $("caseNote").value.trim()
+  };
+  const result = await fetchJson(`/api/admin/runs/${encodeURIComponent(state.selectedRunId)}/case`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+  const updated = result.run || null;
+  if (updated) {
+    state.runs = state.runs.map((item) => (item.run_id === updated.run_id ? updated : item));
+    renderRuns(result.stats || state.overview?.audit || {}, state.runs);
+    selectRun(updated.run_id);
+  }
+  await loadOverview();
+  setStatus("处置已保存", false);
 }
 
 function renderDatasetList(datasets) {
@@ -928,6 +1012,41 @@ function knowledgeStatusLabel(status) {
     archived: "已归档"
   };
   return labels[status] || status || "--";
+}
+
+function caseStatusLabel(status) {
+  const labels = {
+    open: "待处理",
+    investigating: "调查中",
+    resolved: "已关闭",
+    accepted_risk: "接受风险",
+    ignored: "忽略"
+  };
+  return labels[status] || status || "--";
+}
+
+function caseSeverityLabel(severity) {
+  const labels = {
+    critical: "严重",
+    high: "高",
+    medium: "中",
+    low: "低"
+  };
+  return labels[severity] || severity || "--";
+}
+
+function caseTypeLabel(type) {
+  const labels = {
+    normal: "正常",
+    safety_gate: "安全门控",
+    error: "系统错误",
+    latency: "时延瓶颈",
+    quality: "回答质量",
+    asr: "ASR",
+    llm: "LLM",
+    tts: "TTS"
+  };
+  return labels[type] || type || "--";
 }
 
 function formatPercent(value) {

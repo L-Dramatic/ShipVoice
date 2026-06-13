@@ -72,6 +72,14 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
             "error": "",
             "evidence_titles": ["record-a"],
             "audio_name": "clip.wav",
+            "case_status": "open",
+            "case_severity": "high",
+            "case_type": "latency",
+            "case_owner": "ops-a",
+            "case_note": "首音过慢",
+            "case_reviewer": "",
+            "case_reviewed_at": "",
+            "case_updated_at": "2026-06-13T10:00:00+00:00",
         }
 
         with patch("shipvoice.fastapi_app.SQLiteAppStore.search_runs", return_value=[sample_run]):
@@ -88,6 +96,7 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(csv_response.headers["content-type"], "text/csv; charset=utf-8")
             self.assertIn("attachment; filename=", csv_response.headers["content-disposition"])
             self.assertIn("run_id,session_id,status", csv_response.text)
+            self.assertIn("case_status,case_severity,case_type", csv_response.text)
             self.assertIn("run-001", csv_response.text)
 
     async def test_admin_evaluation_run_invokes_scripts(self) -> None:
@@ -130,6 +139,70 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("unknown evaluation targets", response.json()["error"])
+
+    async def test_admin_run_case_update(self) -> None:
+        updated_run = {
+            "run_id": "run-001",
+            "session_id": "session-001",
+            "status": "ok",
+            "created_at": "2026-06-13T10:00:00+00:00",
+            "mode": "full",
+            "question": "question",
+            "transcript": "transcript",
+            "gate_label": "domain_safe",
+            "gate_allowed": True,
+            "answer_preview": "answer",
+            "providers": {"llm": "mock"},
+            "metrics": {"total_ms": 1234},
+            "error": "",
+            "evidence_titles": [],
+            "audio_name": "",
+            "case_status": "resolved",
+            "case_severity": "medium",
+            "case_type": "quality",
+            "case_owner": "ops-a",
+            "case_note": "复盘完成",
+            "case_reviewer": "reviewer-a",
+            "case_reviewed_at": "2026-06-13T10:10:00+00:00",
+            "case_updated_at": "2026-06-13T10:10:00+00:00",
+        }
+        headers = await self.login_headers()
+        with (
+            patch("shipvoice.fastapi_app.SQLiteAppStore.update_run_case", return_value=updated_run) as update_mock,
+            patch("shipvoice.fastapi_app.SQLiteAppStore.audit_stats", return_value={"total_runs": 1, "open_cases": 0}),
+        ):
+            response = await self.client.put(
+                "/api/admin/runs/run-001/case",
+                headers=headers,
+                json={
+                    "case_status": "resolved",
+                    "case_severity": "medium",
+                    "case_type": "quality",
+                    "case_owner": "ops-a",
+                    "case_note": "复盘完成",
+                    "case_reviewer": "reviewer-a",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["run"]["case_status"], "resolved")
+        self.assertEqual(update_mock.call_args.args[0], "run-001")
+
+    async def test_admin_run_case_update_rejects_invalid_status(self) -> None:
+        headers = await self.login_headers()
+        with patch("shipvoice.fastapi_app.SQLiteAppStore.update_run_case", side_effect=ValueError("unsupported run case status")):
+            response = await self.client.put(
+                "/api/admin/runs/run-001/case",
+                headers=headers,
+                json={
+                    "case_status": "not-real",
+                    "case_severity": "medium",
+                    "case_type": "quality",
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("unsupported run case status", response.json()["error"])
 
     async def test_admin_knowledge_detail_includes_history(self) -> None:
         sample_record = {
