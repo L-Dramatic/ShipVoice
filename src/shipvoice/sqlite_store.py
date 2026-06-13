@@ -16,6 +16,15 @@ from .config import project_path
 from .models import AuditRecord
 
 
+KNOWLEDGE_STATUSES = (
+    "draft",
+    "in_review",
+    "approved",
+    "changes_requested",
+    "archived",
+)
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -55,8 +64,26 @@ class SQLiteAppStore:
                     title TEXT NOT NULL,
                     tags_json TEXT NOT NULL,
                     text TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'approved',
+                    owner TEXT NOT NULL DEFAULT '',
+                    source TEXT NOT NULL DEFAULT '',
+                    review_notes TEXT NOT NULL DEFAULT '',
+                    last_reviewer TEXT NOT NULL DEFAULT '',
+                    last_reviewed_at TEXT NOT NULL DEFAULT '',
+                    current_version INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS knowledge_versions (
+                    record_id TEXT NOT NULL,
+                    version_no INTEGER NOT NULL,
+                    action TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    change_note TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    snapshot_json TEXT NOT NULL,
+                    PRIMARY KEY (record_id, version_no)
                 );
 
                 CREATE TABLE IF NOT EXISTS run_audits (
@@ -110,6 +137,30 @@ class SQLiteAppStore:
                 );
                 """
             )
+            self._ensure_knowledge_schema(conn)
+
+    def _ensure_knowledge_schema(self, conn: sqlite3.Connection) -> None:
+        columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(knowledge_records)").fetchall()}
+        required_columns = {
+            "status": "TEXT NOT NULL DEFAULT 'approved'",
+            "owner": "TEXT NOT NULL DEFAULT ''",
+            "source": "TEXT NOT NULL DEFAULT ''",
+            "review_notes": "TEXT NOT NULL DEFAULT ''",
+            "last_reviewer": "TEXT NOT NULL DEFAULT ''",
+            "last_reviewed_at": "TEXT NOT NULL DEFAULT ''",
+            "current_version": "INTEGER NOT NULL DEFAULT 1",
+        }
+        for column_name, column_spec in required_columns.items():
+            if column_name not in columns:
+                conn.execute(f"ALTER TABLE knowledge_records ADD COLUMN {column_name} {column_spec}")
+        conn.execute("UPDATE knowledge_records SET status = COALESCE(NULLIF(status, ''), 'approved')")
+        conn.execute("UPDATE knowledge_records SET owner = COALESCE(owner, '')")
+        conn.execute("UPDATE knowledge_records SET source = COALESCE(source, '')")
+        conn.execute("UPDATE knowledge_records SET review_notes = COALESCE(review_notes, '')")
+        conn.execute("UPDATE knowledge_records SET last_reviewer = COALESCE(last_reviewer, '')")
+        conn.execute("UPDATE knowledge_records SET last_reviewed_at = COALESCE(last_reviewed_at, '')")
+        conn.execute("UPDATE knowledge_records SET current_version = COALESCE(current_version, 1)")
+        conn.commit()
 
     def _bootstrap_if_needed(self) -> None:
         with self._lock:
@@ -117,6 +168,9 @@ class SQLiteAppStore:
                 knowledge_count = int(conn.execute("SELECT COUNT(*) FROM knowledge_records").fetchone()[0])
                 if knowledge_count == 0 and self.corpus_path.exists():
                     self._import_corpus_locked(conn)
+                    knowledge_count = int(conn.execute("SELECT COUNT(*) FROM knowledge_records").fetchone()[0])
+                if knowledge_count > 0:
+                    self._backfill_knowledge_versions_locked(conn)
                 audit_count = int(conn.execute("SELECT COUNT(*) FROM run_audits").fetchone()[0])
                 if audit_count == 0 and self.audit_log_path.exists():
                     self._import_audit_log_locked(conn)
@@ -135,14 +189,24 @@ class SQLiteAppStore:
                 item = json.loads(line)
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO knowledge_records (id, title, tags_json, text, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO knowledge_records (
+                        id, title, tags_json, text, status, owner, source, review_notes,
+                        last_reviewer, last_reviewed_at, current_version, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         str(item["id"]).strip(),
                         str(item["title"]).strip(),
                         json.dumps(item.get("tags", []), ensure_ascii=False),
                         str(item["text"]).strip(),
+                        "approved",
+                        "",
+                        "bootstrap_corpus",
+                        "",
+                        "system",
+                        now,
+                        1,
                         now,
                         now,
                     ),
@@ -175,33 +239,78 @@ class SQLiteAppStore:
                 summary=dataset["summary"],
             )
 
-    def list_knowledge(self, *, query: str = "", tag: str = "", limit: int = 100) -> list[dict[str, Any]]:
+    def _backfill_knowledge_versions_locked(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM knowledge_records
+            ORDER BY id
+            """
+        ).fetchall()
+        for row in rows:
+            existing_count = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM knowledge_versions WHERE record_id = ?",
+                    (row["id"],),
+                ).fetchone()[0]
+            )
+            if existing_count > 0:
+                continue
+            snapshot = self._row_to_knowledge_dict(row)
+            self._append_knowledge_version_locked(
+                conn,
+                record_id=str(row["id"]),
+                version_no=int(snapshot.get("current_version", 1) or 1),
+                action="bootstrap_import",
+                actor="system",
+                change_note="Initial knowledge import",
+                snapshot=snapshot,
+            )
+
+    def list_knowledge(self, *, query: str = "", tag: str = "", status: str = "", limit: int = 100) -> list[dict[str, Any]]:
         query = query.strip().lower()
         tag = tag.strip().lower()
+        status = status.strip().lower()
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, title, tags_json, text
+                SELECT *
                 FROM knowledge_records
-                ORDER BY id
+                ORDER BY
+                    CASE status
+                        WHEN 'in_review' THEN 0
+                        WHEN 'changes_requested' THEN 1
+                        WHEN 'draft' THEN 2
+                        WHEN 'approved' THEN 3
+                        ELSE 4
+                    END,
+                    updated_at DESC,
+                    id ASC
                 """
             ).fetchall()
         matched: list[dict[str, Any]] = []
         for row in rows:
-            tags = json.loads(row["tags_json"])
-            joined_tags = " ".join(tags).lower()
-            haystack = f"{row['id']} {row['title']} {row['text']} {joined_tags}".lower()
+            item = self._row_to_knowledge_dict(row)
+            joined_tags = " ".join(item["tags"]).lower()
+            haystack = f"{item['id']} {item['title']} {item['text']} {joined_tags} {item['owner']} {item['source']}".lower()
             if query and query not in haystack:
                 continue
-            if tag and not any(tag == str(item).lower() for item in tags):
+            if tag and not any(tag == str(tag_item).lower() for tag_item in item["tags"]):
+                continue
+            if status and status != item["status"]:
                 continue
             matched.append(
                 {
-                    "id": row["id"],
-                    "title": row["title"],
-                    "tags": tags,
-                    "text_preview": self._preview(str(row["text"])),
-                    "char_count": len(str(row["text"])),
+                    "id": item["id"],
+                    "title": item["title"],
+                    "tags": item["tags"],
+                    "status": item["status"],
+                    "owner": item["owner"],
+                    "source": item["source"],
+                    "current_version": item["current_version"],
+                    "updated_at": item["updated_at"],
+                    "text_preview": self._preview(str(item["text"])),
+                    "char_count": len(str(item["text"])),
                 }
             )
         return matched[:limit]
@@ -209,17 +318,37 @@ class SQLiteAppStore:
     def get_knowledge(self, record_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT id, title, tags_json, text FROM knowledge_records WHERE id = ?",
+                "SELECT * FROM knowledge_records WHERE id = ?",
                 (record_id,),
             ).fetchone()
         if row is None:
             return None
-        return {
-            "id": row["id"],
-            "title": row["title"],
-            "tags": json.loads(row["tags_json"]),
-            "text": row["text"],
-        }
+        return self._row_to_knowledge_dict(row)
+
+    def list_knowledge_versions(self, record_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT record_id, version_no, action, actor, change_note, created_at, snapshot_json
+                FROM knowledge_versions
+                WHERE record_id = ?
+                ORDER BY version_no DESC
+                LIMIT ?
+                """,
+                (record_id, limit),
+            ).fetchall()
+        return [
+            {
+                "record_id": row["record_id"],
+                "version_no": int(row["version_no"]),
+                "action": row["action"],
+                "actor": row["actor"],
+                "change_note": row["change_note"],
+                "created_at": row["created_at"],
+                "snapshot": json.loads(row["snapshot_json"] or "{}"),
+            }
+            for row in rows
+        ]
 
     def upsert_knowledge(self, payload: dict[str, Any], *, record_id: str | None = None) -> dict[str, Any]:
         with self._lock:
@@ -227,6 +356,11 @@ class SQLiteAppStore:
             title = str(payload.get("title", "")).strip()
             text = str(payload.get("text", "")).strip()
             tags = self._normalize_tags(payload.get("tags", []))
+            owner = str(payload.get("owner", "")).strip()
+            source = str(payload.get("source", "")).strip()
+            reviewer = str(payload.get("reviewer", "")).strip()
+            review_notes = str(payload.get("review_notes", "")).strip()
+            change_note = str(payload.get("change_note", "")).strip()
             if not title:
                 raise ValueError("knowledge title is required")
             if not text:
@@ -234,37 +368,97 @@ class SQLiteAppStore:
 
             now = utc_now_iso()
             with self._connect() as conn:
-                existing = conn.execute("SELECT 1 FROM knowledge_records WHERE id = ?", (resolved_id,)).fetchone()
-                created_at = now
-                if existing:
-                    created_at_row = conn.execute(
-                        "SELECT created_at FROM knowledge_records WHERE id = ?",
-                        (resolved_id,),
-                    ).fetchone()
-                    created_at = str(created_at_row["created_at"]) if created_at_row else now
+                existing_row = conn.execute("SELECT * FROM knowledge_records WHERE id = ?", (resolved_id,)).fetchone()
+                existing = self._row_to_knowledge_dict(existing_row) if existing_row is not None else None
+                resolved_status = self._validate_knowledge_status(
+                    str(payload.get("status", existing["status"] if existing else "draft")).strip().lower() or "draft"
+                )
+                created_at = existing["created_at"] if existing else now
+                current_version = (int(existing["current_version"]) + 1) if existing else 1
+                last_reviewer = existing["last_reviewer"] if existing else ""
+                last_reviewed_at = existing["last_reviewed_at"] if existing else ""
+                if reviewer:
+                    last_reviewer = reviewer
+                if reviewer or review_notes or resolved_status in {"in_review", "approved", "changes_requested", "archived"}:
+                    last_reviewed_at = now
+
+                record = {
+                    "id": resolved_id,
+                    "title": title,
+                    "tags": tags,
+                    "text": text,
+                    "status": resolved_status,
+                    "owner": owner,
+                    "source": source,
+                    "review_notes": review_notes,
+                    "last_reviewer": last_reviewer,
+                    "last_reviewed_at": last_reviewed_at,
+                    "current_version": current_version,
+                    "created_at": created_at,
+                    "updated_at": now,
+                }
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO knowledge_records (id, title, tags_json, text, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO knowledge_records (
+                        id, title, tags_json, text, status, owner, source, review_notes,
+                        last_reviewer, last_reviewed_at, current_version, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (resolved_id, title, json.dumps(tags, ensure_ascii=False), text, created_at, now),
+                    (
+                        record["id"],
+                        record["title"],
+                        json.dumps(record["tags"], ensure_ascii=False),
+                        record["text"],
+                        record["status"],
+                        record["owner"],
+                        record["source"],
+                        record["review_notes"],
+                        record["last_reviewer"],
+                        record["last_reviewed_at"],
+                        record["current_version"],
+                        record["created_at"],
+                        record["updated_at"],
+                    ),
+                )
+                action = "created" if existing is None else ("status_changed" if existing["status"] != resolved_status else "updated")
+                actor = reviewer or owner or "admin"
+                note = change_note or self._default_change_note(action=action, status=resolved_status)
+                self._append_knowledge_version_locked(
+                    conn,
+                    record_id=resolved_id,
+                    version_no=current_version,
+                    action=action,
+                    actor=actor,
+                    change_note=note,
+                    snapshot=record,
                 )
                 conn.commit()
-            action = "created" if existing is None else "updated"
             index_info = self.sync_knowledge_files()
             return {
                 "ok": True,
                 "action": action,
-                "record": {"id": resolved_id, "title": title, "tags": tags, "text": text},
+                "record": record,
+                "history": self.list_knowledge_versions(resolved_id, limit=12),
                 "index": index_info,
             }
 
     def delete_knowledge(self, record_id: str) -> dict[str, Any]:
         with self._lock:
-            record = self.get_knowledge(record_id)
-            if record is None:
-                raise KeyError(record_id)
             with self._connect() as conn:
+                row = conn.execute("SELECT * FROM knowledge_records WHERE id = ?", (record_id,)).fetchone()
+                if row is None:
+                    raise KeyError(record_id)
+                record = self._row_to_knowledge_dict(row)
+                self._append_knowledge_version_locked(
+                    conn,
+                    record_id=record_id,
+                    version_no=int(record["current_version"]) + 1,
+                    action="deleted",
+                    actor=record["owner"] or record["last_reviewer"] or "admin",
+                    change_note="Knowledge record deleted",
+                    snapshot={**record, "deleted": True, "updated_at": utc_now_iso()},
+                )
                 conn.execute("DELETE FROM knowledge_records WHERE id = ?", (record_id,))
                 conn.commit()
             index_info = self.sync_knowledge_files()
@@ -276,13 +470,27 @@ class SQLiteAppStore:
 
     def knowledge_summary(self) -> dict[str, Any]:
         with self._connect() as conn:
-            rows = conn.execute("SELECT id, tags_json FROM knowledge_records ORDER BY id").fetchall()
+            rows = conn.execute(
+                """
+                SELECT id, tags_json, status
+                FROM knowledge_records
+                ORDER BY id
+                """
+            ).fetchall()
         tag_counter: Counter[str] = Counter()
+        status_counter: Counter[str] = Counter()
         for row in rows:
             tag_counter.update(json.loads(row["tags_json"]))
+            status_counter.update([str(row["status"] or "draft")])
         index_mtime = self.index_path.stat().st_mtime if self.index_path.exists() else None
+        approved_count = int(status_counter.get("approved", 0))
         return {
             "record_count": len(rows),
+            "approved_count": approved_count,
+            "pending_review_count": int(status_counter.get("in_review", 0) + status_counter.get("changes_requested", 0)),
+            "draft_count": int(status_counter.get("draft", 0)),
+            "archived_count": int(status_counter.get("archived", 0)),
+            "status_counts": {status_name: int(status_counter.get(status_name, 0)) for status_name in KNOWLEDGE_STATUSES},
             "next_id": self.next_knowledge_id(),
             "top_tags": [{"tag": tag, "count": count} for tag, count in tag_counter.most_common(12)],
             "index_path": str(self.index_path),
@@ -313,9 +521,13 @@ class SQLiteAppStore:
     def sync_knowledge_files(self) -> dict[str, Any]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT id, title, tags_json, text FROM knowledge_records ORDER BY id"
+                """
+                SELECT id, title, tags_json, text, status
+                FROM knowledge_records
+                ORDER BY id
+                """
             ).fetchall()
-        docs = [
+        approved_docs = [
             {
                 "id": row["id"],
                 "title": row["title"],
@@ -323,21 +535,87 @@ class SQLiteAppStore:
                 "text": row["text"],
             }
             for row in rows
+            if str(row["status"] or "draft") == "approved"
         ]
         self.backup_root.mkdir(parents=True, exist_ok=True)
         if self.corpus_path.exists():
             backup_name = f"{self.corpus_path.stem}-{utc_now_iso().replace(':', '-')}.jsonl"
             backup_path = self.backup_root / backup_name
             backup_path.write_text(self.corpus_path.read_text(encoding="utf-8"), encoding="utf-8")
-        corpus_text = "\n".join(json.dumps(item, ensure_ascii=False) for item in docs) + "\n"
+        corpus_text = "\n".join(json.dumps(item, ensure_ascii=False) for item in approved_docs)
+        if corpus_text:
+            corpus_text += "\n"
         self.corpus_path.write_text(corpus_text, encoding="utf-8")
-        index = build_index(docs)
+        index = build_index(approved_docs)
         self.index_path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
         return {
-            "document_count": len(docs),
+            "document_count": len(approved_docs),
+            "approved_count": len(approved_docs),
+            "total_records": len(rows),
             "index_path": str(self.index_path),
             "updated_at": utc_now_iso(),
         }
+
+    def _row_to_knowledge_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "tags": json.loads(row["tags_json"] or "[]"),
+            "text": row["text"],
+            "status": str(row["status"] or "draft"),
+            "owner": str(row["owner"] or ""),
+            "source": str(row["source"] or ""),
+            "review_notes": str(row["review_notes"] or ""),
+            "last_reviewer": str(row["last_reviewer"] or ""),
+            "last_reviewed_at": str(row["last_reviewed_at"] or ""),
+            "current_version": int(row["current_version"] or 1),
+            "created_at": str(row["created_at"] or ""),
+            "updated_at": str(row["updated_at"] or ""),
+        }
+
+    def _validate_knowledge_status(self, status: str) -> str:
+        normalized = status.strip().lower() or "draft"
+        if normalized not in KNOWLEDGE_STATUSES:
+            raise ValueError(f"unsupported knowledge status: {status}")
+        return normalized
+
+    def _default_change_note(self, *, action: str, status: str) -> str:
+        if action == "created":
+            return f"Knowledge record created as {status}"
+        if action == "status_changed":
+            return f"Knowledge status updated to {status}"
+        if action == "deleted":
+            return "Knowledge record deleted"
+        return "Knowledge content updated"
+
+    def _append_knowledge_version_locked(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        record_id: str,
+        version_no: int,
+        action: str,
+        actor: str,
+        change_note: str,
+        snapshot: dict[str, Any],
+    ) -> None:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO knowledge_versions (
+                record_id, version_no, action, actor, change_note, created_at, snapshot_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record_id,
+                int(version_no),
+                action,
+                actor,
+                change_note,
+                utc_now_iso(),
+                json.dumps(snapshot, ensure_ascii=False),
+            ),
+        )
 
     def insert_audit(self, record: AuditRecord) -> None:
         with self._lock:

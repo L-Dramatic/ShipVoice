@@ -3,6 +3,7 @@ const ADMIN_TOKEN_KEY = "shipvoice.admin_token";
 const state = {
   overview: null,
   records: [],
+  history: [],
   selectedId: "",
   activeTag: "",
   runs: [],
@@ -62,6 +63,9 @@ function init() {
     void loadConfigView();
   });
   $("knowledgeSearch").addEventListener("input", debounce(() => loadKnowledge(), 200));
+  $("knowledgeStatusFilter").addEventListener("change", () => {
+    void loadKnowledge();
+  });
   $("runSearch").addEventListener("input", debounce(() => loadRuns(), 200));
   $("runStatus").addEventListener("change", () => {
     void loadRuns();
@@ -140,6 +144,7 @@ function logoutAdmin(showMessage = true) {
   state.session = null;
   state.overview = null;
   state.records = [];
+  state.history = [];
   state.runs = [];
   state.jobs = [];
   state.datasets = [];
@@ -176,11 +181,14 @@ function resetAdminView() {
   $("gateAccuracyMetric").textContent = "--";
   $("realLatencyMetric").textContent = "--";
   $("evaluationSummary").innerHTML = "";
+  $("knowledgeSummary").innerHTML = "";
   $("jobSummary").innerHTML = "";
   $("jobList").innerHTML = '<div class="log-item">登录后加载。</div>';
   $("jobListState").textContent = "0 个";
   $("knowledgeList").innerHTML = '<div class="log-item">登录后加载。</div>';
   $("knowledgeListState").textContent = "0 条";
+  $("historyList").innerHTML = '<div class="log-item">登录后加载。</div>';
+  $("historyState").textContent = "未选择";
   $("providerHealthList").innerHTML = '<div class="log-item">登录后加载。</div>';
   $("runList").innerHTML = '<div class="log-item">登录后加载。</div>';
   $("datasetList").innerHTML = '<div class="log-item">登录后加载。</div>';
@@ -189,6 +197,7 @@ function resetAdminView() {
   $("configEditor").value = "";
   $("configMeta").innerHTML = "";
   $("configState").textContent = "未加载";
+  $("knowledgeStatusFilter").value = "";
   prepareNewRecord();
 }
 
@@ -209,11 +218,17 @@ async function loadOverview() {
 async function loadKnowledge() {
   const query = $("knowledgeSearch").value.trim();
   const tag = state.activeTag;
-  const payload = await fetchJson(`/api/admin/knowledge?query=${encodeURIComponent(query)}&tag=${encodeURIComponent(tag)}`);
+  const status = $("knowledgeStatusFilter").value;
+  const payload = await fetchJson(
+    `/api/admin/knowledge?query=${encodeURIComponent(query)}&tag=${encodeURIComponent(tag)}&status=${encodeURIComponent(status)}`
+  );
   state.records = payload.records || [];
   renderKnowledgeSummary(payload.summary || {});
   renderKnowledgeList(state.records);
   renderTagFilters(payload.summary?.top_tags || []);
+  if (state.selectedId && !state.records.some((item) => item.id === state.selectedId)) {
+    prepareNewRecord(false);
+  }
   if (!state.selectedId && state.records.length) {
     await selectRecord(state.records[0].id);
   }
@@ -390,11 +405,17 @@ async function saveRecord() {
   const payload = {
     id: recordId,
     title: $("recordTitle").value.trim(),
+    status: $("recordStatus").value,
+    owner: $("recordOwner").value.trim(),
+    source: $("recordSource").value.trim(),
     tags: $("recordTags")
       .value.split(",")
       .map((item) => item.trim())
       .filter(Boolean),
-    text: $("recordText").value.trim()
+    text: $("recordText").value.trim(),
+    reviewer: $("recordReviewer").value.trim(),
+    review_notes: $("recordReviewNotes").value.trim(),
+    change_note: $("recordChangeNote").value.trim()
   };
   if (!payload.title || !payload.text) {
     showError("标题和正文不能为空。");
@@ -431,22 +452,40 @@ async function selectRecord(recordId) {
   }
   const payload = await fetchJson(`/api/admin/knowledge/${encodeURIComponent(recordId)}`);
   const record = payload.record || {};
+  state.history = payload.history || [];
   state.selectedId = record.id || "";
   $("recordId").value = record.id || "";
   $("recordTitle").value = record.title || "";
+  $("recordStatus").value = record.status || "draft";
+  $("recordOwner").value = record.owner || "";
+  $("recordSource").value = record.source || "";
   $("recordTags").value = Array.isArray(record.tags) ? record.tags.join(", ") : "";
   $("recordText").value = record.text || "";
-  $("editorState").textContent = state.selectedId || "未选择";
+  $("recordReviewer").value = record.last_reviewer || "";
+  $("recordReviewNotes").value = record.review_notes || "";
+  $("recordChangeNote").value = "";
+  $("editorState").textContent = state.selectedId ? `${state.selectedId} · ${knowledgeStatusLabel(record.status)}` : "未选择";
+  renderHistory(state.history);
   renderKnowledgeList(state.records);
 }
 
 function prepareNewRecord(resetId = true) {
+  state.history = [];
   state.selectedId = "";
   $("recordId").value = resetId ? state.overview?.knowledge?.next_id || "" : "";
   $("recordTitle").value = "";
+  $("recordStatus").value = "draft";
+  $("recordOwner").value = "";
+  $("recordSource").value = "";
   $("recordTags").value = "";
   $("recordText").value = "";
+  $("recordReviewer").value = "";
+  $("recordReviewNotes").value = "";
+  $("recordChangeNote").value = "";
   $("editorState").textContent = "新建条目";
+  $("historyState").textContent = "未选择";
+  $("historyList").innerHTML = '<div class="log-item">保存后自动生成版本历史。</div>';
+  renderKnowledgeList(state.records);
 }
 
 async function saveConfig() {
@@ -537,6 +576,10 @@ function renderJobs(summary, jobs) {
 
 function renderKnowledgeSummary(summary) {
   $("knowledgeListState").textContent = `${summary.record_count ?? 0} 条`;
+  $("knowledgeSummary").innerHTML = [
+    summaryCard("已批准", String(summary.approved_count ?? 0), `索引上线 ${summary.approved_count ?? 0}`),
+    summaryCard("待审核", String(summary.pending_review_count ?? 0), `草稿 ${summary.draft_count ?? 0} · 归档 ${summary.archived_count ?? 0}`)
+  ].join("");
 }
 
 function renderKnowledgeList(records) {
@@ -549,6 +592,7 @@ function renderKnowledgeList(records) {
       (record) => `
         <button class="log-item admin-item ${record.id === state.selectedId ? "is-selected" : ""}" data-record-id="${escapeHtml(record.id)}">
           <strong>${escapeHtml(record.title)}</strong>
+          <p>${escapeHtml(knowledgeStatusLabel(record.status))} · v${escapeHtml(String(record.current_version || 1))} · ${escapeHtml(record.owner || "未指派")}</p>
           <p>${escapeHtml((record.tags || []).join(" · "))}</p>
           <p>${escapeHtml(record.text_preview || "")}</p>
         </button>`
@@ -559,6 +603,33 @@ function renderKnowledgeList(records) {
       void selectRecord(button.dataset.recordId || "");
     });
   });
+}
+
+function renderHistory(history) {
+  $("historyState").textContent = history.length ? `${history.length} 条` : "未选择";
+  if (!history.length) {
+    $("historyList").innerHTML = '<div class="log-item">当前条目还没有历史记录。</div>';
+    return;
+  }
+  $("historyList").innerHTML = history
+    .map((item) => {
+      const snapshot = item.snapshot || {};
+      const detail = [
+        `v${item.version_no}`,
+        knowledgeStatusLabel(snapshot.status),
+        item.actor || "--",
+        formatTimestamp(item.created_at)
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return `
+        <div class="log-item">
+          <strong>${escapeHtml(item.action || "updated")}</strong>
+          <p>${escapeHtml(detail)}</p>
+          <p>${escapeHtml(item.change_note || "--")}</p>
+        </div>`;
+    })
+    .join("");
 }
 
 function renderTagFilters(tagRows) {
@@ -846,6 +917,17 @@ function datasetDetail(datasetName, row) {
     };
   }
   return { meta: "", body: trimText(JSON.stringify(row), 180) };
+}
+
+function knowledgeStatusLabel(status) {
+  const labels = {
+    draft: "草稿",
+    in_review: "待审核",
+    approved: "已批准",
+    changes_requested: "待修改",
+    archived: "已归档"
+  };
+  return labels[status] || status || "--";
 }
 
 function formatPercent(value) {

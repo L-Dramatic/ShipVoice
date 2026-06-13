@@ -47,6 +47,14 @@
       <section class="control-group">
         <h2>知识库检索</h2>
         <input id="knowledgeSearch" class="text-input" type="text" placeholder="搜索标题、标签或正文" />
+        <select id="knowledgeStatusFilter" class="text-input">
+          <option value="">全部审核状态</option>
+          <option value="draft">仅草稿</option>
+          <option value="in_review">仅待审核</option>
+          <option value="approved">仅已批准</option>
+          <option value="changes_requested">仅待修改</option>
+          <option value="archived">仅已归档</option>
+        </select>
         <div id="tagFilters" class="chip-row"></div>
       </section>
 
@@ -100,6 +108,7 @@
             </div>
             <span id="knowledgeListState">0 条</span>
           </div>
+          <div id="knowledgeSummary" class="meta-grid admin-summary-grid"></div>
           <div id="knowledgeList" class="session-log admin-list"></div>
         </article>
 
@@ -120,6 +129,24 @@
               <span>标题</span>
               <input id="recordTitle" class="text-input" type="text" />
             </label>
+            <label>
+              <span>审核状态</span>
+              <select id="recordStatus" class="text-input">
+                <option value="draft">草稿</option>
+                <option value="in_review">待审核</option>
+                <option value="approved">已批准</option>
+                <option value="changes_requested">待修改</option>
+                <option value="archived">已归档</option>
+              </select>
+            </label>
+            <label>
+              <span>负责人</span>
+              <input id="recordOwner" class="text-input" type="text" placeholder="如：张三 / shipvoice-team" />
+            </label>
+            <label class="full-span">
+              <span>来源说明</span>
+              <input id="recordSource" class="text-input" type="text" placeholder="如：作业手册 4.2 / 课堂资料 / 现场规程" />
+            </label>
             <label class="full-span">
               <span>标签</span>
               <input id="recordTags" class="text-input" type="text" placeholder="用英文逗号分隔，如：有限空间,动火,监护" />
@@ -128,11 +155,34 @@
               <span>正文</span>
               <textarea id="recordText" rows="10"></textarea>
             </label>
+            <label>
+              <span>审核人</span>
+              <input id="recordReviewer" class="text-input" type="text" placeholder="如：李四 / teacher-review" />
+            </label>
+            <label>
+              <span>变更说明</span>
+              <input id="recordChangeNote" class="text-input" type="text" placeholder="本次修改做了什么" />
+            </label>
+            <label class="full-span">
+              <span>审核备注</span>
+              <textarea id="recordReviewNotes" rows="4"></textarea>
+            </label>
             <div class="button-row form-actions full-span">
               <button id="saveRecordButton" type="submit" class="primary-button">保存条目</button>
               <button id="deleteRecordButton" type="button" class="secondary-button">删除条目</button>
             </div>
           </form>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>版本历史</h3>
+              <p>记录每次编辑、状态变更和审核痕迹，用于追溯责任与回滚定位。</p>
+            </div>
+            <span id="historyState">未选择</span>
+          </div>
+          <div id="historyList" class="session-log admin-list"></div>
         </article>
 
         <article class="panel">

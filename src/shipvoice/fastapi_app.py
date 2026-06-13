@@ -50,6 +50,12 @@ class KnowledgePayload(BaseModel):
     title: str
     tags: list[str] = Field(default_factory=list)
     text: str
+    status: str = "draft"
+    owner: str = ""
+    source: str = ""
+    reviewer: str = ""
+    review_notes: str = ""
+    change_note: str = ""
 
 
 class ConfigPayload(BaseModel):
@@ -731,13 +737,14 @@ def create_app() -> FastAPI:
     def admin_knowledge(
         query: str = "",
         tag: str = "",
+        status: str = "",
         limit: int = 100,
         admin: dict[str, Any] = Depends(require_admin),
     ) -> dict[str, Any]:
         return {
             "ok": True,
             "summary": store.knowledge_summary(),
-            "records": store.list_knowledge(query=query, tag=tag, limit=limit),
+            "records": store.list_knowledge(query=query, tag=tag, status=status, limit=limit),
         }
 
     @app.get("/api/admin/knowledge/{record_id}")
@@ -745,11 +752,14 @@ def create_app() -> FastAPI:
         record = store.get_knowledge(record_id)
         if record is None:
             raise HTTPException(status_code=404, detail={"error": f"knowledge record not found: {record_id}"})
-        return {"ok": True, "record": record}
+        return {"ok": True, "record": record, "history": store.list_knowledge_versions(record_id, limit=12)}
 
     @app.post("/api/admin/knowledge")
     def admin_knowledge_create(payload: KnowledgePayload, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
-        return store.upsert_knowledge(_payload_to_dict(payload))
+        try:
+            return store.upsert_knowledge(_payload_to_dict(payload))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
 
     @app.put("/api/admin/knowledge/{record_id}")
     def admin_knowledge_update(
@@ -757,7 +767,10 @@ def create_app() -> FastAPI:
         payload: KnowledgePayload,
         admin: dict[str, Any] = Depends(require_admin),
     ) -> dict[str, Any]:
-        return store.upsert_knowledge(_payload_to_dict(payload), record_id=record_id)
+        try:
+            return store.upsert_knowledge(_payload_to_dict(payload), record_id=record_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
 
     @app.delete("/api/admin/knowledge/{record_id}")
     def admin_knowledge_delete(record_id: str, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:

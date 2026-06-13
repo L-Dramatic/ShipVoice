@@ -131,6 +131,69 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("unknown evaluation targets", response.json()["error"])
 
+    async def test_admin_knowledge_detail_includes_history(self) -> None:
+        sample_record = {
+            "id": "KS099",
+            "title": "受限空间隔离",
+            "tags": ["有限空间", "隔离"],
+            "text": "进入前需要完成机械、电气、介质隔离。",
+            "status": "in_review",
+            "owner": "team-a",
+            "source": "安全手册 4.2",
+            "review_notes": "等待老师复核",
+            "last_reviewer": "reviewer-a",
+            "last_reviewed_at": "2026-06-13T10:00:00+00:00",
+            "current_version": 3,
+            "created_at": "2026-06-12T10:00:00+00:00",
+            "updated_at": "2026-06-13T10:00:00+00:00",
+        }
+        history = [
+            {
+                "record_id": "KS099",
+                "version_no": 3,
+                "action": "status_changed",
+                "actor": "reviewer-a",
+                "change_note": "提交审核",
+                "created_at": "2026-06-13T10:00:00+00:00",
+                "snapshot": sample_record,
+            }
+        ]
+        headers = await self.login_headers()
+        with (
+            patch("shipvoice.fastapi_app.SQLiteAppStore.get_knowledge", return_value=sample_record),
+            patch("shipvoice.fastapi_app.SQLiteAppStore.list_knowledge_versions", return_value=history),
+        ):
+            response = await self.client.get("/api/admin/knowledge/KS099", headers=headers)
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["record"]["status"], "in_review")
+        self.assertEqual(payload["record"]["current_version"], 3)
+        self.assertEqual(payload["history"][0]["change_note"], "提交审核")
+
+    async def test_admin_knowledge_create_rejects_invalid_status(self) -> None:
+        headers = await self.login_headers()
+        with patch("shipvoice.fastapi_app.SQLiteAppStore.upsert_knowledge", side_effect=ValueError("unsupported knowledge status")):
+            response = await self.client.post(
+                "/api/admin/knowledge",
+                headers=headers,
+                json={
+                    "id": "KS101",
+                    "title": "测试条目",
+                    "tags": ["测试"],
+                    "text": "测试正文",
+                    "status": "bad-status",
+                    "owner": "tester",
+                    "source": "manual",
+                    "reviewer": "",
+                    "review_notes": "",
+                    "change_note": "invalid status attempt",
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("unsupported knowledge status", response.json()["error"])
+
 
 if __name__ == "__main__":
     unittest.main()
