@@ -22,6 +22,8 @@ http://127.0.0.1:8022/admin.html
 
 如果 `8022` 被占用，服务会自动顺延到后续端口，以终端输出为准。
 
+后台需要管理员登录。密码来自环境变量 `SHIPVOICE_ADMIN_PASSWORD`；未设置时使用开发默认值 `shipvoice-admin`。答辩前建议显式设置密码后再启动服务。
+
 ## 现在能做什么
 
 1. 查看项目总览
@@ -41,7 +43,11 @@ http://127.0.0.1:8022/admin.html
 3. 运行复盘
    - 查看最近问答运行记录
    - 按成功/失败筛选
+   - 按 case 状态和严重度筛选
    - 搜索 `session_id`、问题文本、错误信息
+   - 给异常记录标记 `open`、`investigating`、`resolved` 等处理状态
+   - 记录严重度、问题类型、负责人、复盘人和处理备注
+   - 导出 CSV / JSONL 作为后续改进台账
    - 清理 smoke 测试日志和乱码历史记录
 
 4. 评测监控
@@ -50,6 +56,7 @@ http://127.0.0.1:8022/admin.html
    - 延迟评测表：`latency_metrics`
    - 真实链路样本表：`real_chain_samples`
    - 支持重新从 `results/` 导入这些数据
+   - 支持从后台发起异步评测任务，并查看任务状态和日志
 
 5. 配置管理
    - 直接查看 `configs/pipeline.json`
@@ -63,7 +70,14 @@ http://127.0.0.1:8022/admin.html
 
 ## 对应后端接口
 
+- `GET /api/admin/auth/status`
+- `POST /api/admin/auth/login`
+- `GET /api/admin/auth/session`
 - `GET /api/admin/overview`
+- `GET /api/admin/provider-health`
+- `GET /api/admin/jobs`
+- `GET /api/admin/jobs/<job_id>`
+- `POST /api/admin/evaluations/run`
 - `GET /api/admin/knowledge`
 - `GET /api/admin/knowledge/<record_id>`
 - `POST /api/admin/knowledge`
@@ -71,18 +85,20 @@ http://127.0.0.1:8022/admin.html
 - `DELETE /api/admin/knowledge/<record_id>`
 - `POST /api/admin/reindex`
 - `GET /api/admin/runs`
+- `GET /api/admin/runs/export`
+- `PUT /api/admin/runs/<run_id>/case`
 - `POST /api/admin/runs/cleanup`
 - `GET /api/admin/evaluations`
 - `GET /api/admin/evaluations/<dataset_name>`
 - `POST /api/admin/evaluations/reload`
-- `GET /api/admin/provider-health`
 - `GET /api/admin/config`
 - `POST /api/admin/config`
 - `POST /api/admin/config/reload`
 
 ## 当前边界
 
-1. 这是单机本地后台，还没有用户权限体系。
-2. 知识库主文件仍然是 `jsonl`，但已经具备基础 CRUD 和索引重建能力。
+1. 当前是单管理员 token 认证，还不是多用户 RBAC。
+2. 知识库主文件仍然是 `jsonl`，但已经具备 CRUD、版本历史、状态字段和索引重建能力。
 3. 审计日志同时保存在 `SQLite` 与 `results/runtime/session_audit.jsonl`。
-4. 若继续工程化，下一步应补齐认证、任务队列、对象存储和 `PostgreSQL`。
+4. 后台任务当前是本地异步执行，企业级版本应迁移到独立任务队列。
+5. 若继续工程化，下一步应补齐 RBAC、对象存储、PostgreSQL 和集中化监控。

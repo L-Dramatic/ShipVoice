@@ -178,3 +178,8 @@ web/static/              答辩演示面板
 - AutoDL 使用方案：[docs/AUTODL_RUNBOOK.md](docs/AUTODL_RUNBOOK.md)
 - 高质量路线：[docs/HIGHEST_QUALITY_PLAN.md](docs/HIGHEST_QUALITY_PLAN.md)
 - 架构说明：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
+## 最新验收材料
+
+- 课程高分评分证据：[docs/PHASE1_SCORECARD.md](docs/PHASE1_SCORECARD.md)
+- 演示与运维操作手册：[docs/OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)
