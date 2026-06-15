@@ -109,6 +109,7 @@ def ms(value: Any) -> str:
 def build_report() -> dict[str, Any]:
     safety = read_json(RESULTS_DIR / "safety_gate_eval_summary.json", {})
     multiturn = read_json(RESULTS_DIR / "multiturn_eval_summary.json", {})
+    citation = read_json(RESULTS_DIR / "citation_quality_summary.json", {})
     asr = read_json(RESULTS_DIR / "asr_eval_summary.json", {})
     real_chain = read_json(RESULTS_DIR / "remote_real_chain_20260612_chattts_48359" / "summary.json", {})
     knowledge_count = count_jsonl(ROOT / "data" / "knowledge" / "ship_safety_corpus.jsonl")
@@ -149,8 +150,18 @@ def build_report() -> dict[str, Any]:
         {
             "name": "可解释证据引用",
             "status": "implemented",
-            "evidence": ["src/shipvoice/providers.py", "web/static/app.js", "tests/test_evidence_citations.py"],
-            "notes": "前端证据卡片展示 citation ID、source、risk、confidence、tags 和 matched terms。",
+            "evidence": [
+                "src/shipvoice/providers.py",
+                "web/static/app.js",
+                "scripts/evaluate_citation_quality.py",
+                "results/citation_quality_summary.json",
+                "tests/test_evidence_citations.py",
+            ],
+            "notes": (
+                "前端证据卡片展示 citation ID、source、risk、confidence、tags 和 matched terms；"
+                f"离线 citation title hit@3 {pct(citation.get('citation_title_hit_at_3'))}，"
+                f"Top-1 schema 完整率 {pct(citation.get('top1_schema_completeness'))}。"
+            ),
         },
         {
             "name": "真实语音链路 smoke test",
@@ -185,6 +196,17 @@ def build_report() -> dict[str, Any]:
             "followup_grounding_accuracy": multiturn.get("followup_grounding_accuracy"),
             "keyword_recall": multiturn.get("keyword_recall"),
         },
+        "citation_quality": {
+            "total": citation.get("total", 0),
+            "allowed_cases": citation.get("allowed_cases", 0),
+            "gate_allowed_accuracy": citation.get("gate_allowed_accuracy"),
+            "citation_title_hit_at_1": citation.get("citation_title_hit_at_1"),
+            "citation_title_hit_at_3": citation.get("citation_title_hit_at_3"),
+            "citation_id_hit_at_3": citation.get("citation_id_hit_at_3"),
+            "top1_schema_completeness": citation.get("top1_schema_completeness"),
+            "citation_schema_completeness": citation.get("citation_schema_completeness"),
+            "answer_citation_id_rate": citation.get("answer_citation_id_rate"),
+        },
         "asr_manifest": {
             "evaluated_rows": asr.get("evaluated_rows", 0),
             "missing_audio_rows": asr.get("missing_audio_rows", 0),
@@ -205,6 +227,10 @@ def build_report() -> dict[str, Any]:
         file_status("docs/PHASE1_SCORECARD.md"),
         file_status("docs/OPERATIONS_RUNBOOK.md"),
         file_status("docs/ARCHITECTURE.md"),
+        file_status("results/citation_quality_report.md"),
+        file_status("results/citation_quality_summary.json"),
+        file_status("results/citation_quality_eval.csv"),
+        file_status("deliverables/ShipVoice_Evaluation_Dashboard.html"),
         file_status("deliverables/ShipVoice_Final_Defense_Deck_Draft.pptx"),
         file_status("deliverables/ShipVoice_船厂安全实时语音问答助手_项目报告_比赛增强版.docx"),
         file_status("web/static/index.html"),
@@ -222,7 +248,7 @@ def build_report() -> dict[str, Any]:
     next_steps = [
         "扩展真实端到端评测到至少 30 条录音，并把 mock/real 指标分表呈现。",
         "替换或优化 TTS，让首音延迟从 15 秒级降到 3 秒以内。",
-        "把 citation 命中率纳入离线评测表，形成 answer quality + evidence quality 双指标。",
+        "把 citation 质量评测扩展到更多真实规程来源，并增加来源可信度评分。",
         "把管理后台的评测任务结果接入本验收报告，形成网页内一键验收。",
     ]
 
@@ -236,7 +262,7 @@ def build_report() -> dict[str, Any]:
         },
         "summary": {
             "project": "ShipVoice 船厂安全实时语音问答助手",
-            "assessment": "课程 95+ 目标已具备主要工程与评测证据；比赛级仍需扩展真实端到端评测、引用质量评测和 TTS 延迟优化。",
+            "assessment": "课程 95+ 目标已具备主要工程与评测证据；引用质量已纳入离线验收。比赛级仍需扩展真实端到端评测、真实规程来源和 TTS 延迟优化。",
             "recommended_course_score": 97,
             "knowledge_records": knowledge_count,
         },
@@ -281,6 +307,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "|---|---|",
             f"| 安全门控 | 样本 {metrics['safety_gate']['total']}，决策准确率 {pct(metrics['safety_gate']['decision_accuracy'])}，false allow {metrics['safety_gate']['false_allow_count']}，false block {metrics['safety_gate']['false_block_count']} |",
             f"| 多轮问答 | 对话 {metrics['multiturn']['dialogs']}，轮次 {metrics['multiturn']['turns']}，follow-up grounding {pct(metrics['multiturn']['followup_grounding_accuracy'])}，关键词召回 {pct(metrics['multiturn']['keyword_recall'])} |",
+            f"| Citation 质量 | 样本 {metrics['citation_quality']['total']}，允许引用样本 {metrics['citation_quality']['allowed_cases']}，title hit@1 {pct(metrics['citation_quality']['citation_title_hit_at_1'])}，title hit@3 {pct(metrics['citation_quality']['citation_title_hit_at_3'])}，ID hit@3 {pct(metrics['citation_quality']['citation_id_hit_at_3'])}，Top-1 schema {pct(metrics['citation_quality']['top1_schema_completeness'])}，答案引用 ID {pct(metrics['citation_quality']['answer_citation_id_rate'])} |",
             f"| ASR 清单 | 已评测 {metrics['asr_manifest']['evaluated_rows']} 条，缺失音频 {metrics['asr_manifest']['missing_audio_rows']}，术语召回 {pct(metrics['asr_manifest']['term_recall'])}，状态 `{metrics['asr_manifest']['status']}` |",
             f"| 真实链路 smoke | 样本 {metrics['real_chain_smoke']['num_samples']}，ASR {ms(metrics['real_chain_smoke']['avg_asr_ms'])}，检索 {ms(metrics['real_chain_smoke']['avg_retrieval_ms'])}，TTS 首音 {ms(metrics['real_chain_smoke']['avg_tts_first_audio_ms'])}，端到端首音 {ms(metrics['real_chain_smoke']['avg_first_audio_ms'])} |",
             "",

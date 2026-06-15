@@ -124,6 +124,17 @@ def multiturn_eval_result() -> dict[str, object] | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def citation_quality_result() -> dict[str, object] | None:
+    summary_path = ROOT / "results" / "citation_quality_summary.json"
+    rows_path = ROOT / "results" / "citation_quality_eval.csv"
+    if not summary_path.exists() or not rows_path.exists():
+        return None
+    return {
+        "summary": json.loads(summary_path.read_text(encoding="utf-8")),
+        "rows": read_csv(rows_path),
+    }
+
+
 def real_chain_result() -> dict[str, object] | None:
     candidates = sorted(ROOT.glob("results/remote_real_chain_*"), key=lambda path: path.name, reverse=True)
     for candidate in candidates:
@@ -173,6 +184,7 @@ def build() -> None:
     asr_eval = asr_eval_result()
     asr_post = asr_postprocess_result()
     multiturn = multiturn_eval_result()
+    citation_quality = citation_quality_result()
     real_chain = real_chain_result()
     latency = latency_summary()
     lora = lora_summary()
@@ -308,6 +320,52 @@ def build() -> None:
         """
         multiturn_callout = "Multi-turn benchmark has not been executed yet."
 
+    if citation_quality:
+        citation_summary = citation_quality["summary"]
+        citation_rows = citation_quality["rows"]
+        citation_metric_cards = f"""
+        <div class="metrics">
+          {metric("Citation hit@1", percent(citation_summary["citation_title_hit_at_1"]), "expected title in top citation")}
+          {metric("Citation hit@3", percent(citation_summary["citation_title_hit_at_3"]), "expected title in top 3 citations")}
+          {metric("Top-1 schema", percent(citation_summary["top1_schema_completeness"]), "id/source/risk/confidence/matched terms")}
+          {metric("Answer cites ID", percent(citation_summary["answer_citation_id_rate"]), "answer contains citation record ID")}
+        </div>
+        """
+        citation_table = table(
+            ["ID", "Category", "Gate", "Expected", "Top-1", "Hit@3", "Complete"],
+            [
+                [
+                    row["id"],
+                    row["category"],
+                    row["gate_label"],
+                    row["expected_record_id"] or row["expected_title"] or "blocked",
+                    row["top1_record_id"] or "none",
+                    "n/a" if not row["expected_title"] else ("PASS" if row["title_hit_at_3"] == "True" else "FAIL"),
+                    "n/a" if not row["expected_title"] else ("PASS" if row["top1_complete"] == "True" else "FAIL"),
+                ]
+                for row in citation_rows
+            ],
+        )
+        citation_callout = (
+            f"Citation quality is now part of offline acceptance: title hit@3 is "
+            f"{percent(citation_summary['citation_title_hit_at_3'])}, ID hit@3 is "
+            f"{percent(citation_summary['citation_id_hit_at_3'])}, and every allowed answer cites the selected knowledge ID."
+        )
+    else:
+        citation_metric_cards = f"""
+        <div class="metrics">
+          {metric("Citation quality", "Not run", "run scripts/evaluate_citation_quality.py")}
+          {metric("Citation hit@3", "--", "pending evidence benchmark")}
+          {metric("Top-1 schema", "--", "pending evidence benchmark")}
+          {metric("Answer cites ID", "--", "pending evidence benchmark")}
+        </div>
+        """
+        citation_table = table(
+            ["ID", "Category", "Gate", "Expected", "Top-1", "Hit@3", "Complete"],
+            [["Pending", "--", "--", "--", "--", "--", "--"]],
+        )
+        citation_callout = "Citation quality benchmark has not been executed yet."
+
     if real_chain:
         real_summary = real_chain["summary"]
         smoke = real_chain["smoke"]
@@ -437,6 +495,15 @@ def build() -> None:
         {metric("Runnable without GPU", "Yes", "mock fallback")}
       </div>
       {latency_table}
+    </section>
+
+    <section>
+      <h2>Citation Quality Evaluation</h2>
+      {citation_metric_cards}
+      <div class="callout">
+        {html.escape(citation_callout)}
+      </div>
+      {citation_table}
     </section>
 
     <section>

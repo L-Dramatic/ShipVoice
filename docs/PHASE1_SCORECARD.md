@@ -22,7 +22,7 @@
 | 选题价值与场景真实性 | 10 / 10 | `data/knowledge/ship_safety_corpus.jsonl`, `configs/pipeline.json` | 场景聚焦船厂安全作业，不是泛泛聊天机器人。知识、风险类别、术语、拒答策略都有领域约束。 |
 | 级联式语音问答主链路 | 18 / 20 | `src/shipvoice/pipeline.py`, `src/shipvoice/providers.py`, `web/static/index.html` | 已有 ASR -> 后处理 -> 安全门控 -> RAG -> LLM -> TTS 的完整链路，并支持真实 provider。扣分点是当前真实端到端样本数仍偏少。 |
 | 安全增强与信息安全相关性 | 15 / 15 | `results/safety_gate_eval_summary.json`, `data/tests/safety_eval.csv` | 55 条安全评测中门控决策准确率 1.0，覆盖 off-domain、unsafe、prompt injection、boundary 等类别。 |
-| 领域知识与 RAG | 14 / 15 | `data/knowledge/`, `scripts/evaluate_retrieval.py`, `results/multiturn_eval_summary.json`, `tests/test_evidence_citations.py` | 有领域知识库、索引构建、检索评测、证据引用和后台知识治理。后续可加更多真实规程来源与引用质量评测。 |
+| 领域知识与 RAG | 14 / 15 | `data/knowledge/`, `scripts/evaluate_retrieval.py`, `scripts/evaluate_citation_quality.py`, `results/citation_quality_summary.json`, `tests/test_evidence_citations.py` | 有领域知识库、索引构建、检索评测、证据引用、引用质量评测和后台知识治理。后续可加更多真实规程来源与来源可信度评分。 |
 | 多轮问答与上下文能力 | 9 / 10 | `data/tests/multiturn_eval.jsonl`, `results/multiturn_eval_summary.json` | 6 组对话、18 轮评测，followup grounding accuracy 为 1.0。后续可扩到更多复杂任务流。 |
 | 真实语音数据与评测闭环 | 12 / 15 | `data/audio/audio_manifest.csv`, `results/asr_eval_summary.json`, `results/remote_real_chain_20260612_chattts_48359/summary.json` | 50 条录音清单评测完整，真实远程链路已有 3 条样本 smoke test。高分足够，但比赛级还要扩大真实 ASR 批量评测。 |
 | 工程化程度 | 14 / 15 | `src/shipvoice/fastapi_app.py`, `src/shipvoice/sqlite_store.py`, `Dockerfile`, `docker-compose.app.yml`, `tests/test_admin_api.py` | 已经有前后端、认证、后台、任务、SQLite、Docker、测试。扣分点是还未拆成独立生产服务和 PostgreSQL。 |

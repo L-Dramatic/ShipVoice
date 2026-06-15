@@ -44,12 +44,16 @@ results\latency_metrics.csv
 生成课程验收报告：
 
 ```powershell
+python scripts\evaluate_citation_quality.py --fail-on-threshold
 python scripts\build_acceptance_report.py
 ```
 
 输出文件：
 
 ```text
+results\citation_quality_eval.csv
+results\citation_quality_summary.json
+results\citation_quality_report.md
 results\project_acceptance_report.md
 results\project_acceptance_report.json
 ```
@@ -199,4 +203,5 @@ web/static/              答辩演示面板
 
 - 课程高分评分证据：[docs/PHASE1_SCORECARD.md](docs/PHASE1_SCORECARD.md)
 - 演示与运维操作手册：[docs/OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)
+- 引用质量评测：[results/citation_quality_report.md](results/citation_quality_report.md)
 - 一键验收报告：[results/project_acceptance_report.md](results/project_acceptance_report.md)

@@ -28,6 +28,7 @@ def main() -> None:
     run([sys.executable, "scripts/build_audio_recording_pack.py"])
     run([sys.executable, "scripts/evaluate_asr_transcripts.py"])
     run([sys.executable, "scripts/evaluate_multiturn.py"])
+    run([sys.executable, "scripts/evaluate_citation_quality.py", "--fail-on-threshold"])
     run([sys.executable, "scripts/build_evaluation_dashboard.py"])
     run([sys.executable, "scripts/build_acceptance_report.py"])
     run([sys.executable, "scripts/build_final_report.py"])
