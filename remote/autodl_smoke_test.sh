@@ -18,10 +18,9 @@ for mod in mods:
 PY
 
 echo "[smoke] ShipVoice quick validation"
-$PYTHON_BIN scripts/validate_project.py --quick
+$PYTHON_BIN scripts/validate_project.py --remote-smoke
 
 echo "[smoke] One question"
 $PYTHON_BIN scripts/run_single.py "密闭舱室动火作业前要检查什么？" --mode full
 
 echo "Smoke test complete."
-

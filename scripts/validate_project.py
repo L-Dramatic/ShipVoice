@@ -17,9 +17,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Validate the current ShipVoice project state.")
     parser.add_argument("--quick", action="store_true", help="Run quick checks.")
     parser.add_argument("--full", action="store_true", help="Run quick checks and the full benchmark.")
+    parser.add_argument("--remote-smoke", action="store_true", help="Run checks that do not require previously collected remote artifacts.")
     args = parser.parse_args()
 
-    if not args.quick and not args.full:
+    if not args.quick and not args.full and not args.remote_smoke:
         args.quick = True
 
     run([sys.executable, "scripts/build_knowledge_index.py"])
@@ -31,12 +32,15 @@ def main() -> None:
     run([sys.executable, "scripts/evaluate_asr_transcripts.py"])
     run([sys.executable, "scripts/evaluate_multiturn.py"])
     run([sys.executable, "scripts/evaluate_citation_quality.py", "--fail-on-threshold"])
-    run([sys.executable, "scripts/build_evaluation_dashboard.py"])
-    run([sys.executable, "scripts/build_acceptance_report.py"])
-    run([sys.executable, "scripts/build_final_report.py"])
     run([sys.executable, "scripts/run_single.py", "密闭舱室动火作业前要检查什么？", "--mode", "full"])
     run([sys.executable, "-m", "compileall", "src", "scripts", "run_demo.py", "run_app.py"])
     run([sys.executable, "scripts/smoke_fastapi_backend.py"])
+    if args.remote_smoke:
+        print("\nREMOTE SMOKE VALIDATION OK")
+        return
+    run([sys.executable, "scripts/build_evaluation_dashboard.py"])
+    run([sys.executable, "scripts/build_acceptance_report.py"])
+    run([sys.executable, "scripts/build_final_report.py"])
     if args.full:
         run([sys.executable, "scripts/run_benchmark.py"])
     print("\nVALIDATION OK")
