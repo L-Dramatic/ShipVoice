@@ -12,7 +12,7 @@
   "citation_schema_completeness": 0.8,
   "answer_citation_id_rate": 1.0,
   "avg_top1_confidence": 1.0,
-  "avg_total_ms": 2409,
+  "avg_total_ms": 2413.75,
   "total_citations": 15,
   "complete_citations": 12,
   "mode": "full"

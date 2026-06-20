@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-06-15T20:40:12.785646+00:00",
+  "generated_at": "2026-06-16T18:00:20.944206+00:00",
   "git": {
     "branch": "codex/phase1-enterprise-backend",
-    "commit": "473fe71",
+    "commit": "852fd79",
     "source_tree_dirty": true,
     "dirty_ignored_paths": [
       "configs/runtime.real.env",
@@ -173,7 +173,7 @@
     {
       "path": "results/citation_quality_summary.json",
       "exists": true,
-      "bytes": 510
+      "bytes": 513
     },
     {
       "path": "results/citation_quality_eval.csv",

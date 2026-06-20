@@ -12,6 +12,12 @@ results/remote_autodl_*/
 experiments/*/checkpoints/
 models/
 configs/*.local.env
+configs/runtime.real.env
+.shipvoice_active_server.pid
+.shipvoice_active_server.port
+logs/
+~$*.doc
+~$*.docx
 *.wav
 *.mp3
 *.mp4

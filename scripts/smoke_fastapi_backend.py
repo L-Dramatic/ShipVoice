@@ -24,24 +24,34 @@ def find_free_port(preferred: int = 8035) -> int:
     raise RuntimeError(f"no free port found from {preferred} to {preferred + 19}")
 
 
-def get_json(url: str, timeout: int = 60) -> dict:
-    with urllib.request.urlopen(url, timeout=timeout) as response:
+def get_json(url: str, timeout: int = 60, token: str | None = None) -> dict:
+    headers = {}
+    if token:
+        headers["X-Admin-Token"] = token
+    request = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
-def post_json(url: str, payload: dict, timeout: int = 60) -> dict:
+def post_json(url: str, payload: dict, timeout: int = 60, token: str | None = None) -> dict:
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["X-Admin-Token"] = token
     request = urllib.request.Request(
         url,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
-def delete_json(url: str, timeout: int = 60) -> dict:
-    request = urllib.request.Request(url, method="DELETE")
+def delete_json(url: str, timeout: int = 60, token: str | None = None) -> dict:
+    headers = {}
+    if token:
+        headers["X-Admin-Token"] = token
+    request = urllib.request.Request(url, headers=headers, method="DELETE")
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
@@ -108,9 +118,13 @@ def main() -> None:
     try:
         base_url = f"http://127.0.0.1:{port}"
         health = wait_until_ready(base_url)
-        overview = get_json(f"{base_url}/api/admin/overview")
-        datasets = get_json(f"{base_url}/api/admin/evaluations")
-        config = get_json(f"{base_url}/api/admin/config")
+        password = os.environ.get("SHIPVOICE_ADMIN_PASSWORD", "shipvoice-admin")
+        login_res = post_json(f"{base_url}/api/admin/auth/login", {"password": password})
+        token = login_res.get("token")
+
+        overview = get_json(f"{base_url}/api/admin/overview", token=token)
+        datasets = get_json(f"{base_url}/api/admin/evaluations", token=token)
+        config = get_json(f"{base_url}/api/admin/config", token=token)
         created = post_json(
             f"{base_url}/api/admin/knowledge",
             {
@@ -118,10 +132,11 @@ def main() -> None:
                 "tags": ["smoke", "fastapi"],
                 "text": "用于自动化验证后端接口。",
             },
+            token=token
         )
         record_id = created["record"]["id"]
-        detail = get_json(f"{base_url}/api/admin/knowledge/{record_id}")
-        deleted = delete_json(f"{base_url}/api/admin/knowledge/{record_id}")
+        detail = get_json(f"{base_url}/api/admin/knowledge/{record_id}", token=token)
+        deleted = delete_json(f"{base_url}/api/admin/knowledge/{record_id}", token=token)
         ws_result = websocket_smoke(port)
         payload = {
             "health_ok": health["ok"],

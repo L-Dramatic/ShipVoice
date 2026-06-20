@@ -4,116 +4,117 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ShipVoice 船厂安全实时语音问答助手</title>
-    <link rel="stylesheet" href="./styles.css?v=console-20260614" />
+    <link rel="stylesheet" href="./styles.css?v=product-20260620" />
   </head>
   <body class="shipvoice-console">
-    <aside class="sidebar">
+    <aside class="sidebar operator-sidebar">
       <div class="brand">
         <div class="brand-mark">SV</div>
         <div>
           <h1>ShipVoice</h1>
-          <p>Shipyard Safety Voice Command</p>
+          <p>Shipyard Safety Assistant</p>
         </div>
       </div>
 
       <div class="mission-brief">
-        <span class="mission-kicker">Live Ops</span>
-        <strong>高风险作业语音问答控制台</strong>
-        <p>语音输入、风险门控、证据引用、语音播报和审计记录在同一条链路内闭环。</p>
+        <span class="mission-kicker">On Duty</span>
+        <strong>现场安全问答</strong>
+        <p>输入作业问题，返回安全结论、处置建议和引用依据。</p>
       </div>
 
-      <section class="control-group">
-        <h2>运行模式</h2>
-        <div class="segmented" role="tablist" aria-label="运行模式">
-          <button class="mode-button is-active" data-mode="full">安全 RAG</button>
-          <button class="mode-button" data-mode="streaming">流式</button>
-          <button class="mode-button" data-mode="baseline">基线</button>
-        </div>
-      </section>
-
-      <section class="control-group">
-        <h2>演示场景</h2>
-        <div id="scenarioList" class="scenario-list"></div>
-      </section>
-
-      <section class="control-group">
-        <h2>自定义输入</h2>
-        <textarea id="customQuestion" rows="4" placeholder="输入船厂安全问题，或测试危险请求 / prompt injection"></textarea>
+      <section class="control-group primary-input-group">
+        <h2>现场问题</h2>
+        <textarea id="customQuestion" rows="5" placeholder="例如：密闭舱室动火前需要完成哪些安全确认？"></textarea>
         <label class="file-control">
           <input id="audioFile" type="file" accept="audio/*" />
-          <span>上传音频样例</span>
+          <span>上传音频</span>
         </label>
         <div class="record-control">
           <button id="recordButton" class="record-button" type="button">开始录音</button>
           <button id="clearRecordingButton" class="secondary-button small-button" type="button" disabled>清除录音</button>
         </div>
-        <div id="recordingStatus" class="recording-status">麦克风录音可直接送入 ASR。</div>
+        <canvas id="visualizerCanvas" class="visualizer-canvas" height="60" hidden></canvas>
+        <div id="recordingStatus" class="recording-status">麦克风待命</div>
         <audio id="recordingPreview" class="recording-preview" controls hidden></audio>
-        <p id="audioHint" class="hint">支持文本提问、上传音频，也支持浏览器直接录音接入真实 ASR。</p>
+        <p id="audioHint" class="hint">未选择音频。</p>
+        <button id="runButton" class="primary-button run-action">获取安全建议</button>
       </section>
 
-      <div class="button-row">
-        <button id="runButton" class="primary-button">运行问答</button>
-        <button id="exportButton" class="secondary-button">导出日志</button>
-      </div>
-      <a class="secondary-link" href="./admin.html">打开管理后台</a>
+      <details class="sidebar-details quick-case-details">
+        <summary>快速场景</summary>
+        <div id="scenarioList" class="scenario-list compact-scenario-list"></div>
+      </details>
+
+      <details class="sidebar-details advanced-details">
+        <summary>高级选项</summary>
+        <section class="control-group">
+          <h2>运行模式</h2>
+          <div class="segmented" role="tablist" aria-label="运行模式">
+            <button class="mode-button is-active" data-mode="full">安全 RAG</button>
+            <button class="mode-button" data-mode="streaming">流式</button>
+            <button class="mode-button" data-mode="baseline">基线</button>
+          </div>
+        </section>
+        <div class="button-row utility-actions">
+          <button id="exportButton" class="secondary-button">导出记录</button>
+          <a class="secondary-link" href="./admin.html">管理后台</a>
+        </div>
+      </details>
     </aside>
 
     <main class="workspace">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Shipyard Safety Copilot</p>
-          <h2>高风险作业场景下的安全门控、证据检索与实时语音回答链路</h2>
+          <p class="eyebrow">Safety Desk</p>
+          <h2>船厂安全助手</h2>
+          <p class="topbar-subtitle">面向动火、有限空间、吊装、试压等高风险作业。</p>
         </div>
         <div id="statusBadge" class="status-badge">待机</div>
       </header>
 
-      <section class="ops-overview" aria-label="系统链路总览">
-        <div class="ops-visual" aria-hidden="true">
-          <div class="ship-schematic">
-            <span class="deck-line"></span>
-            <span class="hull-line"></span>
-            <span class="risk-beacon"></span>
-            <span class="scan-line"></span>
-          </div>
-        </div>
-        <div class="stage-rail" aria-label="实时链路状态">
-          <div class="stage-node" data-stage-node="input"><span>Input</span><strong>输入接入</strong></div>
-          <div class="stage-node" data-stage-node="asr"><span>ASR</span><strong>语音转写</strong></div>
-          <div class="stage-node" data-stage-node="gate"><span>Gate</span><strong>安全门控</strong></div>
-          <div class="stage-node" data-stage-node="retrieval"><span>RAG</span><strong>证据检索</strong></div>
-          <div class="stage-node" data-stage-node="llm"><span>LLM</span><strong>答案生成</strong></div>
-          <div class="stage-node" data-stage-node="tts"><span>TTS</span><strong>语音输出</strong></div>
-        </div>
-      </section>
-
-      <section class="metrics-grid" aria-label="核心指标">
-        <article class="metric">
-          <span>首段音频延迟</span>
-          <strong id="firstAudioMetric">--</strong>
-        </article>
-        <article class="metric">
-          <span>总响应时间</span>
-          <strong id="totalMetric">--</strong>
-        </article>
-        <article class="metric">
-          <span>安全门控</span>
-          <strong id="gateMetric">--</strong>
-        </article>
-        <article class="metric">
-          <span>证据命中</span>
-          <strong id="evidenceMetric">--</strong>
-        </article>
-      </section>
-
       <div id="errorBanner" class="error-banner" hidden></div>
 
-      <section class="main-grid">
+      <section class="main-grid operator-grid">
+        <article id="primaryResult" class="panel answer-panel primary-result-panel">
+          <div class="panel-head">
+            <div>
+              <h3>安全建议</h3>
+              <p>等待问题输入。</p>
+            </div>
+            <span id="answerState">未生成</span>
+          </div>
+          <p id="answerText" class="answer-text"></p>
+          <canvas id="outputVisualizerCanvas" class="visualizer-canvas" height="60" hidden></canvas>
+          <audio id="ttsPlayer" class="tts-player" controls hidden></audio>
+        </article>
+
+        <article class="panel gate-panel">
+          <div class="panel-head">
+            <div>
+              <h3>安全结论</h3>
+              <p>当前作业风险判断。</p>
+            </div>
+            <span id="gateState">未运行</span>
+          </div>
+          <div id="gateCard" class="gate-card empty">尚未生成门控结果。</div>
+        </article>
+
+        <article class="panel evidence-panel">
+          <div class="panel-head">
+            <div>
+              <h3>引用依据</h3>
+              <p>优先展示最相关条目。</p>
+            </div>
+            <span id="ragState">未检索</span>
+          </div>
+          <div id="evidenceList" class="evidence-list"></div>
+        </article>
+
         <article class="panel transcript-panel">
           <div class="panel-head">
             <div>
-              <h3>输入 / 转写</h3>
-              <p>展示用户问题、音频入口和术语热词命中。</p>
+              <h3>当前问题</h3>
+              <p>文本输入或语音转写结果。</p>
             </div>
             <span id="asrState">等待输入</span>
           </div>
@@ -121,102 +122,118 @@
           <div id="termHits" class="term-hits"></div>
         </article>
 
-        <article class="panel gate-panel">
-          <div class="panel-head">
-            <div>
-              <h3>安全门控</h3>
-              <p>先判断风险，再决定是否进入生成回答链路。</p>
-            </div>
-            <span id="gateState">未运行</span>
-          </div>
-          <div id="gateCard" class="gate-card empty">尚未生成门控结果。</div>
-        </article>
+        <details id="runDetails" class="diagnostic-details">
+          <summary>
+            <span>运行详情</span>
+            <strong>链路、延迟、审计和最近记录</strong>
+          </summary>
 
-        <article class="panel answer-panel">
-          <div class="panel-head">
-            <div>
-              <h3>系统回答</h3>
-              <p>面向语音播报的保守、可执行回答。</p>
-            </div>
-            <span id="answerState">未生成</span>
-          </div>
-          <div id="providerSummary" class="provider-summary"></div>
-          <p id="answerText" class="answer-text"></p>
-          <audio id="ttsPlayer" class="tts-player" controls hidden></audio>
-        </article>
+          <div class="diagnostic-content">
+            <section class="ops-overview" aria-label="系统链路状态">
+              <div class="ops-visual" aria-hidden="true">
+                <div class="ship-schematic">
+                  <canvas id="schematicCanvas" class="schematic-canvas"></canvas>
+                  <span class="deck-line"></span>
+                  <span class="hull-line"></span>
+                  <span class="risk-beacon"></span>
+                  <span class="scan-line"></span>
+                </div>
+              </div>
+              <div class="stage-rail" aria-label="实时链路状态">
+                <div class="stage-node" data-stage-node="input"><span>Input</span><strong>输入接入</strong></div>
+                <div class="stage-node" data-stage-node="asr"><span>ASR</span><strong>语音转写</strong></div>
+                <div class="stage-node" data-stage-node="gate"><span>Gate</span><strong>安全门控</strong></div>
+                <div class="stage-node" data-stage-node="retrieval"><span>RAG</span><strong>证据检索</strong></div>
+                <div class="stage-node" data-stage-node="llm"><span>LLM</span><strong>答案生成</strong></div>
+                <div class="stage-node" data-stage-node="tts"><span>TTS</span><strong>语音输出</strong></div>
+              </div>
+            </section>
 
-        <article class="panel evidence-panel">
-          <div class="panel-head">
-            <div>
-              <h3>RAG 证据引用</h3>
-              <p>展示知识 ID、风险等级、置信度、来源和匹配词。</p>
-            </div>
-            <span id="ragState">未检索</span>
-          </div>
-          <div id="evidenceList" class="evidence-list"></div>
-        </article>
+            <section class="metrics-grid" aria-label="核心指标">
+              <article class="metric">
+                <span>首段音频延迟</span>
+                <strong id="firstAudioMetric">--</strong>
+              </article>
+              <article class="metric">
+                <span>总响应时间</span>
+                <strong id="totalMetric">--</strong>
+              </article>
+              <article class="metric">
+                <span>安全门控</span>
+                <strong id="gateMetric">--</strong>
+              </article>
+              <article class="metric">
+                <span>证据命中</span>
+                <strong id="evidenceMetric">--</strong>
+              </article>
+            </section>
 
-        <article class="panel timeline-panel">
-          <div class="panel-head">
-            <div>
-              <h3>延迟分布</h3>
-              <p>实时显示一次交互中的各阶段系统开销。</p>
-            </div>
-            <span id="timelineState">待运行</span>
-          </div>
-          <div id="timeline" class="timeline"></div>
-        </article>
+            <section class="diagnostic-grid">
+              <article class="panel timeline-panel">
+                <div class="panel-head">
+                  <div>
+                    <h3>延迟分布</h3>
+                    <p>本次请求各阶段耗时。</p>
+                  </div>
+                  <span id="timelineState">待运行</span>
+                </div>
+                <div id="timeline" class="timeline"></div>
+              </article>
 
-        <article class="panel runtime-panel">
-          <div class="panel-head">
-            <div>
-              <h3>运行元数据</h3>
-              <p>把这套系统从 demo 提升到可审计应用的基础信息面板。</p>
-            </div>
-            <span>Audit</span>
-          </div>
-          <dl class="meta-grid">
-            <div>
-              <dt>Session ID</dt>
-              <dd id="sessionIdValue">--</dd>
-            </div>
-            <div>
-              <dt>Run ID</dt>
-              <dd id="runIdValue">--</dd>
-            </div>
-            <div>
-              <dt>Started At</dt>
-              <dd id="runTimeValue">--</dd>
-            </div>
-            <div>
-              <dt>Mode</dt>
-              <dd id="modeValue">full</dd>
-            </div>
-            <div>
-              <dt>Session Runs</dt>
-              <dd id="sessionRunsValue">0</dd>
-            </div>
-            <div>
-              <dt>Last Gate</dt>
-              <dd id="lastGateValue">--</dd>
-            </div>
-          </dl>
-          <div id="healthSummary" class="provider-summary"></div>
-        </article>
+              <article class="panel runtime-panel">
+                <div class="panel-head">
+                  <div>
+                    <h3>运行元数据</h3>
+                    <p>会话、运行编号和 provider 状态。</p>
+                  </div>
+                  <span>Audit</span>
+                </div>
+                <dl class="meta-grid">
+                  <div>
+                    <dt>Session ID</dt>
+                    <dd id="sessionIdValue">--</dd>
+                  </div>
+                  <div>
+                    <dt>Run ID</dt>
+                    <dd id="runIdValue">--</dd>
+                  </div>
+                  <div>
+                    <dt>Started At</dt>
+                    <dd id="runTimeValue">--</dd>
+                  </div>
+                  <div>
+                    <dt>Mode</dt>
+                    <dd id="modeValue">full</dd>
+                  </div>
+                  <div>
+                    <dt>Session Runs</dt>
+                    <dd id="sessionRunsValue">0</dd>
+                  </div>
+                  <div>
+                    <dt>Last Gate</dt>
+                    <dd id="lastGateValue">--</dd>
+                  </div>
+                </dl>
+                <div id="providerSummary" class="provider-summary"></div>
+                <div id="healthSummary" class="provider-summary"></div>
+              </article>
 
-        <article class="panel log-panel">
-          <div class="panel-head">
-            <div>
-              <h3>后端会话日志</h3>
-              <p>直接来自服务端审计记录，便于答辩、复现实验和风险追踪。</p>
-            </div>
-            <span id="logState">0 条</span>
+              <article class="panel log-panel">
+                <div class="panel-head">
+                  <div>
+                    <h3>最近记录</h3>
+                    <p>服务端审计记录。</p>
+                  </div>
+                  <span id="logState">0 条</span>
+                </div>
+                <div id="sessionLog" class="session-log"></div>
+              </article>
+            </section>
           </div>
-          <div id="sessionLog" class="session-log"></div>
-        </article>
+        </details>
       </section>
     </main>
 
-    <script src="./app.js?v=console-20260614"></script>
+    <script src="./app.js?v=product-20260620"></script>
   </body>
 </html>

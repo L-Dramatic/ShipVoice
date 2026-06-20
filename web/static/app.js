@@ -69,6 +69,241 @@ let recordedAudio = null;
 let discardRecording = false;
 const localRuns = [];
 const clientSessionId = ensureSessionId();
+let micVisualizer = null;
+let ttsVisualizer = null;
+let radarVisualizer = null;
+
+class AudioVisualizer {
+  constructor(canvasId, type = "mic") {
+    this.canvas = document.getElementById(canvasId);
+    if (!this.canvas) return;
+    this.ctx = this.canvas.getContext("2d");
+    this.type = type; // "mic" or "tts"
+    this.animationId = null;
+    this.audioContext = null;
+    this.analyser = null;
+    this.dataArray = null;
+    this.source = null;
+    this.isActive = false;
+    this.phase = 0;
+  }
+
+  start(streamOrAudio) {
+    if (!this.canvas) return;
+    this.canvas.hidden = false;
+    this.isActive = true;
+    this.phase = 0;
+
+    try {
+      if (streamOrAudio) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        this.audioContext = new AudioContextClass();
+        this.analyser = this.audioContext.createAnalyser();
+        this.analyser.fftSize = 256;
+        const bufferLength = this.analyser.frequencyBinCount;
+        this.dataArray = new Uint8Array(bufferLength);
+
+        if (streamOrAudio instanceof MediaStream) {
+          this.source = this.audioContext.createMediaStreamSource(streamOrAudio);
+          this.source.connect(this.analyser);
+        } else if (streamOrAudio instanceof HTMLAudioElement) {
+          this.source = this.audioContext.createMediaElementSource(streamOrAudio);
+          this.source.connect(this.analyser);
+          this.analyser.connect(this.audioContext.destination);
+        }
+      }
+    } catch (e) {
+      console.warn("Web Audio API not supported or failed to init:", e);
+      this.analyser = null; // Fallback to simulation
+    }
+
+    this.draw();
+  }
+
+  stop() {
+    this.isActive = false;
+    if (this.animationId) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+    }
+    if (this.source) {
+      try { this.source.disconnect(); } catch(e){}
+      this.source = null;
+    }
+    if (this.audioContext) {
+      try { this.audioContext.close(); } catch(e){}
+      this.audioContext = null;
+    }
+    this.analyser = null;
+
+    if (this.canvas) {
+      const width = this.canvas.width;
+      const height = this.canvas.height;
+      this.ctx.clearRect(0, 0, width, height);
+      this.canvas.hidden = true;
+    }
+  }
+
+  draw() {
+    if (!this.isActive) return;
+    this.animationId = requestAnimationFrame(() => this.draw());
+
+    const width = this.canvas.width = this.canvas.offsetWidth;
+    const height = this.canvas.height = this.canvas.offsetHeight;
+    this.ctx.clearRect(0, 0, width, height);
+
+    let level = 0;
+
+    if (this.analyser) {
+      this.analyser.getByteFrequencyData(this.dataArray);
+      let sum = 0;
+      for (let i = 0; i < this.dataArray.length; i++) {
+        sum += this.dataArray[i];
+      }
+      level = sum / this.dataArray.length / 128;
+      if (level > 1) level = 1;
+    } else {
+      level = 0.3 + Math.sin(this.phase * 5) * 0.15 + Math.cos(this.phase * 3.7) * 0.15;
+    }
+
+    this.phase += 0.05;
+
+    const waves = [
+      { amplitude: 1.0, color: 'rgba(0, 242, 254, 0.85)', width: 2.0, speed: 1.0 },
+      { amplitude: 0.6, color: 'rgba(14, 165, 233, 0.4)', width: 1.5, speed: -1.3 },
+      { amplitude: 0.3, color: 'rgba(0, 242, 254, 0.25)', width: 1.0, speed: 0.7 }
+    ];
+
+    const centerY = height / 2;
+
+    for (let w = 0; w < waves.length; w++) {
+      const wave = waves[w];
+      this.ctx.beginPath();
+      this.ctx.strokeStyle = wave.color;
+      this.ctx.lineWidth = wave.width;
+
+      if (w === 0) {
+        this.ctx.shadowBlur = 8;
+        this.ctx.shadowColor = 'rgba(0, 242, 254, 0.5)';
+      } else {
+        this.ctx.shadowBlur = 0;
+      }
+
+      for (let x = 0; x < width; x++) {
+        const edgeDampening = Math.sin((x / width) * Math.PI);
+        const amp = (height * 0.35) * level * wave.amplitude * edgeDampening;
+
+        const angle = (x / width) * Math.PI * 4 + this.phase * wave.speed * 4;
+        const y = centerY + Math.sin(angle) * amp + Math.cos(angle * 0.5) * (amp * 0.3);
+
+        if (x === 0) {
+          this.ctx.moveTo(x, y);
+        } else {
+          this.ctx.lineTo(x, y);
+        }
+      }
+      this.ctx.stroke();
+    }
+  }
+}
+
+class RadarVisualizer {
+  constructor(canvasId) {
+    this.canvas = document.getElementById(canvasId);
+    if (!this.canvas) return;
+    this.ctx = this.canvas.getContext("2d");
+    this.angle = 0;
+    this.isActive = true;
+    this.targets = [
+      { x: 0.25, y: 0.35, size: 3, opacity: 0.8, color: '#00f2fe', label: "Sec-A" },
+      { x: 0.75, y: 0.65, size: 4, opacity: 0.6, color: '#10b981', label: "Zone-3" },
+      { x: 0.55, y: 0.25, size: 3, opacity: 0.5, color: '#f59e0b', label: "Dock-1" }
+    ];
+    this.draw();
+  }
+
+  draw() {
+    if (!this.isActive) return;
+    requestAnimationFrame(() => this.draw());
+
+    const width = this.canvas.width = this.canvas.offsetWidth;
+    const height = this.canvas.height = this.canvas.offsetHeight;
+    this.ctx.clearRect(0, 0, width, height);
+
+    this.ctx.strokeStyle = 'rgba(0, 242, 254, 0.05)';
+    this.ctx.lineWidth = 1;
+
+    const cx = width / 2;
+    const cy = height / 2;
+    const maxRadius = Math.min(width, height) * 0.9;
+
+    for (let r = maxRadius * 0.2; r <= maxRadius; r += maxRadius * 0.25) {
+      this.ctx.beginPath();
+      this.ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      this.ctx.stroke();
+    }
+
+    this.ctx.beginPath();
+    this.ctx.moveTo(cx - maxRadius, cy);
+    this.ctx.lineTo(cx + maxRadius, cy);
+    this.ctx.moveTo(cx, cy - maxRadius);
+    this.ctx.lineTo(cx, cy + maxRadius);
+    this.ctx.stroke();
+
+    this.angle += 0.015;
+    const sweepGradient = this.ctx.createRadialGradient(cx, cy, 0, cx, cy, maxRadius);
+    sweepGradient.addColorStop(0, 'rgba(0, 242, 254, 0.15)');
+    sweepGradient.addColorStop(1, 'rgba(0, 242, 254, 0)');
+
+    this.ctx.fillStyle = sweepGradient;
+    this.ctx.beginPath();
+    this.ctx.moveTo(cx, cy);
+    const startAngle = this.angle - Math.PI / 4;
+    this.ctx.arc(cx, cy, maxRadius, startAngle, this.angle, false);
+    this.ctx.lineTo(cx, cy);
+    this.ctx.fill();
+
+    const lx = cx + Math.cos(this.angle) * maxRadius;
+    const ly = cy + Math.sin(this.angle) * maxRadius;
+    this.ctx.beginPath();
+    this.ctx.strokeStyle = 'rgba(0, 242, 254, 0.4)';
+    this.ctx.lineWidth = 1.5;
+    this.ctx.moveTo(cx, cy);
+    this.ctx.lineTo(lx, ly);
+    this.ctx.stroke();
+
+    for (let t = 0; t < this.targets.length; t++) {
+      const target = this.targets[t];
+      const tx = target.x * width;
+      const ty = target.y * height;
+
+      const targetAngle = Math.atan2(ty - cy, tx - cx);
+      let diff = (this.angle - targetAngle) % (Math.PI * 2);
+      if (diff < 0) diff += Math.PI * 2;
+
+      if (diff < Math.PI / 2) {
+        const fade = 1 - (diff / (Math.PI / 2));
+
+        this.ctx.beginPath();
+        this.ctx.arc(tx, ty, target.size * 2 * fade, 0, Math.PI * 2);
+        this.ctx.fillStyle = target.color;
+        this.ctx.globalAlpha = fade * 0.4;
+        this.ctx.fill();
+
+        this.ctx.beginPath();
+        this.ctx.arc(tx, ty, target.size, 0, Math.PI * 2);
+        this.ctx.fillStyle = target.color;
+        this.ctx.globalAlpha = fade;
+        this.ctx.fill();
+
+        this.ctx.fillStyle = '#8395a7';
+        this.ctx.font = '9px Rajdhani';
+        this.ctx.fillText(target.label, tx + 6, ty + 3);
+        this.ctx.globalAlpha = 1.0;
+      }
+    }
+  }
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -85,6 +320,23 @@ function init() {
   renderScenario(currentScenario);
   resetMetrics();
   renderRuntimeMeta({ session_id: clientSessionId, transport: "websocket" });
+
+  // Instantiate visualizers
+  micVisualizer = new AudioVisualizer("visualizerCanvas", "mic");
+  ttsVisualizer = new AudioVisualizer("outputVisualizerCanvas", "tts");
+  radarVisualizer = new RadarVisualizer("schematicCanvas");
+
+  const ttsPlayer = $("ttsPlayer");
+  ttsPlayer.addEventListener("play", () => {
+    ttsVisualizer.start(ttsPlayer);
+  });
+  ttsPlayer.addEventListener("pause", () => {
+    ttsVisualizer.stop();
+  });
+  ttsPlayer.addEventListener("ended", () => {
+    ttsVisualizer.stop();
+  });
+
   void loadHealth();
   void refreshAuditPanel();
 }
@@ -146,7 +398,7 @@ function updateAudioHint() {
   const file = $("audioFile").files?.[0];
   if (file) {
     clearRecording({ keepFile: true });
-    $("audioHint").textContent = `已选择音频：${file.name}。提交后会直接送入后端 ASR。`;
+    $("audioHint").textContent = `已选择音频：${file.name}`;
     return;
   }
   updateAudioSourceHint();
@@ -154,12 +406,12 @@ function updateAudioHint() {
 
 function renderScenario(scenario) {
   $("questionText").textContent = scenario.question;
-  $("answerText").textContent = "";
+  $("answerText").textContent = "暂无安全建议。";
   $("evidenceList").innerHTML = "";
   $("termHits").innerHTML = "";
   $("timeline").innerHTML = "";
   $("gateCard").className = "gate-card empty";
-  $("gateCard").textContent = "尚未生成门控结果。";
+  $("gateCard").textContent = "等待分析。";
   $("asrState").textContent = "等待输入";
   $("answerState").textContent = "未生成";
   $("ragState").textContent = "未检索";
@@ -226,6 +478,7 @@ async function runDemo() {
   setStageState("input", "done");
   setStageState("asr", "active");
   $("runButton").disabled = true;
+  $("runButton").textContent = "分析中...";
 
   try {
     const audioPayload = await buildAudioPayload(audioSource);
@@ -249,6 +502,7 @@ async function runDemo() {
     localRuns.unshift(lastResult);
     renderResult(lastResult);
     renderRuntimeMeta({ ...lastResult, transport: "websocket" });
+    scrollPrimaryResultIntoView();
     await refreshAuditPanel();
   } catch (error) {
     try {
@@ -265,6 +519,7 @@ async function runDemo() {
       localRuns.unshift(lastResult);
       renderResult(lastResult);
       renderRuntimeMeta({ ...lastResult, transport: "http-fallback" });
+      scrollPrimaryResultIntoView();
       await refreshAuditPanel();
       showError(`WebSocket 失败，已回退到 HTTP：${error.message}`);
     } catch (fallbackError) {
@@ -273,12 +528,22 @@ async function runDemo() {
       $("answerText").textContent = `接口调用失败：${fallbackError.message}`;
       $("answerState").textContent = "执行失败";
       $("timelineState").textContent = "异常终止";
+      scrollPrimaryResultIntoView();
       showError(fallbackError.message);
       await refreshAuditPanel();
     }
   } finally {
     $("runButton").disabled = false;
+    $("runButton").textContent = "获取安全建议";
   }
+}
+
+function scrollPrimaryResultIntoView() {
+  const target = $("primaryResult");
+  if (!target) {
+    return;
+  }
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function runViaWebSocket(requestPayload, token) {
@@ -366,19 +631,28 @@ function renderLiveEvent(event) {
     $("asrState").textContent = "转写已完成";
     $("questionText").textContent = payload.transcript || $("questionText").textContent;
     setStageState("asr", "done");
+    setStageState("gate", "active");
   }
   if (stage === "term" && Array.isArray(payload.term_hits)) {
     $("termHits").innerHTML = payload.term_hits.map((term) => `<span class="term-chip">${escapeHtml(term)}</span>`).join("");
   }
   if (stage === "gate") {
-    setStageState("gate", payload.allowed === false ? "blocked" : "done");
-    $("gateState").textContent = payload.allowed === false ? "已拦截" : "已通过";
+    const allowed = payload.allowed !== false;
+    setStageState("gate", allowed ? "done" : "blocked");
+    $("gateState").textContent = allowed ? "已通过" : "已拦截";
     renderGate({
       label: payload.label || "unknown",
       allowed: payload.allowed,
       reason: payload.reason || ""
     });
-    $("gateMetric").textContent = payload.allowed === false ? "拦截" : "通过";
+    $("gateMetric").textContent = allowed ? "通过" : "拦截";
+    if (allowed) {
+      setStageState("retrieval", "active");
+    } else {
+      setStageState("retrieval", "blocked");
+      setStageState("llm", "blocked");
+      setStageState("tts", "blocked");
+    }
   }
   if (stage === "retrieval") {
     setStageState("retrieval", "done");
@@ -386,10 +660,12 @@ function renderLiveEvent(event) {
     if (Array.isArray(payload.hits)) {
       $("evidenceMetric").textContent = String(payload.hits.length);
     }
+    setStageState("llm", "active");
   }
   if (stage === "llm") {
     setStageState("llm", "done");
     $("answerState").textContent = "生成中";
+    setStageState("tts", "active");
   }
   if (stage === "tts") {
     setStageState("tts", "done");
@@ -419,8 +695,8 @@ function renderResult(result) {
   $("gateMetric").textContent = blocked ? "拦截" : gate.label === "not_checked" ? "未启用" : "通过";
   $("evidenceMetric").textContent = String(evidence.length);
   $("asrState").textContent = result.audio_file
-    ? `音频输入：${result.audio_file} -> ${providers.asr || "ASR"}`
-    : `文本输入 -> ${providers.asr || "ASR"}`;
+    ? `音频输入：${result.audio_file}`
+    : "文本输入";
   $("answerState").textContent = "已生成";
   $("ragState").textContent = evidence.length ? "已命中" : "已跳过";
   $("gateState").textContent = blocked ? "已拦截" : "已通过";
@@ -460,9 +736,9 @@ function renderGate(gate) {
   const blocked = gate.allowed === false;
   $("gateCard").className = `gate-card ${blocked ? "blocked" : "allowed"}`;
   $("gateCard").innerHTML = `
-    <strong>${blocked ? "请求已拦截" : "请求允许进入回答链路"}</strong>
-    <p>标签：${escapeHtml(gate.label || "unknown")}</p>
-    <p>原因：${escapeHtml(gate.reason || "未提供")}</p>
+    <strong>${blocked ? "不建议执行" : "可继续核验"}</strong>
+    <p>${escapeHtml(gate.reason || "未提供风险判断。")}</p>
+    <p class="muted-line">规则：${escapeHtml(gate.label || "unknown")}</p>
   `;
 }
 
@@ -475,22 +751,23 @@ function renderTermHits(events) {
 function renderEvidence(evidence) {
   if (!evidence.length) {
     $("evidenceList").innerHTML =
-      '<div class="evidence-item"><strong>未使用证据</strong><p>当前模式未启用 RAG，或者安全门控已提前短路。</p></div>';
+      '<div class="evidence-item"><strong>暂无引用依据</strong><p>当前请求未命中知识条目，或已被安全结论提前拦截。</p></div>';
     return;
   }
-  $("evidenceList").innerHTML = evidence
+  const visibleEvidence = evidence.slice(0, 3);
+  const moreCount = evidence.length - visibleEvidence.length;
+  $("evidenceList").innerHTML = visibleEvidence
     .map((item, index) => renderEvidenceItem(item, index))
-    .join("");
+    .join("") + (moreCount > 0 ? `<p class="muted-line">另有 ${moreCount} 条引用记录保存在运行详情中。</p>` : "");
 }
 
 function renderEvidenceItem(item, index) {
   const citationId = item.record_id || `E${index + 1}`;
   const confidence = Number.isFinite(Number(item.confidence)) ? `${Math.round(Number(item.confidence) * 100)}%` : "--";
   const riskLevel = item.risk_level || "medium";
-  const tags = Array.isArray(item.tags) ? item.tags : [];
   const matchedTerms = Array.isArray(item.matched_terms) ? item.matched_terms : [];
-  const tagHtml = tags.map((tag) => `<span class="evidence-chip">${escapeHtml(tag)}</span>`).join("");
   const termHtml = matchedTerms.map((term) => `<span class="evidence-chip is-match">${escapeHtml(term)}</span>`).join("");
+  const evidenceText = trimText(item.text || "", 180);
   return `
     <div class="evidence-item">
       <div class="evidence-head">
@@ -500,12 +777,10 @@ function renderEvidenceItem(item, index) {
       <div class="evidence-meta">
         <span>风险：${escapeHtml(riskLevel)}</span>
         <span>置信度：${confidence}</span>
-        <span>得分：${escapeHtml(String(item.score ?? "--"))}</span>
         <span>来源：${escapeHtml(item.source || "local knowledge base")}</span>
       </div>
-      ${tagHtml ? `<div class="evidence-chips">${tagHtml}</div>` : ""}
       ${termHtml ? `<div class="evidence-chips evidence-matches">${termHtml}</div>` : ""}
-      <p>${escapeHtml(item.text || "")}</p>
+      <p>${escapeHtml(evidenceText)}</p>
     </div>`;
 }
 
@@ -628,7 +903,7 @@ function initializeRecorderControls() {
     $("recordingStatus").textContent = "当前浏览器不支持直接录音，请使用音频文件上传。";
     return;
   }
-  $("recordingStatus").textContent = "点击开始录音，浏览器会请求麦克风权限。";
+  $("recordingStatus").textContent = "麦克风待命";
 }
 
 async function toggleRecording() {
@@ -667,6 +942,9 @@ async function startRecording() {
     });
     activeRecorder.addEventListener("stop", () => finalizeRecording(activeRecorder.mimeType || mimeType || "audio/webm"));
     activeRecorder.start();
+    if (micVisualizer) {
+      micVisualizer.start(recordingStream);
+    }
     $("recordButton").textContent = "停止录音";
     $("recordButton").classList.add("is-recording");
     $("clearRecordingButton").disabled = true;
@@ -691,6 +969,7 @@ function stopRecording() {
 }
 
 function finalizeRecording(mimeType) {
+  if (micVisualizer) micVisualizer.stop();
   if (discardRecording) {
     discardRecording = false;
     recordingChunks = [];
@@ -725,6 +1004,7 @@ function finalizeRecording(mimeType) {
 }
 
 function clearRecording(options = {}) {
+  if (micVisualizer) micVisualizer.stop();
   if (mediaRecorder && mediaRecorder.state === "recording") {
     discardRecording = true;
     mediaRecorder.stop();
@@ -789,15 +1069,15 @@ function currentAudioSource() {
 function updateAudioSourceHint() {
   const file = $("audioFile").files?.[0];
   if (file) {
-    $("audioHint").textContent = `已选择音频：${file.name}。提交后会直接送入后端 ASR。`;
+    $("audioHint").textContent = `已选择音频：${file.name}`;
     return;
   }
   if (recordedAudio) {
-    $("recordingStatus").textContent = `录音已就绪：${formatBytes(recordedAudio.blob.size)}，可预听或直接运行问答。`;
+    $("recordingStatus").textContent = `录音已就绪：${formatBytes(recordedAudio.blob.size)}`;
     $("audioHint").textContent = `将使用浏览器录音：${recordedAudio.name}。`;
     return;
   }
-  $("audioHint").textContent = "支持文本提问、上传音频，也支持浏览器直接录音接入真实 ASR。";
+  $("audioHint").textContent = "未选择音频。";
 }
 
 async function buildAudioPayload(audioSource) {
