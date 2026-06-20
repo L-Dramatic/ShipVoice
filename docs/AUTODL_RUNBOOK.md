@@ -42,6 +42,8 @@
 ```powershell
 python scripts\generate_sft_seed.py
 python scripts\generate_safety_gate_data.py
+python scripts\build_expanded_sft_dataset.py
+python scripts\validate_sft_dataset.py
 python scripts\make_autodl_bundle.py
 ```
 
@@ -86,6 +88,14 @@ Smoke test complete.
 bash remote/train_qwen_lora.sh /root/autodl-tmp/shipvoice
 ```
 
+默认训练配置使用扩展版数据：
+
+```text
+TRAIN_FILE=data/training/shipvoice_sft_train_expanded.jsonl
+EVAL_QUESTIONS=data/training/shipvoice_sft_eval_holdout.jsonl
+OUTPUT_DIR=outputs/qwen_lora_shipvoice_expanded
+```
+
 切换模型：
 
 ```bash
@@ -95,7 +105,7 @@ MODEL_NAME=Qwen/Qwen2.5-3B-Instruct bash remote/train_qwen_lora.sh /root/autodl-
 输出目录：
 
 ```text
-outputs/qwen_lora_shipvoice
+outputs/qwen_lora_shipvoice_expanded
 ```
 
 ## 托管流水线
@@ -106,6 +116,9 @@ outputs/qwen_lora_shipvoice
 PROJECT_DIR=/root/autodl-tmp/shipvoice \
 PYTHON_BIN=/root/miniconda3/bin/python \
 MODEL_NAME=Qwen/Qwen2.5-7B-Instruct \
+TRAIN_FILE=data/training/shipvoice_sft_train_expanded.jsonl \
+OUTPUT_DIR=outputs/qwen_lora_shipvoice_expanded \
+EVAL_QUESTIONS=data/training/shipvoice_sft_eval_holdout.jsonl \
 SHUTDOWN_ON_EXIT=1 \
 nohup bash remote/run_autodl_pipeline.sh > logs/pipeline.log 2>&1 &
 ```

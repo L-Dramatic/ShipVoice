@@ -4,6 +4,8 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-/root/autodl-tmp/shipvoice}"
 PYTHON_BIN="${PYTHON_BIN:-/root/miniconda3/bin/python}"
 MODEL_NAME="${MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct}"
+OUTPUT_DIR="${OUTPUT_DIR:-outputs/qwen_lora_shipvoice_expanded}"
+EVAL_QUESTIONS="${EVAL_QUESTIONS:-data/training/shipvoice_sft_eval_holdout.jsonl}"
 
 cd "$PROJECT_DIR"
 mkdir -p logs outputs results
@@ -45,18 +47,19 @@ finish() {
 }
 trap finish EXIT
 
-if [ -d outputs/qwen_lora_shipvoice ] && [ ! -f outputs/qwen_lora_shipvoice/adapter_config.json ]; then
-  mv outputs/qwen_lora_shipvoice "outputs/qwen_lora_shipvoice_incomplete_$(date +%Y%m%d_%H%M%S)"
+if [ -d "$OUTPUT_DIR" ] && [ ! -f "$OUTPUT_DIR/adapter_config.json" ]; then
+  mv "$OUTPUT_DIR" "${OUTPUT_DIR}_incomplete_$(date +%Y%m%d_%H%M%S)"
 fi
 
 status "train" "resuming LoRA training"
-MODEL_NAME="$MODEL_NAME" PYTHON_BIN="$PYTHON_BIN" \
+MODEL_NAME="$MODEL_NAME" PYTHON_BIN="$PYTHON_BIN" OUTPUT_DIR="$OUTPUT_DIR" \
   bash remote/train_qwen_lora.sh "$PROJECT_DIR" > logs/train_lora_rerun.log 2>&1
 
 status "lora_eval" "evaluating LoRA adapter"
 "$PYTHON_BIN" remote/evaluate_qwen_lora.py \
   --model "$MODEL_NAME" \
-  --adapter outputs/qwen_lora_shipvoice \
+  --adapter "$OUTPUT_DIR" \
+  --questions "$EVAL_QUESTIONS" \
   --out results/lora_eval.jsonl \
   --load-in-4bit > logs/lora_eval.log 2>&1
 

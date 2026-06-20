@@ -4,6 +4,9 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-/root/autodl-tmp/shipvoice}"
 PYTHON_BIN="${PYTHON_BIN:-/root/miniconda3/bin/python}"
 MODEL_NAME="${MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct}"
+TRAIN_FILE="${TRAIN_FILE:-data/training/shipvoice_sft_train_expanded.jsonl}"
+OUTPUT_DIR="${OUTPUT_DIR:-outputs/qwen_lora_shipvoice_expanded}"
+EVAL_QUESTIONS="${EVAL_QUESTIONS:-data/training/shipvoice_sft_eval_holdout.jsonl}"
 SHUTDOWN_ON_EXIT="${SHUTDOWN_ON_EXIT:-0}"
 POST_EXIT_SHUTDOWN_DELAY_SECONDS="${POST_EXIT_SHUTDOWN_DELAY_SECONDS:-300}"
 
@@ -38,7 +41,7 @@ shutdown_if_needed() {
   fi
   find logs outputs results -maxdepth 4 -type f -printf '%p\t%s\n' | sort > results/artifact_manifest.tsv
   tar -czf "results/shipvoice_remote_artifacts_$(date +%Y%m%d_%H%M%S).tar.gz" \
-    remote_status.json logs results data/training data/tests configs README.md 2> logs/artifact_pack.log
+    remote_status.json logs results outputs data/training data/tests configs README.md 2> logs/artifact_pack.log
   if [ -f "$PROJECT_DIR/NO_SHUTDOWN" ]; then
     echo "NO_SHUTDOWN exists; skip shutdown."
   elif [ "$SHUTDOWN_ON_EXIT" = "1" ]; then
@@ -58,17 +61,19 @@ bash remote/autodl_smoke_test.sh "$PROJECT_DIR" > logs/smoke.log 2>&1
 status "base_eval" "evaluating base model"
 "$PYTHON_BIN" remote/evaluate_qwen_lora.py \
   --model "$MODEL_NAME" \
+  --questions "$EVAL_QUESTIONS" \
   --out results/base_eval.jsonl \
   --load-in-4bit > logs/base_eval.log 2>&1
 
 status "train" "training LoRA adapter"
-MODEL_NAME="$MODEL_NAME" PYTHON_BIN="$PYTHON_BIN" \
+MODEL_NAME="$MODEL_NAME" PYTHON_BIN="$PYTHON_BIN" TRAIN_FILE="$TRAIN_FILE" OUTPUT_DIR="$OUTPUT_DIR" \
   bash remote/train_qwen_lora.sh "$PROJECT_DIR" > logs/train_lora.log 2>&1
 
 status "lora_eval" "evaluating LoRA adapter"
 "$PYTHON_BIN" remote/evaluate_qwen_lora.py \
   --model "$MODEL_NAME" \
-  --adapter outputs/qwen_lora_shipvoice \
+  --adapter "$OUTPUT_DIR" \
+  --questions "$EVAL_QUESTIONS" \
   --out results/lora_eval.jsonl \
   --load-in-4bit > logs/lora_eval.log 2>&1
 

@@ -25,6 +25,8 @@ def main() -> None:
     run([sys.executable, "scripts/build_knowledge_index.py"])
     run([sys.executable, "scripts/evaluate_retrieval.py"])
     run([sys.executable, "scripts/generate_sft_seed.py"])
+    run([sys.executable, "scripts/build_expanded_sft_dataset.py"])
+    run([sys.executable, "scripts/validate_sft_dataset.py"])
     run([sys.executable, "scripts/build_audio_recording_pack.py"])
     run([sys.executable, "scripts/evaluate_asr_transcripts.py"])
     run([sys.executable, "scripts/evaluate_multiturn.py"])

@@ -5,10 +5,6 @@ import csv
 import json
 from pathlib import Path
 
-import torch
-from peft import PeftModel
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-
 
 SYSTEM_PROMPT = (
     "你是船厂安全语音问答助手。回答必须保守、专业、可执行，并适合语音播报。"
@@ -17,6 +13,22 @@ SYSTEM_PROMPT = (
 
 
 def load_questions(path: Path) -> list[dict[str, str]]:
+    if path.suffix.lower() == ".jsonl":
+        rows: list[dict[str, str]] = []
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                item = json.loads(line)
+                rows.append(
+                    {
+                        "id": str(item.get("id", "")),
+                        "category": str(item.get("category", "")),
+                        "question": str(item.get("question", item.get("input", ""))),
+                        "expected_behavior": str(item.get("expected_behavior", item.get("output", ""))),
+                    }
+                )
+        return rows
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         return list(csv.DictReader(handle))
 
@@ -32,6 +44,15 @@ def build_prompt(tokenizer, question: str) -> str:
 
 
 def main() -> None:
+    try:
+        import torch
+        from peft import PeftModel
+        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    except ModuleNotFoundError as exc:
+        raise SystemExit(
+            f"Missing dependency {exc.name!r}. Run remote/autodl_setup.sh before model evaluation."
+        ) from exc
+
     parser = argparse.ArgumentParser(description="Evaluate base or LoRA Qwen on ShipVoice questions.")
     parser.add_argument("--model", default="Qwen/Qwen2.5-7B-Instruct")
     parser.add_argument("--adapter", default="")

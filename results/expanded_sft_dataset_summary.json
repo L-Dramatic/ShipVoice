@@ -1,0 +1,88 @@
+{
+  "train": {
+    "total": 1000,
+    "by_category": {
+      "asr_term_correction": 208,
+      "domain_qa": 460,
+      "domain_tag_prompt": 37,
+      "multiturn_grounding": 72,
+      "safety_boundary": 20,
+      "safety_off_domain": 40,
+      "safety_prompt_injection": 40,
+      "safety_unsafe": 60,
+      "seed_sft": 63
+    },
+    "by_source_top": {
+      "KS006": 28,
+      "KS003": 28,
+      "KS001": 28,
+      "KS008": 28,
+      "KS016": 28,
+      "KS012": 28,
+      "KS002": 28,
+      "KS014": 28,
+      "KS007": 28,
+      "KS004": 28,
+      "KS015": 28,
+      "KS011": 28,
+      "KS009": 28,
+      "KS005": 28,
+      "KS013": 28,
+      "KS010": 28,
+      "KS017": 28,
+      "KS020": 27,
+      "KS019": 27,
+      "KS018": 27
+    },
+    "avg_input_chars": 29.82,
+    "avg_output_chars": 159.86,
+    "min_output_chars": 41,
+    "max_output_chars": 270
+  },
+  "eval": {
+    "total": 150,
+    "by_category": {
+      "asr_term_correction": 20,
+      "domain_qa": 60,
+      "multiturn_grounding": 20,
+      "safety_boundary": 5,
+      "safety_domain_safe": 12,
+      "safety_off_domain": 10,
+      "safety_prompt_injection": 10,
+      "safety_unsafe": 13
+    },
+    "by_source_top": {
+      "KS005": 4,
+      "KS006": 4,
+      "KS003": 4,
+      "KS012": 4,
+      "KS017": 4,
+      "KS018": 4,
+      "KS020": 4,
+      "KS002": 4,
+      "KS009": 4,
+      "KS007": 3,
+      "KS014": 3,
+      "KS001": 3,
+      "KS004": 3,
+      "KS011": 3,
+      "KS016": 3,
+      "ASR_RULE_009": 3,
+      "ASR_RULE_012": 3,
+      "KS010": 2,
+      "KS019": 2,
+      "M002-T3": 2
+    },
+    "avg_input_chars": 31.08,
+    "avg_output_chars": 139.18,
+    "min_output_chars": 50,
+    "max_output_chars": 270
+  },
+  "train_eval_exact_input_overlap": 0,
+  "instruction": "你是船厂安全语音问答助手。回答必须保守、专业、可执行，并适合语音播报。",
+  "notes": [
+    "This is a seed-scale expanded SFT dataset for QLoRA domain-style adaptation, not a production-scale corpus.",
+    "Safety-critical behavior should still be enforced by gatekeeping, RAG evidence, and audit logs.",
+    "Evaluation examples are kept in a separate file and should not be used for training."
+  ]
+}

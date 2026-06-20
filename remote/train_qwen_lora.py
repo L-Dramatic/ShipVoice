@@ -69,8 +69,8 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Train a Qwen LoRA adapter for ShipVoice SFT data.")
     parser.add_argument("--model", default="Qwen/Qwen2.5-7B-Instruct")
-    parser.add_argument("--train-file", default="data/training/sft_seed.jsonl")
-    parser.add_argument("--output-dir", default="outputs/qwen_lora_shipvoice")
+    parser.add_argument("--train-file", default="data/training/shipvoice_sft_train_expanded.jsonl")
+    parser.add_argument("--output-dir", default="outputs/qwen_lora_shipvoice_expanded")
     parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--epochs", type=float, default=2.0)
     parser.add_argument("--batch-size", type=int, default=1)

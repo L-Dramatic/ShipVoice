@@ -25,7 +25,7 @@ Use:
 - base-vs-LoRA comparison
 - optional backend model behind safety gate and RAG
 
-## Fine-Tuned Adapter
+## Completed Fine-Tuned Adapter Experiment
 
 Adapter:
 
@@ -37,6 +37,22 @@ Adapter:
 - Optimizer steps: 14
 - Final train loss: 1.7777
 - Adapter artifact: `results/remote_autodl_20260608_final/outputs/qwen_lora_shipvoice/adapter_model.safetensors`
+
+This completed run is a proof that the project can execute a real remote GPU fine-tuning workflow. It is not the final recommended model because the training set was intentionally seed-scale.
+
+## Expanded Fine-Tuning Run Prepared
+
+The current higher-quality training plan uses the validated expanded SFT dataset:
+
+- Train file: `data/training/shipvoice_sft_train_expanded.jsonl`
+- Holdout eval file: `data/training/shipvoice_sft_eval_holdout.jsonl`
+- Train examples: 1000
+- Holdout eval examples: 150
+- Exact train/eval input overlap: 0
+- Default output directory: `outputs/qwen_lora_shipvoice_expanded`
+- Default script: `remote/run_autodl_pipeline.sh`
+
+The expanded dataset covers domain QA, safety refusal, prompt injection, off-domain refusal, boundary handling, multi-turn grounding, and ASR term correction. It is suitable for a stronger RTX 4090 LoRA/QLoRA comparison run, but the resulting adapter still remains an optional style/domain component behind safety gate and RAG.
 
 ## Evaluation Summary
 
@@ -70,6 +86,7 @@ The system should refuse:
 ## Known Limitations
 
 - LoRA was trained on seed-scale data and can overfit safety templates.
+- The expanded 1000-row run is prepared locally but should only be reported as trained after the AutoDL pipeline finishes and produces logs, adapter files, and base-vs-LoRA JSONL results.
 - The model does not replace official safety procedures or qualified personnel.
 - Real ASR/TTS integration still needs more audio evaluation.
 - Fine-tuning evidence is useful for competition/project demonstration, but not enough for deployment claims.
