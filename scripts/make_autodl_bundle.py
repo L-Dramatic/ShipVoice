@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 INCLUDE_DIRS = ["configs", "data", "docs", "remote", "scripts", "src", "web"]
-INCLUDE_FILES = ["README.md", "requirements.txt", "run_demo.py"]
+INCLUDE_FILES = ["README.md", "requirements.txt", "run_demo.py", "run_app.py"]
 EXCLUDE_PARTS = {"__pycache__", ".git"}
 EXCLUDE_SUFFIXES = {".pyc", ".tmp", ".log"}
 
@@ -48,4 +48,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
