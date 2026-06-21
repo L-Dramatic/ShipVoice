@@ -46,7 +46,8 @@ $PYTHON_BIN -m pip install --no-cache-dir -U -c /tmp/shipvoice_pip_constraints.t
   "modelscope" \
   "soundfile" \
   "fastapi" \
-  "uvicorn"
+  "uvicorn" \
+  "websockets>=12"
 
 $PYTHON_BIN - <<'PY'
 import importlib.util, json, torch

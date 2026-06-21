@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import os
 import socket
 import subprocess
@@ -8,6 +9,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,7 +70,41 @@ def wait_until_ready(base_url: str, timeout_s: int = 30) -> dict:
     raise RuntimeError(f"fastapi app did not become ready: {last_error}")
 
 
-def websocket_smoke(port: int) -> dict:
+def websocket_smoke_python(port: int) -> dict:
+    code = f"""
+import asyncio
+import json
+import websockets
+
+async def main():
+    seen = []
+    async with websockets.connect('ws://127.0.0.1:{port}/ws/run') as ws:
+        await ws.send(json.dumps({{
+            'session_id': 'smoke-fastapi',
+            'question': '密闭舱室动火作业前需要完成哪些安全确认？',
+            'mode': 'full',
+            'history': []
+        }}, ensure_ascii=False))
+        while True:
+            payload = json.loads(await ws.recv())
+            seen.append(payload.get('type'))
+            if payload.get('type') == 'error':
+                raise RuntimeError(json.dumps(payload, ensure_ascii=False))
+            if payload.get('type') == 'result':
+                print(json.dumps({{
+                    'types': seen,
+                    'gate': payload['result']['gate']['label'],
+                    'total_ms': payload['result']['metrics']['total_ms']
+                }}, ensure_ascii=False))
+                return
+
+asyncio.run(asyncio.wait_for(main(), timeout=30))
+"""
+    result = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, check=True)
+    return json.loads(result.stdout.strip())
+
+
+def websocket_smoke_node(port: int) -> dict:
     code = f"""
 const ws = new WebSocket('ws://127.0.0.1:{port}/ws/run');
 const seen = [];
@@ -101,6 +137,14 @@ setTimeout(() => process.exit(2), 30000);
 """
     result = subprocess.run(["node", "-e", code], cwd=ROOT, capture_output=True, text=True, check=True)
     return json.loads(result.stdout.strip())
+
+
+def websocket_smoke(port: int) -> dict:
+    if importlib.util.find_spec("websockets"):
+        return websocket_smoke_python(port)
+    if not shutil.which("node"):
+        raise RuntimeError("WebSocket smoke requires Python package 'websockets' or a Node.js runtime.")
+    return websocket_smoke_node(port)
 
 
 def main() -> None:
