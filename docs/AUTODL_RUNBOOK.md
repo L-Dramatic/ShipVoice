@@ -2,7 +2,9 @@
 
 ## 什么时候租
 
-现在不要立刻长时间开机训练。先在本机准备好 bundle，然后租 AutoDL 做三件事：
+当前项目已经完成一轮 RTX 4090 扩展训练和评测，结果已归档到 `results/remote_autodl_20260621_expanded`。除非要继续扩大模型或重跑实验，答辩前不需要再长时间开 GPU。
+
+需要重跑时，先在本机准备好 bundle，然后租 AutoDL 做三件事：
 
 1. 安装依赖并跑 smoke test。
 2. 用 Qwen 做 LoRA/QLoRA 小规模训练。
@@ -154,3 +156,12 @@ touch /root/autodl-tmp/shipvoice/NO_SHUTDOWN
 2. LoRA adapter 目录。
 3. 原始模型 vs LoRA 模型的问答对比。
 4. 是否值得继续扩大数据和训练规模的结论。
+
+本轮已完成产物：
+
+- 训练样本：1000 条。
+- Holdout：150 条。
+- 模型：`Qwen/Qwen2.5-7B-Instruct`。
+- 方法：4-bit LoRA/QLoRA。
+- 结果：`train_loss = 0.1677`，训练耗时约 724 秒。
+- 归档：`results/remote_autodl_20260621_expanded/summary.json` 与 `summary.md`。

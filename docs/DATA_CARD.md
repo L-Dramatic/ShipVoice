@@ -20,6 +20,7 @@ ShipVoice data is designed for a shipyard safety voice QA assistant. It supports
 | SFT seed data | `data/training/sft_seed.jsonl` | 63 records | LoRA/QLoRA seed fine-tuning |
 | Expanded SFT train data | `data/training/shipvoice_sft_train_expanded.jsonl` | 1000 records | Qwen LoRA/QLoRA domain-style adaptation |
 | Expanded SFT holdout eval | `data/training/shipvoice_sft_eval_holdout.jsonl` | 150 records | base-vs-LoRA comparison; not used for training |
+| Expanded LoRA remote results | `results/remote_autodl_20260621_expanded/summary.json` | 150 base rows + 150 LoRA rows | completed RTX 4090 training/evaluation evidence |
 | Safety gate seed data | `data/training/safety_gate_seed.jsonl` | 32 records | lightweight classifier/rule-gate training seed |
 | Audio manifest | `data/audio/audio_manifest.csv` | 50 recording tasks | schema for real voice sample collection and ASR evaluation |
 | ASR evaluation results | `results/asr_eval_summary.json` | 50 evaluated clips, corrected CER/WER 0.00%, term recall 100.00%; raw baseline kept in `results/asr_eval_raw_summary.json` | CER, WER, and domain-term recall |
@@ -64,6 +65,7 @@ Validation is performed by `scripts/validate_sft_dataset.py`. The current checke
 - 150 holdout evaluation examples
 - 0 exact input overlap between train and holdout files
 - holdout coverage for domain QA, safety refusal, prompt injection, off-domain refusal, boundary handling, multi-turn grounding, and ASR term correction
+- completed remote LoRA evaluation archived under `results/remote_autodl_20260621_expanded`
 
 ## Known Limitations
 

@@ -171,15 +171,57 @@ def load_latency_metrics() -> dict[str, dict[str, float]]:
 
 
 def load_remote_metrics() -> dict[str, str]:
+    expanded_out = ROOT / "results" / "remote_autodl_20260621_expanded"
+    summary_candidates = [
+        expanded_out / "summary.json",
+        ROOT / "results" / "remote_lora_expanded_summary_20260621.json",
+    ]
+    summary_path = next((path for path in summary_candidates if path.exists()), None)
+    if summary_path is not None:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        return {
+            "artifact_dir": "results/remote_autodl_20260621_expanded",
+            "model": str(summary.get("model", "Qwen/Qwen2.5-7B-Instruct")),
+            "method": str(summary.get("method", "4-bit LoRA/QLoRA")),
+            "train_examples": str(summary.get("train_examples", "--")),
+            "holdout_examples": str(summary.get("holdout_examples", "--")),
+            "base_rows": str(summary.get("base_rows", "--")),
+            "lora_rows": str(summary.get("lora_rows", "--")),
+            "base_avg_len": f"{float(summary.get('base_avg_answer_chars', 0)):.1f}",
+            "lora_avg_len": f"{float(summary.get('lora_avg_answer_chars', 0)):.1f}",
+            "adapter_mb": f"{float(summary.get('adapter_mb', 0)):.1f}",
+            "train_loss": f"{float(summary.get('train_loss', 0)):.4f}",
+            "train_runtime_sec": f"{float(summary.get('train_runtime_sec', 0)):.0f}",
+            "train_steps": "250",
+            "base_safety_refusal_count": str(summary.get("base_safety_refusal_count", "--")),
+            "lora_safety_refusal_count": str(summary.get("lora_safety_refusal_count", "--")),
+            "base_off_domain_refusal_count": str(summary.get("base_off_domain_refusal_count", "--")),
+            "lora_off_domain_refusal_count": str(summary.get("lora_off_domain_refusal_count", "--")),
+            "adapter_path": "results/remote_autodl_20260621_expanded/extracted/outputs/qwen_lora_shipvoice_expanded/adapter_model.safetensors",
+        }
+
     root = ROOT / "results" / "remote_autodl_20260608_final"
     base = [json.loads(x) for x in (root / "results" / "base_eval.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
     lora = [json.loads(x) for x in (root / "results" / "lora_eval.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
     return {
+        "artifact_dir": "results/remote_autodl_20260608_final",
+        "model": "Qwen/Qwen2.5-7B-Instruct",
+        "method": "4-bit LoRA/QLoRA",
+        "train_examples": "63",
+        "holdout_examples": str(len(lora)),
         "base_rows": str(len(base)),
         "lora_rows": str(len(lora)),
         "base_avg_len": f"{statistics.mean(len(r['answer']) for r in base):.1f}",
         "lora_avg_len": f"{statistics.mean(len(r['answer']) for r in lora):.1f}",
         "adapter_mb": f"{(root / 'outputs' / 'qwen_lora_shipvoice' / 'adapter_model.safetensors').stat().st_size / 1024 / 1024:.1f}",
+        "train_loss": "1.7777",
+        "train_runtime_sec": "62",
+        "train_steps": "14",
+        "base_safety_refusal_count": "--",
+        "lora_safety_refusal_count": "--",
+        "base_off_domain_refusal_count": "--",
+        "lora_off_domain_refusal_count": "--",
+        "adapter_path": "results/remote_autodl_20260608_final/outputs/qwen_lora_shipvoice/adapter_model.safetensors",
     }
 
 
@@ -442,7 +484,7 @@ def add_exec_summary(
         ["维度", "完成情况"],
         [
             ["知识库", f"{counts['knowledge_docs']} 条船厂安全知识条目，覆盖有限空间、动火、吊装、试压、PPE、应急等主题"],
-            ["训练数据", f"{counts['sft_records']} 条 SFT seed，{counts['safety_gate_records']} 条安全门控 seed"],
+            ["训练数据", f"{remote['train_examples']} 条扩展 SFT train，{remote['holdout_examples']} 条 holdout，{counts['safety_gate_records']} 条安全门控 seed"],
             ["安全评测", f"{safety['total']} 条安全/离题/prompt-injection/domain-safe/boundary 样例，危险请求误放行 {safety['false_allow_count']}"],
             ["语音评测", f"{asr['manifest_rows']} 条真实录音已完成评测，当前 ASR 状态为 {asr['status']}"],
             ["真实语音链路", f"远端已验证 {real_chain['num_samples']} 条真实样本，ASR={real_chain['asr_service']}，TTS={real_chain['tts_service']}，平均首音 {real_chain['avg_first_audio_ms']} ms"],
@@ -703,11 +745,11 @@ def add_lora_experiment(doc: Document, remote: dict[str, str]) -> None:
         ["项目", "配置/结果"],
         [
             ["GPU", "NVIDIA GeForce RTX 4090 24GB"],
-            ["基础模型", "Qwen/Qwen2.5-7B-Instruct"],
-            ["训练方法", "4-bit LoRA/QLoRA，target modules 覆盖 attention 与 MLP 投影层"],
-            ["训练数据", "63 条 ShipVoice SFT seed"],
-            ["训练轮数", "2 epochs，14 optimizer steps"],
-            ["训练结果", "train_loss = 1.7777，train_runtime = 61.6765s"],
+            ["基础模型", remote["model"]],
+            ["训练方法", f"{remote['method']}，target modules 覆盖 attention 与 MLP 投影层"],
+            ["训练数据", f"{remote['train_examples']} 条 ShipVoice 扩展 SFT train，{remote['holdout_examples']} 条 holdout"],
+            ["训练轮数", f"2 epochs，{remote['train_steps']} optimizer steps"],
+            ["训练结果", f"train_loss = {remote['train_loss']}，train_runtime = {remote['train_runtime_sec']}s"],
             ["产物", f"LoRA adapter_model.safetensors，约 {remote['adapter_mb']} MB"],
         ],
         [1.65, 4.85],
@@ -716,8 +758,8 @@ def add_lora_experiment(doc: Document, remote: dict[str, str]) -> None:
         doc,
         ["模型", "评测条数", "平均回答长度", "观察"],
         [
-            ["Base Qwen2.5-7B-Instruct", remote["base_rows"], f"{remote['base_avg_len']} 字符", "off-domain 拒答更稳，重复更少"],
-            ["ShipVoice LoRA Adapter", remote["lora_rows"], f"{remote['lora_avg_len']} 字符", "回答更短、更符合船厂安全模板，但有轻微模板化过拟合"],
+            ["Base Qwen2.5-7B-Instruct", remote["base_rows"], f"{remote['base_avg_len']} 字符", f"安全类拒答 {remote['base_safety_refusal_count']}，off-domain 拒答 {remote['base_off_domain_refusal_count']}"],
+            ["ShipVoice LoRA Adapter", remote["lora_rows"], f"{remote['lora_avg_len']} 字符", f"安全类拒答 {remote['lora_safety_refusal_count']}，off-domain 拒答 {remote['lora_off_domain_refusal_count']}，领域边界更明确"],
         ],
         [2.1, 1.0, 1.4, 2.0],
     )
@@ -729,7 +771,7 @@ def add_lora_experiment(doc: Document, remote: dict[str, str]) -> None:
     )
 
 
-def add_reproducibility(doc: Document, real_chain: dict[str, object]) -> None:
+def add_reproducibility(doc: Document, remote: dict[str, str], real_chain: dict[str, object]) -> None:
     doc.add_heading("9. 可复现性与工程质量", level=1)
     add_body_paragraph(doc, "项目保留了本地与远端两套复现路径。本地路径用于课程答辩现场稳定演示，远端路径用于 GPU 微调实验和模型对比。")
     add_table(
@@ -748,12 +790,12 @@ def add_reproducibility(doc: Document, real_chain: dict[str, object]) -> None:
         ],
         [1.45, 2.65, 2.4],
     )
-    add_body_paragraph(doc, f"核心远端证据位于 results/remote_autodl_20260608_final；真实语音链路证据位于 {real_chain['artifact_dir']}。前者证明微调实验，后者证明真实 ASR/TTS 服务联调。")
+    add_body_paragraph(doc, f"核心远端证据位于 {remote['artifact_dir']}；真实语音链路证据位于 {real_chain['artifact_dir']}。前者证明扩展微调实验，后者证明真实 ASR/TTS 服务联调。")
 
 
 def add_limitations(doc: Document) -> None:
     doc.add_heading("10. 局限性与后续工作", level=1)
-    add_bullet(doc, "SFT seed 数据规模仍较小，LoRA 主要证明领域适配可行性，不应夸大为生产级模型。")
+    add_bullet(doc, "扩展 SFT 已达到 1000 条训练样本和 150 条 holdout，但仍主要由课程知识库、真实录音任务和规则模板扩展得到，不能替代真实船厂专家语料。")
     add_bullet(doc, "LoRA 在 off-domain 问题上出现轻微领域模板化，因此正式系统必须保留安全门控。")
     add_bullet(doc, "50 条真实中文语音已经完成录制与 ASR 评测，但当前样本规模仍偏小，下一阶段应扩展到 100+ 条、多说话人和更强噪声条件。")
     add_bullet(doc, "多轮 benchmark 已建立，但仍以结构化追问为主，下一阶段应加入更自由的口语化省略问句和 ASR 错字变体。")
@@ -781,9 +823,9 @@ def add_appendix(doc: Document) -> None:
             ["ASR 评测结果", "results/asr_eval.csv / asr_eval_summary.json / asr_eval_report.md / asr_eval_raw_summary.json / asr_postprocess_summary.json"],
             ["真实语音链路结果", "results/remote_real_chain_20260612_chattts_48359"],
             ["评测看板", "deliverables/ShipVoice_Evaluation_Dashboard.html"],
-            ["SFT 数据", "data/training/sft_seed.jsonl"],
+            ["SFT 数据", "data/training/sft_seed.jsonl / data/training/shipvoice_sft_train_expanded.jsonl / data/training/shipvoice_sft_eval_holdout.jsonl"],
             ["安全门控数据", "data/training/safety_gate_seed.jsonl"],
-            ["远端结果", "results/remote_autodl_20260608_final"],
+            ["远端结果", "results/remote_autodl_20260621_expanded"],
             ["AutoDL bundle", "results/autodl_bundle.zip"],
         ],
         [1.4, 5.1],
@@ -814,7 +856,7 @@ def build() -> None:
     add_real_chain_validation(doc, real_chain)
     add_latency(doc, latency)
     add_lora_experiment(doc, remote)
-    add_reproducibility(doc, real_chain)
+    add_reproducibility(doc, remote, real_chain)
     add_limitations(doc)
     add_appendix(doc)
 

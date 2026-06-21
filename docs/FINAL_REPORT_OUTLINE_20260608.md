@@ -86,17 +86,18 @@ Remote environment:
 - GPU: RTX 4090 24GB
 - Base model: Qwen/Qwen2.5-7B-Instruct
 - Training method: 4-bit LoRA/QLoRA
-- Training records: 63 SFT seed examples
+- Training records: 1000 expanded SFT train examples
+- Holdout records: 150 examples
 - Training epochs: 2
-- Optimizer steps: 14
-- Final training loss: 1.7777
+- Optimizer steps: 250
+- Final training loss: 0.1677
 
 Artifacts:
 
-- `results/remote_autodl_20260608_final/results/base_eval.jsonl`
-- `results/remote_autodl_20260608_final/results/lora_eval.jsonl`
-- `results/remote_autodl_20260608_final/logs/train_lora_rerun.log`
-- `results/remote_autodl_20260608_final/outputs/qwen_lora_shipvoice/adapter_model.safetensors`
+- `results/remote_autodl_20260621_expanded/extracted/results/base_eval.jsonl`
+- `results/remote_autodl_20260621_expanded/extracted/results/lora_eval.jsonl`
+- `results/remote_autodl_20260621_expanded/extracted/logs/train_lora.log`
+- `results/remote_autodl_20260621_expanded/extracted/outputs/qwen_lora_shipvoice_expanded/adapter_model.safetensors`
 
 ## 7. Evaluation and Analysis
 
@@ -104,8 +105,8 @@ Base vs LoRA:
 
 | Model | Eval Rows | Avg Answer Length | Observation |
 |---|---:|---:|---|
-| Base Qwen2.5-7B-Instruct | 8 | 196.1 chars | safer off-domain behavior, less repetition |
-| LoRA adapter | 8 | 143.8 chars | more concise and more domain-styled |
+| Base Qwen2.5-7B-Instruct | 150 | 211.2 chars | broader general response style; weak off-domain refusal in holdout |
+| LoRA adapter | 150 | 161.2 chars | stronger refusal templates and domain-styled responses |
 
 Important limitation:
 
@@ -153,14 +154,14 @@ bash remote/run_resume_lora_eval.sh
 
 Evidence:
 
-- logs are saved under `results/remote_autodl_20260608_final/logs`
-- adapter and tokenizer are saved under `results/remote_autodl_20260608_final/outputs/qwen_lora_shipvoice`
+- logs are saved under `results/remote_autodl_20260621_expanded/extracted/logs`
+- adapter and tokenizer are saved under `results/remote_autodl_20260621_expanded/extracted/outputs/qwen_lora_shipvoice_expanded`
 
 ## 10. Limitations and Future Work
 
 Honest limitations:
 
-- SFT seed data is small.
+- Expanded SFT data is still course-scale and template/knowledge-derived.
 - LoRA improves style but may overfit templates.
 - Full ASR/TTS model integration is represented by a runnable pipeline and mock fallback unless real audio samples are added.
 - Safety gate should be expanded with more adversarial tests.

@@ -1,8 +1,8 @@
 # ShipVoice 项目验收报告
 
-- 生成时间：`2026-06-16T18:00:20.944206+00:00`
+- 生成时间：`2026-06-21T08:34:07.738055+00:00`
 - Git 分支：`codex/phase1-enterprise-backend`
-- Git 提交：`852fd79`
+- Git 提交：`f02486e`
 - 源代码工作区是否有未提交改动：`True`
 - 建议课程目标分：`97 / 100`
 
@@ -43,13 +43,13 @@
 | `docs/OPERATIONS_RUNBOOK.md` | 存在 | 8427 |
 | `docs/ARCHITECTURE.md` | 存在 | 1454 |
 | `results/citation_quality_report.md` | 存在 | 1271 |
-| `results/citation_quality_summary.json` | 存在 | 513 |
+| `results/citation_quality_summary.json` | 存在 | 510 |
 | `results/citation_quality_eval.csv` | 存在 | 5353 |
-| `deliverables/ShipVoice_Evaluation_Dashboard.html` | 存在 | 22607 |
-| `deliverables/ShipVoice_Final_Defense_Deck_Draft.pptx` | 存在 | 236572 |
-| `deliverables/ShipVoice_船厂安全实时语音问答助手_项目报告_比赛增强版.docx` | 存在 | 233535 |
-| `web/static/index.html` | 存在 | 8905 |
-| `web/static/admin.html` | 存在 | 14674 |
+| `deliverables/ShipVoice_Evaluation_Dashboard.html` | 存在 | 71744 |
+| `deliverables/ShipVoice_Final_Defense_Deck_Draft.pptx` | 存在 | 236491 |
+| `deliverables/ShipVoice_船厂安全实时语音问答助手_项目报告_比赛增强版.docx` | 存在 | 233598 |
+| `web/static/index.html` | 存在 | 9775 |
+| `web/static/admin.html` | 存在 | 14692 |
 | `Dockerfile` | 存在 | 286 |
 
 ## 当前边界

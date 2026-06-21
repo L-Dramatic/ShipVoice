@@ -8,8 +8,8 @@
 - Title hit@3: 100.00%
 - Keyword recall: 97.22%
 - Follow-up grounding accuracy: 100.00%
-- Avg total latency: 2920 ms
-- Avg first audio latency: 1516 ms
+- Avg total latency: 2935 ms
+- Avg first audio latency: 1523 ms
 
 | Turn | Context | Gate | Title hit | Keyword recall |
 | --- | --- | --- | --- | --- |

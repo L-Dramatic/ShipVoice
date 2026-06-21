@@ -94,7 +94,7 @@ export async function slide01(presentation, ctx) {
   ctx.addText(slide,{text:"A2 级联式语音问答系统复现与改进 | 安全门控 + RAG + Qwen LoRA 实验",x:68,y:226,w:940,h:34,fontSize:20,color:"#A9C7F5"});
   line(slide,ctx,68,296,430,4,C.cyan);
   const xs=[68,298,528,758];
-  const vals=[["20","知识条目"],["55","安全评测"],["0","危险误放行"],["1.78","LoRA train loss"]];
+  const vals=[["20","知识条目"],["55","安全评测"],["0","危险误放行"],["0.168","LoRA train loss"]];
   vals.forEach((v,i)=>{ctx.addText(slide,{text:v[0],x:xs[i],y:344,w:170,h:50,fontSize:42,bold:true,color:i===1?C.green:i===3?C.gold:C.white,typeface:ctx.fonts.title}); ctx.addText(slide,{text:v[1],x:xs[i]+2,y:396,w:180,h:24,fontSize:16,color:"#B7C9E8"});});
   pill(slide,ctx,"姓名 / 学号待补充",68,608,230,"#163B68","#DDEBFF");
   ctx.addText(slide,{text:"2026-06-08",x:1010,y:612,w:190,h:28,fontSize:18,color:"#B7C9E8",align:"right"});
@@ -217,10 +217,10 @@ export async function slide07(presentation, ctx) {
   title(slide,ctx,"LoRA/QLoRA 是超出要求的领域适配实验","我们跑了真实远端 GPU 训练，而不是只写计划。");
   metric(slide,ctx,"Qwen2.5-7B","Base model",78,212,300,C.blue);
   metric(slide,ctx,"RTX 4090","24GB GPU",438,212,230,C.cyan);
-  metric(slide,ctx,"63","SFT seed",728,212,190,C.green);
-  metric(slide,ctx,"14","optimizer steps",978,212,190,C.gold);
-  box(slide,ctx,"训练配置：4-bit LoRA/QLoRA，target modules 覆盖 attention 与 MLP 投影层，2 epochs，最终 train_loss = 1.7777。",104,384,470,116,C.white,C.blue);
-  box(slide,ctx,"产物证据：adapter_model.safetensors 约 154MB，base_eval.jsonl、lora_eval.jsonl、训练日志与 artifact manifest 均已拉回本地。",644,384,470,116,C.white,C.green);
+  metric(slide,ctx,"1000","SFT train",728,212,190,C.green);
+  metric(slide,ctx,"250","optimizer steps",978,212,190,C.gold);
+  box(slide,ctx,"训练配置：4-bit LoRA/QLoRA，target modules 覆盖 attention 与 MLP 投影层，2 epochs，最终 train_loss = 0.1677。",104,384,470,116,C.white,C.blue);
+  box(slide,ctx,"产物证据：150 条 holdout 对比、adapter_model.safetensors 约 154MB，base/LoRA JSONL、训练日志与 artifact manifest 均已拉回本地。",644,384,470,116,C.white,C.green);
   footer(slide,ctx);
   return slide;
 }
@@ -231,17 +231,17 @@ export async function slide08(presentation, ctx) {
   const slide = presentation.slides.add();
   slideBg(slide, ctx);
   kicker(slide,ctx,"EVALUATION");
-  title(slide,ctx,"Base 更稳，LoRA 更领域化；最终系统选择“门控 + RAG + 可选 LoRA”","实验结果支持安全架构，而不是盲目吹微调。");
+  title(slide,ctx,"Base 与 LoRA 对比：微调用于增强，不替代门控","实验结果支持安全架构，而不是盲目吹微调。");
   const max=220;
-  const base=196.1, lora=143.8;
+  const base=211.2, lora=161.2;
   ctx.addText(slide,{text:"平均回答长度",x:120,y:226,w:220,h:28,fontSize:22,bold:true,color:C.ink});
   ctx.addShape(slide,{x:120,y:286,w:base/max*720,h:42,fill:C.blue,line:ctx.line(C.blue,0)});
-  ctx.addText(slide,{text:"Base 196.1 chars",x:120+base/max*720+18,y:292,w:240,h:28,fontSize:19,color:C.ink});
+  ctx.addText(slide,{text:"Base 211.2 chars",x:120+base/max*720+18,y:292,w:240,h:28,fontSize:19,color:C.ink});
   ctx.addShape(slide,{x:120,y:366,w:lora/max*720,h:42,fill:C.green,line:ctx.line(C.green,0)});
-  ctx.addText(slide,{text:"LoRA 143.8 chars",x:120+lora/max*720+18,y:372,w:240,h:28,fontSize:19,color:C.ink});
-  box(slide,ctx,"Base：off-domain 拒答更稳，重复更少，适合作为安全基线。",110,484,330,90,C.white,C.blue);
-  box(slide,ctx,"LoRA：回答更短、更像船厂安全作业提示，领域风格更一致。",474,484,330,90,C.white,C.green);
-  box(slide,ctx,"限制：LoRA 对 off-domain 有轻微模板化过拟合，不能裸用。",838,484,330,90,C.white,C.red);
+  ctx.addText(slide,{text:"LoRA 161.2 chars",x:120+lora/max*720+18,y:372,w:240,h:28,fontSize:19,color:C.ink});
+  box(slide,ctx,"Base：150 条 holdout 中更像通用助手，off-domain 拒答 1/10。",110,484,330,90,C.white,C.blue);
+  box(slide,ctx,"LoRA：安全类拒答从 12 提升到 38，off-domain 拒答达到 10/10。",474,484,330,90,C.white,C.green);
+  box(slide,ctx,"限制：LoRA 仍不能裸用，正式链路必须先过安全门控和 RAG。",838,484,330,90,C.white,C.red);
   footer(slide,ctx);
   return slide;
 }
@@ -265,7 +265,7 @@ export async function slide09(presentation, ctx) {
     pill(slide,ctx,c[0],88,y,150,i<2?C.softBlue:C.softGreen,i<2?C.blue:C.green);
     ctx.addText(slide,{text:c[1],x:278,y:y+4,w:800,h:32,fontSize:22,color:C.ink,typeface:ctx.fonts.mono});
   });
-  box(slide,ctx,"核心证据目录：results/remote_autodl_20260608_final，包括训练日志、base/LoRA JSONL、adapter 和结果摘要。",138,560,960,58,C.white,C.gold);
+  box(slide,ctx,"核心证据目录：results/remote_autodl_20260621_expanded，包括训练日志、base/LoRA JSONL、adapter、结果摘要和远端状态。",138,560,960,58,C.white,C.gold);
   footer(slide,ctx);
   return slide;
 }

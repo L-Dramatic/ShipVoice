@@ -39,7 +39,9 @@ ShipVoice_Final_Submission/
     results/asr_eval_report.md
     results/demo_panel_safety.png
     results/demo_panel_backend.png
-    results/remote_autodl_20260608_final/
+    results/remote_lora_expanded_summary_20260621.json
+    data/training/shipvoice_sft_train_expanded.jsonl
+    data/training/shipvoice_sft_eval_holdout.jsonl
   competition_docs/
     docs/COMPETITION_GRADE_ROADMAP.md
     docs/DATA_CARD.md
@@ -52,8 +54,7 @@ ShipVoice_Final_Submission/
 
 - 小组成员姓名和学号
 - 是否需要按老师要求改文件名
-- 录制 30-50 条真实语音样例
-- 按 `ShipVoice_Audio_Recording_Pack.html` 录制 50 条真实语音样例，并把文件放入 `data/audio/raw/`
+- 若老师要求展示原始音频，可从 `data/audio/raw/` 中选取代表性样例演示
 - 录制 2.5-3.5 分钟答辩演示视频
 - 如果要 PDF，需要用本机 Word 或 WPS 将 DOCX 导出为 PDF
 
