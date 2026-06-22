@@ -85,6 +85,8 @@ class AudioVisualizer {
     this.analyser = null;
     this.dataArray = null;
     this.source = null;
+    this.sourceKind = null;
+    this.sourceTarget = null;
     this.isActive = false;
     this.phase = 0;
   }
@@ -97,20 +99,18 @@ class AudioVisualizer {
 
     try {
       if (streamOrAudio) {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        this.audioContext = new AudioContextClass();
-        this.analyser = this.audioContext.createAnalyser();
-        this.analyser.fftSize = 256;
-        const bufferLength = this.analyser.frequencyBinCount;
-        this.dataArray = new Uint8Array(bufferLength);
-
         if (streamOrAudio instanceof MediaStream) {
+          this.releaseAudioGraph();
+          this.createAudioGraph();
           this.source = this.audioContext.createMediaStreamSource(streamOrAudio);
+          this.sourceKind = "stream";
+          this.sourceTarget = streamOrAudio;
           this.source.connect(this.analyser);
         } else if (streamOrAudio instanceof HTMLAudioElement) {
-          this.source = this.audioContext.createMediaElementSource(streamOrAudio);
-          this.source.connect(this.analyser);
-          this.analyser.connect(this.audioContext.destination);
+          this.ensureMediaElementGraph(streamOrAudio);
+          if (this.audioContext?.state === "suspended") {
+            void this.audioContext.resume();
+          }
         }
       }
     } catch (e) {
@@ -127,6 +127,45 @@ class AudioVisualizer {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
     }
+    if (this.sourceKind === "stream") {
+      this.releaseAudioGraph();
+    }
+
+    if (this.canvas) {
+      const width = this.canvas.width;
+      const height = this.canvas.height;
+      this.ctx.clearRect(0, 0, width, height);
+      this.canvas.hidden = true;
+    }
+  }
+
+  createAudioGraph() {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    this.audioContext = new AudioContextClass();
+    this.analyser = this.audioContext.createAnalyser();
+    this.analyser.fftSize = 256;
+    const bufferLength = this.analyser.frequencyBinCount;
+    this.dataArray = new Uint8Array(bufferLength);
+  }
+
+  ensureMediaElementGraph(audioElement) {
+    if (this.sourceKind === "element" && this.sourceTarget === audioElement && this.audioContext && this.analyser) {
+      return;
+    }
+    if (this.sourceKind === "stream") {
+      this.releaseAudioGraph();
+    }
+    if (!this.audioContext || !this.analyser) {
+      this.createAudioGraph();
+    }
+    this.source = this.audioContext.createMediaElementSource(audioElement);
+    this.sourceKind = "element";
+    this.sourceTarget = audioElement;
+    this.source.connect(this.analyser);
+    this.analyser.connect(this.audioContext.destination);
+  }
+
+  releaseAudioGraph() {
     if (this.source) {
       try { this.source.disconnect(); } catch(e){}
       this.source = null;
@@ -136,13 +175,9 @@ class AudioVisualizer {
       this.audioContext = null;
     }
     this.analyser = null;
-
-    if (this.canvas) {
-      const width = this.canvas.width;
-      const height = this.canvas.height;
-      this.ctx.clearRect(0, 0, width, height);
-      this.canvas.hidden = true;
-    }
+    this.dataArray = null;
+    this.sourceKind = null;
+    this.sourceTarget = null;
   }
 
   draw() {
