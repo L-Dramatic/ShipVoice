@@ -1640,3 +1640,154 @@ select.text-input {
     display: none;
   }
 }
+
+/* Mobile reliability guardrail
+   Keep late product-specific grids from squeezing the workspace into a narrow column. */
+@media (max-width: 1080px) {
+  body,
+  .shipvoice-console,
+  .admin-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar,
+  .operator-sidebar,
+  .admin-sidebar {
+    position: relative;
+    top: auto;
+    width: 100%;
+    min-width: 0;
+    min-height: auto;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    box-shadow: none;
+  }
+
+  .workspace,
+  .admin-workspace {
+    width: 100%;
+    min-width: 0;
+    padding: 18px 14px 28px;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ops-overview,
+  .main-grid,
+  .operator-grid,
+  .diagnostic-grid,
+  .admin-grid,
+  .metrics-grid,
+  .form-grid,
+  .admin-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stage-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .answer-panel,
+  .evidence-panel,
+  .runtime-panel,
+  .timeline-panel,
+  .log-panel,
+  .operator-grid .primary-result-panel,
+  .operator-grid .gate-panel,
+  .operator-grid .evidence-panel,
+  .operator-grid .transcript-panel,
+  .diagnostic-details,
+  .diagnostic-grid .timeline-panel,
+  .diagnostic-grid .runtime-panel,
+  .diagnostic-grid .log-panel,
+  .admin-grid > *,
+  .full-span {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .panel,
+  .metric,
+  .primary-input-group,
+  .sidebar-details,
+  .diagnostic-details,
+  .auth-card,
+  .text-input,
+  .textarea-input,
+  .select-input,
+  textarea,
+  input,
+  select,
+  button,
+  .secondary-link {
+    min-width: 0;
+  }
+
+  .panel-head,
+  .diagnostic-details summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .panel-head span,
+  .diagnostic-details summary strong {
+    align-self: flex-start;
+  }
+
+  .record-control,
+  .button-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .operator-grid .primary-result-panel,
+  .operator-grid .gate-panel,
+  .operator-grid .evidence-panel,
+  .operator-grid .transcript-panel {
+    min-height: auto;
+  }
+
+  .operator-grid .answer-text {
+    min-height: 220px;
+  }
+}
+
+@media (max-width: 520px) {
+  .sidebar {
+    padding: 18px 14px;
+    gap: 16px;
+  }
+
+  .brand {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .brand-mark {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+  }
+
+  .brand h1 {
+    font-size: 21px;
+  }
+
+  .workspace,
+  .admin-workspace {
+    padding: 16px 12px 24px;
+  }
+
+  .metrics-grid,
+  .stage-rail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .metric strong {
+    font-size: 28px;
+  }
+}

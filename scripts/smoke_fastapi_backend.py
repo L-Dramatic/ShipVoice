@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import importlib.util
 import os
@@ -180,8 +181,25 @@ def websocket_smoke(port: int) -> dict:
     return websocket_smoke_node(port)
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Smoke-test the ShipVoice FastAPI backend.")
+    parser.add_argument(
+        "--base-port",
+        type=int,
+        default=8035,
+        help="First local port to try when starting a temporary backend.",
+    )
+    parser.add_argument(
+        "--skip-live-run",
+        action="store_true",
+        help="Skip /ws/run end-to-end inference. Use this when ASR/LLM/TTS GPU services are offline.",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
-    port = find_free_port()
+    args = parse_args()
+    port = find_free_port(args.base_port)
     env = os.environ.copy()
     env["SHIPVOICE_APP_PORT"] = str(port)
     log_path = ROOT / "results" / "runtime" / "fastapi_smoke_app.log"
@@ -218,7 +236,7 @@ def main() -> None:
         record_id = created["record"]["id"]
         detail = get_json(f"{base_url}/api/admin/knowledge/{record_id}", token=token)
         deleted = delete_json(f"{base_url}/api/admin/knowledge/{record_id}", token=token)
-        ws_result = websocket_smoke(port)
+        ws_result = {"types": [], "gate": "skipped", "total_ms": None} if args.skip_live_run else websocket_smoke(port)
         payload = {
             "health_ok": health["ok"],
             "service": health["service"],
@@ -228,6 +246,7 @@ def main() -> None:
             "created_id": record_id,
             "detail_title": detail["record"]["title"],
             "deleted_id": deleted["deleted"]["id"],
+            "live_run_skipped": args.skip_live_run,
             "ws_types": ws_result["types"],
             "ws_gate": ws_result["gate"],
             "ws_total_ms": ws_result["total_ms"],
