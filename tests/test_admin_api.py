@@ -4,8 +4,8 @@ import os
 import subprocess
 import sys
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import patch
 
 import httpx
 
@@ -14,13 +14,41 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from shipvoice.config import load_env_file  # noqa: E402
+import shipvoice.fastapi_app as fastapi_app_module  # noqa: E402
 from shipvoice.fastapi_app import create_app  # noqa: E402
+
+
+@contextmanager
+def replace_attr(target: object, name: str, value: object):
+    original = getattr(target, name)
+    setattr(target, name, value)
+    try:
+        yield value
+    finally:
+        setattr(target, name, original)
+
+
+class CallRecorder:
+    def __init__(self, *, return_value: object = None, side_effect: Exception | None = None) -> None:
+        self.return_value = return_value
+        self.side_effect = side_effect
+        self.calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def __call__(self, *args: object, **kwargs: object) -> object:
+        self.calls.append((args, kwargs))
+        if self.side_effect is not None:
+            raise self.side_effect
+        return self.return_value
+
+    @property
+    def call_count(self) -> int:
+        return len(self.calls)
 
 
 class AdminApiTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        load_env_file(str(ROOT / "configs" / "runtime.mock.env"))
+        load_env_file(str(ROOT / "configs" / "runtime.fullreal.local.env"))
         os.environ["SHIPVOICE_ADMIN_PASSWORD"] = "test-admin-password"
         os.environ["SHIPVOICE_ADMIN_SESSION_SECRET"] = "shipvoice-admin-test-secret"
         cls.app = create_app()
@@ -67,7 +95,7 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
             "gate_label": "domain_safe",
             "gate_allowed": True,
             "answer_preview": "answer",
-            "providers": {"llm": "mock"},
+            "providers": {"llm": "openai_compatible:Qwen/Qwen2.5-7B-Instruct"},
             "metrics": {"total_ms": 1234},
             "error": "",
             "evidence_titles": ["record-a"],
@@ -82,7 +110,7 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
             "case_updated_at": "2026-06-13T10:00:00+00:00",
         }
 
-        with patch("shipvoice.fastapi_app.SQLiteAppStore.search_runs", return_value=[sample_run]):
+        with replace_attr(fastapi_app_module.SQLiteAppStore, "search_runs", CallRecorder(return_value=[sample_run])):
             headers = await self.login_headers()
 
             jsonl_response = await self.client.get("/api/admin/runs/export?format=jsonl&limit=1", headers=headers)
@@ -107,11 +135,13 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
             stderr="",
         )
         headers = await self.login_headers()
+        run_call = CallRecorder(return_value=completed)
         with (
-            patch("shipvoice.fastapi_app.subprocess.run", return_value=completed) as run_mock,
-            patch(
-                "shipvoice.fastapi_app.SQLiteAppStore.reload_evaluations",
-                return_value={"dataset_count": 2, "datasets": [], "updated_at": "2026-06-13T10:00:00+00:00"},
+            replace_attr(fastapi_app_module.subprocess, "run", run_call),
+            replace_attr(
+                fastapi_app_module.SQLiteAppStore,
+                "reload_evaluations",
+                CallRecorder(return_value={"dataset_count": 2, "datasets": [], "updated_at": "2026-06-13T10:00:00+00:00"}),
             ),
         ):
             response = await self.client.post(
@@ -126,8 +156,8 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["targets"], ["dashboard", "asr"])
         self.assertEqual(len(payload["reports"]), 2)
         self.assertEqual(payload["reload"]["dataset_count"], 2)
-        self.assertEqual(run_mock.call_count, 2)
-        invoked = [Path(call.args[0][1]).name for call in run_mock.call_args_list]
+        self.assertEqual(run_call.call_count, 2)
+        invoked = [Path(args[0][1]).name for args, _kwargs in run_call.calls]
         self.assertEqual(invoked, ["build_evaluation_dashboard.py", "evaluate_asr_transcripts.py"])
 
     async def test_admin_evaluation_run_rejects_unknown_target(self) -> None:
@@ -152,7 +182,7 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
             "gate_label": "domain_safe",
             "gate_allowed": True,
             "answer_preview": "answer",
-            "providers": {"llm": "mock"},
+            "providers": {"llm": "openai_compatible:Qwen/Qwen2.5-7B-Instruct"},
             "metrics": {"total_ms": 1234},
             "error": "",
             "evidence_titles": [],
@@ -167,9 +197,14 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
             "case_updated_at": "2026-06-13T10:10:00+00:00",
         }
         headers = await self.login_headers()
+        update_call = CallRecorder(return_value=updated_run)
         with (
-            patch("shipvoice.fastapi_app.SQLiteAppStore.update_run_case", return_value=updated_run) as update_mock,
-            patch("shipvoice.fastapi_app.SQLiteAppStore.audit_stats", return_value={"total_runs": 1, "open_cases": 0}),
+            replace_attr(fastapi_app_module.SQLiteAppStore, "update_run_case", update_call),
+            replace_attr(
+                fastapi_app_module.SQLiteAppStore,
+                "audit_stats",
+                CallRecorder(return_value={"total_runs": 1, "open_cases": 0}),
+            ),
         ):
             response = await self.client.put(
                 "/api/admin/runs/run-001/case",
@@ -186,11 +221,15 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["run"]["case_status"], "resolved")
-        self.assertEqual(update_mock.call_args.args[0], "run-001")
+        self.assertEqual(update_call.calls[0][0][0], "run-001")
 
     async def test_admin_run_case_update_rejects_invalid_status(self) -> None:
         headers = await self.login_headers()
-        with patch("shipvoice.fastapi_app.SQLiteAppStore.update_run_case", side_effect=ValueError("unsupported run case status")):
+        with replace_attr(
+            fastapi_app_module.SQLiteAppStore,
+            "update_run_case",
+            CallRecorder(side_effect=ValueError("unsupported run case status")),
+        ):
             response = await self.client.put(
                 "/api/admin/runs/run-001/case",
                 headers=headers,
@@ -233,8 +272,8 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
         ]
         headers = await self.login_headers()
         with (
-            patch("shipvoice.fastapi_app.SQLiteAppStore.get_knowledge", return_value=sample_record),
-            patch("shipvoice.fastapi_app.SQLiteAppStore.list_knowledge_versions", return_value=history),
+            replace_attr(fastapi_app_module.SQLiteAppStore, "get_knowledge", CallRecorder(return_value=sample_record)),
+            replace_attr(fastapi_app_module.SQLiteAppStore, "list_knowledge_versions", CallRecorder(return_value=history)),
         ):
             response = await self.client.get("/api/admin/knowledge/KS099", headers=headers)
 
@@ -246,7 +285,11 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_admin_knowledge_create_rejects_invalid_status(self) -> None:
         headers = await self.login_headers()
-        with patch("shipvoice.fastapi_app.SQLiteAppStore.upsert_knowledge", side_effect=ValueError("unsupported knowledge status")):
+        with replace_attr(
+            fastapi_app_module.SQLiteAppStore,
+            "upsert_knowledge",
+            CallRecorder(side_effect=ValueError("unsupported knowledge status")),
+        ):
             response = await self.client.post(
                 "/api/admin/knowledge",
                 headers=headers,

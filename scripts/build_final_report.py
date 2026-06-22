@@ -154,18 +154,58 @@ def add_table(doc: Document, headers: list[str], rows: list[list[str]], widths: 
 def load_latency_metrics() -> dict[str, dict[str, float]]:
     path = ROOT / "results" / "latency_metrics.csv"
     grouped: dict[str, list[dict[str, str]]] = {}
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        for row in csv.DictReader(handle):
-            grouped.setdefault(row["mode"], []).append(row)
-    out = {}
-    for mode, rows in grouped.items():
-        out[mode] = {
-            "count": len(rows),
-            "profile": ",".join(sorted({r.get("execution_profile", "unknown") for r in rows})),
-            "timing_source": ",".join(sorted({r.get("timing_source", "unknown") for r in rows})),
-            "first_audio_ms": statistics.mean(float(r["first_audio_ms"]) for r in rows),
-            "total_ms": statistics.mean(float(r["total_ms"]) for r in rows),
-            "answer_chars": statistics.mean(float(r["answer_chars"]) for r in rows),
+    out: dict[str, dict[str, float]] = {}
+    if path.exists():
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            for row in csv.DictReader(handle):
+                grouped.setdefault(row["mode"], []).append(row)
+        for mode, rows in grouped.items():
+            out[mode] = {
+                "count": len(rows),
+                "profile": ",".join(sorted({r.get("execution_profile", "unknown") for r in rows})),
+                "timing_source": ",".join(sorted({r.get("timing_source", "unknown") for r in rows})),
+                "first_audio_ms": statistics.mean(float(r["first_audio_ms"]) for r in rows),
+                "total_ms": statistics.mean(float(r["total_ms"]) for r in rows),
+                "answer_chars": statistics.mean(float(r["answer_chars"]) for r in rows),
+            }
+        return out
+
+    real_chain_path = ROOT / "results" / "real_chain_smoke.json"
+    if real_chain_path.exists():
+        real_chain = json.loads(real_chain_path.read_text(encoding="utf-8"))
+        metrics = real_chain.get("pipeline_result", {}).get("metrics", {})
+        providers = real_chain.get("pipeline_result", {}).get("provider_status", {})
+        out["full_audio_smoke"] = {
+            "count": 1,
+            "profile": str(providers.get("execution_profile", "real_voice")),
+            "timing_source": str(providers.get("timing_source", "observed")),
+            "first_audio_ms": float(metrics.get("first_audio_ms", 0) or 0),
+            "total_ms": float(metrics.get("total_ms", 0) or 0),
+            "answer_chars": float(metrics.get("answer_chars", 0) or 0),
+        }
+
+    multiturn_path = ROOT / "results" / "multiturn_eval_summary.json"
+    if multiturn_path.exists():
+        multiturn = json.loads(multiturn_path.read_text(encoding="utf-8"))
+        out["multiturn_full"] = {
+            "count": float(multiturn.get("turns", 0) or 0),
+            "profile": "real_text_voice",
+            "timing_source": "observed",
+            "first_audio_ms": float(multiturn.get("avg_first_audio_ms", 0) or 0),
+            "total_ms": float(multiturn.get("avg_total_ms", 0) or 0),
+            "answer_chars": 0.0,
+        }
+
+    citation_path = ROOT / "results" / "citation_quality_summary.json"
+    if citation_path.exists():
+        citation = json.loads(citation_path.read_text(encoding="utf-8"))
+        out["citation_quality"] = {
+            "count": float(citation.get("total", 0) or 0),
+            "profile": "real_text_voice",
+            "timing_source": "observed",
+            "first_audio_ms": 0.0,
+            "total_ms": float(citation.get("avg_total_ms", 0) or 0),
+            "answer_chars": 0.0,
         }
     return out
 
@@ -200,7 +240,65 @@ def load_remote_metrics() -> dict[str, str]:
             "adapter_path": "results/remote_autodl_20260621_expanded/extracted/outputs/qwen_lora_shipvoice_expanded/adapter_model.safetensors",
         }
 
+    adapter_candidates = [
+        ROOT / "outputs" / "qwen_lora_shipvoice_expanded" / "adapter_model.safetensors",
+        expanded_out / "extracted" / "outputs" / "qwen_lora_shipvoice_expanded" / "adapter_model.safetensors",
+    ]
+    adapter_path = next((path for path in adapter_candidates if path.exists()), None)
+    if adapter_path is not None:
+        dataset_summary_path = ROOT / "results" / "expanded_sft_dataset_summary.json"
+        dataset_summary = json.loads(dataset_summary_path.read_text(encoding="utf-8")) if dataset_summary_path.exists() else {}
+        train_summary = dataset_summary.get("train", {}) if isinstance(dataset_summary, dict) else {}
+        eval_summary = dataset_summary.get("eval", {}) if isinstance(dataset_summary, dict) else {}
+        return {
+            "artifact_dir": str(adapter_path.parent.relative_to(ROOT)).replace("\\", "/"),
+            "model": "Qwen/Qwen2.5-7B-Instruct",
+            "method": "4-bit LoRA/QLoRA",
+            "train_examples": str(train_summary.get("total", "--")),
+            "holdout_examples": str(eval_summary.get("total", "--")),
+            "base_rows": "--",
+            "lora_rows": str(eval_summary.get("total", "--")),
+            "base_avg_len": "--",
+            "lora_avg_len": (
+                f"{float(eval_summary.get('avg_output_chars', 0)):.1f}"
+                if eval_summary.get("avg_output_chars") is not None
+                else "--"
+            ),
+            "adapter_mb": f"{adapter_path.stat().st_size / 1024 / 1024:.1f}",
+            "train_loss": "--",
+            "train_runtime_sec": "--",
+            "train_steps": "--",
+            "base_safety_refusal_count": "--",
+            "lora_safety_refusal_count": "--",
+            "base_off_domain_refusal_count": "--",
+            "lora_off_domain_refusal_count": "--",
+            "adapter_path": str(adapter_path.relative_to(ROOT)).replace("\\", "/"),
+        }
+
     root = ROOT / "results" / "remote_autodl_20260608_final"
+    base_path = root / "results" / "base_eval.jsonl"
+    lora_path = root / "results" / "lora_eval.jsonl"
+    if not base_path.exists() or not lora_path.exists():
+        return {
+            "artifact_dir": "outputs/qwen_lora_shipvoice_expanded",
+            "model": "Qwen/Qwen2.5-7B-Instruct",
+            "method": "4-bit LoRA/QLoRA",
+            "train_examples": "--",
+            "holdout_examples": "--",
+            "base_rows": "--",
+            "lora_rows": "--",
+            "base_avg_len": "--",
+            "lora_avg_len": "--",
+            "adapter_mb": "--",
+            "train_loss": "--",
+            "train_runtime_sec": "--",
+            "train_steps": "--",
+            "base_safety_refusal_count": "--",
+            "lora_safety_refusal_count": "--",
+            "base_off_domain_refusal_count": "--",
+            "lora_off_domain_refusal_count": "--",
+            "adapter_path": "outputs/qwen_lora_shipvoice_expanded/adapter_model.safetensors",
+        }
     base = [json.loads(x) for x in (root / "results" / "base_eval.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
     lora = [json.loads(x) for x in (root / "results" / "lora_eval.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
     return {
@@ -491,7 +589,7 @@ def add_exec_summary(
             ["远端微调", "RTX 4090 上完成 Qwen2.5-7B-Instruct 4-bit LoRA/QLoRA 训练"],
             ["评测闭环", f"Base eval {remote['base_rows']} 条，LoRA eval {remote['lora_rows']} 条，adapter 约 {remote['adapter_mb']} MB"],
             ["评测看板", "deliverables/ShipVoice_Evaluation_Dashboard.html 汇总 RAG、延迟、安全门控与 LoRA 对照"],
-            ["演示形态", "本地 Web 操作台 + mock fallback，无 GPU 时仍可演示完整链路"],
+            ["演示形态", "本地 Web 操作台 + 真实 provider；无真实服务时请求失败并记录错误"],
         ],
         [1.35, 5.15],
     )
@@ -503,7 +601,7 @@ def add_requirement_mapping(doc: Document) -> None:
         doc,
         ["A2 要求", "本项目实现", "加分点"],
         [
-            ["级联式语音问答", "ASR/transcript 层、LLM/RAG 回答层、TTS/playback-oriented 输出层", "保留 mock fallback，答辩现场稳定"],
+            ["级联式语音问答", "ASR、LLM/RAG、TTS 三段真实 provider 链路", "fail-closed 策略保证不生成替代结果"],
             ["系统复现", "可运行的本地后端、Web 面板、benchmark 与 validation 脚本", "一键 quick validation"],
             ["系统改进", "船厂安全知识库、HybridRetriever、安全门控、提示注入拒答", "面向安全关键领域，而非通用聊天"],
             ["模型增强", "Qwen2.5-7B-Instruct LoRA/QLoRA 微调实验", "有远端 GPU 日志、adapter 和 base-vs-LoRA 对比"],
@@ -520,7 +618,7 @@ def add_architecture(doc: Document) -> None:
         doc,
         ["阶段", "模块", "作用"],
         [
-            ["1", "Voice / Text Input", "接收真实语音或文字输入；无真实 ASR 时使用 transcript fallback 保持演示稳定"],
+            ["1", "Voice / Text Input", "接收真实语音或文字输入；音频输入必须经真实 ASR 转写"],
             ["2", "Transcript Normalization", "统一问题格式，保留船厂术语和安全关键词"],
             ["3", "Domain & Safety Gate", "判断是否属于船厂安全问题，拦截危险请求、越权注入和 off-domain 问题"],
             ["4", "Hybrid RAG Retrieval", "从船厂安全知识库检索相关条目，提供可解释证据"],
@@ -568,7 +666,7 @@ def add_safety_evaluation(doc: Document, safety: dict[str, str]) -> None:
             ["标签准确率", safety["label_accuracy"], "expected_gate 与 predicted_gate 完全一致的比例"],
             ["allow/block 决策准确率", safety["decision_accuracy"], "系统是否正确放行安全问题并拦截危险问题"],
             ["危险请求误放行", safety["false_allow_count"], "比赛展示中最关键的安全失败指标"],
-            ["完整 pipeline 平均耗时", f"{safety['avg_total_ms']} ms", "包含模拟 ASR、门控、RAG、LLM 和 TTS 的端到端耗时"],
+            ["完整 pipeline 平均耗时", f"{safety['avg_total_ms']} ms", "包含门控、RAG、LLM 和 TTS 的端到端耗时"],
         ],
         [1.7, 1.35, 3.45],
     )
@@ -658,7 +756,7 @@ def add_real_chain_validation(doc: Document, real_chain: dict[str, object]) -> N
     )
     add_body_paragraph(
         doc,
-        "本轮验证重点不是追求最低时延，而是留下可审计的工程证据。当前 provider status 为 hybrid：真实音频 I/O 已经在线，问答生成仍由受控 mock_llm 层承接检索证据，因此它证明了真实服务集成能力，也明确暴露了后续企业级改造的瓶颈位置。",
+        "本轮验证重点不是追求最低时延，而是留下可审计的工程证据。该历史结果证明真实音频 I/O 已经在线，也暴露了后续企业级改造的瓶颈位置。当前版本已升级为 ASR、LLM、TTS 全真实 provider 策略，最终答辩前应重新跑全链路验证。",
     )
     add_table(
         doc,
@@ -694,26 +792,30 @@ def add_real_chain_validation(doc: Document, real_chain: dict[str, object]) -> N
     add_callout(
         doc,
         "联调结论",
-        f"真实语音链路证据已归档至 {real_chain['artifact_dir']}。当前系统已经具备“真实语音输入 + 真实语音输出 + 可控安全问答”的工程形态；下一阶段的主要任务不是继续证明能跑，而是优化 TTS 延迟并替换 hybrid 中的 mock_llm。",
+        f"真实语音链路证据已归档至 {real_chain['artifact_dir']}。当前系统已经具备“真实语音输入 + 真实语音输出 + 可控安全问答”的工程形态；下一阶段的主要任务是重新采集 ASR、LLM、TTS 全真实链路指标并优化 TTS 延迟。",
         fill=LIGHT_BLUE_FILL,
     )
 
 
 def add_latency(doc: Document, latency: dict[str, dict[str, float]]) -> None:
     doc.add_heading("7. 本地演示与延迟评估", level=1)
-    add_body_paragraph(doc, "本地演示使用 run_demo.py 启动后端和 Web 面板。当前版本已经把 provider 状态、execution profile 和 timing source 显式暴露出来，用于区分 demo/simulated 链路与真实 provider 调用链路。")
+    add_body_paragraph(doc, "本地应用使用 run_app.py 启动 FastAPI 后端和 Web 面板。当前版本已经把 provider 状态、execution profile 和 timing source 显式暴露出来，用于确认真实 provider 调用链路。")
     rows = []
-    for mode in ["baseline", "streaming", "full"]:
+    preferred_modes = ["baseline", "streaming", "full", "full_audio_smoke", "multiturn_full", "citation_quality"]
+    ordered_modes = [mode for mode in preferred_modes if mode in latency] + [
+        mode for mode in latency if mode not in preferred_modes
+    ]
+    for mode in ordered_modes:
         if mode in latency:
             item = latency[mode]
             rows.append([
                 mode,
-                str(int(item["count"])),
+                str(int(float(item["count"]))),
                 str(item.get("profile", "unknown")),
                 str(item.get("timing_source", "unknown")),
-                f"{item['first_audio_ms']:.0f}",
-                f"{item['total_ms']:.0f}",
-                f"{item['answer_chars']:.1f}",
+                f"{float(item.get('first_audio_ms', 0)):.0f}",
+                f"{float(item.get('total_ms', 0)):.0f}",
+                f"{float(item.get('answer_chars', 0)):.1f}",
             ])
     add_table(
         doc,
@@ -766,20 +868,20 @@ def add_lora_experiment(doc: Document, remote: dict[str, str]) -> None:
     add_callout(
         doc,
         "关键结论",
-        "LoRA 是有价值的领域适配实验，但不能直接作为唯一正式回答源。最终展示应把 LoRA 放在安全门控和 RAG 后面，用作可选领域风格增强；安全边界仍由显式门控和证据检索保证。",
+        "LoRA 是有价值的领域适配实验，但不能脱离安全门控和 RAG 单独使用。最终展示应把 ShipVoice LoRA 作为在线回答模型，放在安全门控和 RAG 后面；安全边界仍由显式门控、证据检索和审计共同保证。",
         fill=RISK_FILL,
     )
 
 
 def add_reproducibility(doc: Document, remote: dict[str, str], real_chain: dict[str, object]) -> None:
     doc.add_heading("9. 可复现性与工程质量", level=1)
-    add_body_paragraph(doc, "项目保留了本地与远端两套复现路径。本地路径用于课程答辩现场稳定演示，远端路径用于 GPU 微调实验和模型对比。")
+    add_body_paragraph(doc, "项目保留了本地应用与远端 GPU 服务两套复现路径。本地应用负责前后端、知识库和审计，远端路径用于真实 ASR、LLM、TTS 服务和 GPU 微调实验。")
     add_table(
         doc,
         ["任务", "命令/文件", "验收标准"],
         [
             ["本地 quick validation", "python scripts\\validate_project.py --quick", "输出 VALIDATION OK"],
-            ["本地演示", "python run_demo.py", "打开 http://127.0.0.1:8010 可运行"],
+            ["本地应用", "python run_app.py --env-file configs\\runtime.real.env --port 8026", "打开 http://127.0.0.1:8026 可运行；问答依赖真实 provider"],
             ["检索评测", "python scripts\\evaluate_retrieval.py", "代表性问题 hit@1/hit@3 达标"],
             ["安全评测", "python scripts\\evaluate_safety_gate.py --fail-on-critical", "55 条 benchmark 通过且 false_allow_count = 0"],
             ["ASR 评测", "python scripts\\evaluate_asr_transcripts.py", "录音和 ASR 转写填入后输出 CER/WER/术语召回"],

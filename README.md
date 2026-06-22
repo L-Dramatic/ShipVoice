@@ -9,36 +9,53 @@
 - 安全增强：领域门控、危险/恶意输入短路拒答、提示注入检测。
 - 实验闭环：基线、改进、消融、延迟统计、术语识别与安全拦截评测。
 
-## 快速运行当前演示版
+## 运行原则
 
-当前版本先提供不依赖外部模型的 mock 演示，用于确认界面、流水线和实验记录格式。
+当前版本采用 real-only 运行策略：ASR、LLM、TTS 必须接入真实 provider。真实服务不可用时，请求会直接失败并在前端、后台和审计日志中暴露错误。
+
+文本输入是一个独立输入路径，不等同于语音识别；音频上传和浏览器录音必须经过真实 ASR 服务。危险请求由安全门控直接拒答，且不会调用 LLM。
+
+## 快速运行
 
 ```powershell
-python run_demo.py
+python run_app.py --env-file configs\runtime.real.env --port 8026
 ```
 
 打开：
 
 ```text
-http://127.0.0.1:8010
+http://127.0.0.1:8026
 ```
 
-演示面板会调用本地后端 `/api/run`，因此后续把 mock provider 替换为真实 ASR/LLM/TTS 后，面板仍然复用。
+如果真实 provider 运行在远端 GPU，请先用 SSH 隧道或公网地址把以下服务暴露给本机：
+
+```text
+ASR: http://127.0.0.1:18001/asr
+ShipVoice LoRA LLM: http://127.0.0.1:18034/v1
+TTS: http://127.0.0.1:18002/tts
+```
+
 当前接口也支持 `history` 多轮上下文字段，便于把 Part 1 的对话能力接到 Part 2 的语音链路中。
 用户端支持三种输入方式：文本提问、音频文件上传、浏览器麦克风直接录音。直接录音使用浏览器 MediaRecorder 生成音频，再按和上传文件相同的 `audio_base64` 协议送入后端 ASR。
 回答结果会展示 RAG 证据引用，包括知识条目 ID、来源、风险级别、置信度、标签和匹配词，便于说明答案不是模型凭空生成。
 用户端界面已升级为深色工业安全控制台，包含链路总览、作业场景、实时指标、证据卡片、延迟分布和审计日志。
 
-运行 mock 延迟实验：
+运行真实链路检查：
 
 ```powershell
-python scripts\run_benchmark.py
+python scripts\check_real_service_chain.py --env-file configs\runtime.real.env --sample-id A001 --require-lora
+```
+
+GPU 服务在线后运行最终验收：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_lora_final_validation.ps1 -EnvFile configs\runtime.real.env -SampleId A001
 ```
 
 输出文件：
 
 ```text
-results\latency_metrics.csv
+results\real_chain_smoke.json
 ```
 
 生成课程验收报告：
@@ -58,17 +75,18 @@ results\project_acceptance_report.md
 results\project_acceptance_report.json
 ```
 
-## 接入真实 ASR / LLM / TTS
+## 真实 ASR / LLM / TTS 配置
 
-当前版本已经支持通过环境变量切换 provider，并在 `/api/health` 与前端界面中显示当前实际使用的链路。
+当前版本通过环境变量指定真实 provider，并在 `/api/health` 与前端界面中显示当前实际链路。
 
 ### 1. 真实 LLM
 
 ```powershell
 $env:SHIPVOICE_LLM_PROVIDER="openai_compatible"
-$env:SHIPVOICE_OPENAI_BASE_URL="http://127.0.0.1:11434/v1"
-$env:SHIPVOICE_LLM_MODEL="qwen2.5:7b-instruct"
-python run_demo.py
+$env:SHIPVOICE_OPENAI_BASE_URL="http://127.0.0.1:18034/v1"
+$env:SHIPVOICE_LLM_MODEL="shipvoice-qwen2.5-7b-lora"
+$env:SHIPVOICE_REQUIRE_LORA="1"
+python run_app.py --port 8026
 ```
 
 ### 2. 真实 ASR
@@ -87,8 +105,8 @@ python run_demo.py
 
 ```powershell
 $env:SHIPVOICE_ASR_PROVIDER="http_json"
-$env:SHIPVOICE_ASR_ENDPOINT="http://127.0.0.1:8001/asr"
-python run_demo.py
+$env:SHIPVOICE_ASR_ENDPOINT="http://127.0.0.1:18001/asr"
+python run_app.py --port 8026
 ```
 
 ### 3. 真实 TTS
@@ -106,11 +124,11 @@ python run_demo.py
 
 ```powershell
 $env:SHIPVOICE_TTS_PROVIDER="http_json"
-$env:SHIPVOICE_TTS_ENDPOINT="http://127.0.0.1:8002/tts"
-python run_demo.py
+$env:SHIPVOICE_TTS_ENDPOINT="http://127.0.0.1:18002/tts"
+python run_app.py --port 8026
 ```
 
-如果真实服务不可用，系统仍保留 fallback，便于答辩现场兜底；但课程冲分阶段的主叙事必须切换到真实链路。
+真实服务不可用时系统不会生成替代答案或假音频。请先恢复 ASR、LLM、TTS 服务，再执行问答。
 
 ### 4. 远端一键启动真实 ASR + TTS
 
@@ -125,7 +143,7 @@ python run_demo.py
 
 ```bash
 bash remote/autodl_setup_asr.sh /root/autodl-tmp/shipvoice
-bash remote/start_shipvoice_real_services.sh /root/autodl-tmp/shipvoice
+bash remote/start_full_lora_stack.sh /root/autodl-tmp/shipvoice
 ```
 
 如果 `edge-tts` 对中文播报不稳定，可直接切换备用中文 backend：
@@ -150,14 +168,18 @@ HF_ENDPOINT=https://hf-mirror.com CHATTTS_SOURCE=huggingface TTS_BACKEND=chattts
 ```powershell
 $env:SHIPVOICE_ASR_PROVIDER="http_json"
 $env:SHIPVOICE_ASR_ENDPOINT="http://<server-ip>:8001/asr"
+$env:SHIPVOICE_LLM_PROVIDER="openai_compatible"
+$env:SHIPVOICE_OPENAI_BASE_URL="http://<server-ip>:11434/v1"
+$env:SHIPVOICE_LLM_MODEL="shipvoice-qwen2.5-7b-lora"
+$env:SHIPVOICE_REQUIRE_LORA="1"
 $env:SHIPVOICE_TTS_PROVIDER="http_json"
 $env:SHIPVOICE_TTS_ENDPOINT="http://<server-ip>:8002/tts"
-python run_demo.py
+python run_app.py --port 8026
 ```
 
 ### 已验证的真实语音链路
 
-2026-06-12 已完成一轮远端真实链路验证，结果归档于 `results/remote_real_chain_20260612_chattts_48359/`：
+2026-06-12 已完成一轮远端真实 ASR/TTS 链路验证，结果归档于 `results/remote_real_chain_20260612_chattts_48359/`。该历史结果中的 LLM 仍是旧受控回答层，不能作为当前 real-only 主链路证据；后续应重新跑 `scripts/check_real_service_chain.py`，生成 ASR、LLM、TTS 全真实的最新结果。
 
 - 远端 ASR：`FunASR / SenseVoiceSmall`
 - 远端 TTS：`ChatTTS`
@@ -166,7 +188,7 @@ python run_demo.py
 - 平均检索：`165.67 ms`
 - 平均端到端首音：`15238.67 ms`
 
-这轮验证证明系统已经具备真实语音输入与真实语音输出能力；当前瓶颈是 `ChatTTS` 首音延迟较高，而不是 ASR 或检索。
+这轮验证只能证明系统具备真实语音输入与真实语音输出能力；当前版本已经把主链路升级为 ShipVoice LoRA 在线模型，最终答辩证据必须重新运行 `scripts/check_real_service_chain.py --require-lora`。
 
 ## 目录结构
 
@@ -185,7 +207,7 @@ web/static/              答辩演示面板
 ## 后续真实模型接入路线
 
 1. ASR：SenseVoice/FunASR，先接热词和术语纠错，再评估微调。
-2. LLM：Qwen 系列，先接 RAG，再做 LoRA/QLoRA SFT，最后做 DPO/安全偏好优化。
+2. LLM：当前主线为 Qwen + ShipVoice LoRA adapter 在线服务；后续可继续做 DPO/安全偏好优化。
 3. TTS：CosyVoice，优先完成句级流式播报与首句优先播放。
 4. 安全：先规则门控，再训练轻量分类器，最后加入提示注入与越权请求测试集。
 
@@ -196,6 +218,7 @@ web/static/              答辩演示面板
 - 运行手册：[docs/RUNBOOK.md](docs/RUNBOOK.md)
 - 零准备启动方案：[docs/ZERO_PREP_BOOTSTRAP.md](docs/ZERO_PREP_BOOTSTRAP.md)
 - AutoDL 使用方案：[docs/AUTODL_RUNBOOK.md](docs/AUTODL_RUNBOOK.md)
+- LoRA 最终验收手册：[docs/FINAL_LORA_VALIDATION_RUNBOOK.md](docs/FINAL_LORA_VALIDATION_RUNBOOK.md)
 - 高质量路线：[docs/HIGHEST_QUALITY_PLAN.md](docs/HIGHEST_QUALITY_PLAN.md)
 - 架构说明：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 

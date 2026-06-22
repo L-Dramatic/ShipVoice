@@ -1,9 +1,9 @@
 # ShipVoice 运行手册
 
-## 1. 启动本地 mock 应用
+## 1. 启动本地真实链路应用
 
 ```powershell
-.\scripts\start_shipvoice_app.ps1 -Mode mock
+.\scripts\start_shipvoice_app.ps1 -Mode real
 ```
 
 默认地址：
@@ -12,7 +12,7 @@
 http://127.0.0.1:8022
 ```
 
-## 2. 启动本地 real 应用
+## 2. 准备真实 provider 配置
 
 先准备：
 
@@ -23,10 +23,10 @@ Copy-Item configs\runtime.real.env.example configs\runtime.real.env
 或：
 
 ```powershell
-Copy-Item configs\runtime.vllm.env.example configs\runtime.real.env
+Copy-Item configs\runtime.lora.env.example configs\runtime.real.env
 ```
 
-然后启动：
+确认 ASR、LLM、TTS 端点可用后启动：
 
 ```powershell
 .\scripts\start_shipvoice_app.ps1 -Mode real
@@ -65,7 +65,13 @@ python scripts\run_single.py "舾装阶段管路试压有哪些安全风险？" 
 ## 6. 真实链路检查
 
 ```powershell
-python scripts\check_real_service_chain.py --env-file configs\runtime.real.env --sample-id A001
+python scripts\check_real_service_chain.py --env-file configs\runtime.real.env --sample-id A001 --require-lora
+```
+
+最终验收一键脚本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_lora_final_validation.ps1 -EnvFile configs\runtime.real.env -SampleId A001
 ```
 
 输出：
@@ -78,7 +84,7 @@ results\real_chain_smoke.json
 
 1. ASR `/health`
 2. TTS `/health`
-3. LLM `/v1/models`
+3. LLM `/v1/models` 与 `/health`，确认 ShipVoice LoRA adapter 已加载
 4. 一条真实录音是否能跑通
 5. 本地 pipeline 是否真的走了真实 provider
 
@@ -88,10 +94,18 @@ results\real_chain_smoke.json
 python scripts\validate_project.py --quick
 ```
 
+这一步只做结构、数据、评测脚本和编译检查，不调用真实 ASR/LLM/TTS。
+
 ## 8. 全项目 full validation
 
 ```powershell
 python scripts\validate_project.py --full
+```
+
+真实服务已经全部在线时，再运行：
+
+```powershell
+python scripts\validate_project.py --quick --with-services
 ```
 
 ## 9. 容器方式启动
@@ -105,13 +119,13 @@ docker compose -f docker-compose.app.yml up --build
 ASR / TTS：
 
 ```bash
-bash remote/start_shipvoice_real_services.sh /root/autodl-tmp/shipvoice
-bash remote/stop_shipvoice_real_services.sh /root/autodl-tmp/shipvoice
+bash remote/start_full_lora_stack.sh /root/autodl-tmp/shipvoice
+bash remote/stop_full_lora_stack.sh /root/autodl-tmp/shipvoice
 ```
 
-LLM / vLLM：
+ShipVoice LoRA LLM：
 
 ```bash
-bash remote/start_vllm_llm.sh /root/autodl-tmp/shipvoice
-bash remote/stop_vllm_llm.sh /root/autodl-tmp/shipvoice
+bash remote/start_lora_llm.sh /root/autodl-tmp/shipvoice
+bash remote/stop_lora_llm.sh /root/autodl-tmp/shipvoice
 ```

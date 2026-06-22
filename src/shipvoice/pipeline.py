@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 
 from .config import PipelineConfig, load_config
 from .models import GateResult, PipelineEvent, PipelineResult, RunMetrics
-from .providers import KeywordSafetyGate, TermCorrector, build_asr, build_llm, build_retriever, build_tts
+from .providers import KeywordSafetyGate, TermCorrector, build_asr, build_llm, build_retriever, build_safety_refusal, build_tts
 
 
 class VoiceQAPipeline:
@@ -51,8 +51,6 @@ class VoiceQAPipeline:
                 if inspect.isawaitable(maybe_awaitable):
                     await maybe_awaitable
 
-        latency = self.config.mock_latency_ms
-        streaming_enabled = mode in {"streaming", "full"}
         rag_enabled = mode in {"rag", "full"}
         gate_enabled = mode in {"guarded", "full"}
         input_mode = "audio" if audio_bytes else "text"
@@ -67,8 +65,7 @@ class VoiceQAPipeline:
             history_turns=len(history),
         )
 
-        await self._sleep_ms(latency["vad"])
-        await emit("vad", "Detected end of utterance", latency_ms=latency["vad"])
+        await emit("vad", "Input boundary accepted", latency_ms=0)
 
         asr_start = elapsed()
         asr_result = await self.asr.transcribe(question, audio_bytes=audio_bytes, audio_name=audio_name)
@@ -121,37 +118,12 @@ class VoiceQAPipeline:
         else:
             await emit("retrieval", "RAG disabled in current mode")
 
-        llm_start = elapsed()
-        answer = await self._run_llm(corrected, evidence, gate_result, history)
-        llm_ms = elapsed() - llm_start
-        chunks = self.llm.split_chunks(answer)
-
-        tts_result = None
-        if streaming_enabled and getattr(self.llm, "uses_mock_timing", False) and getattr(self.tts, "supports_streaming", False):
-            first_audio_ms = 0
-            await self._sleep_ms(latency["llm_first_token"])
-            tts_first_audio_ms = latency["tts_first_audio"]
-            for index, chunk in enumerate(chunks, start=1):
-                await self._sleep_ms(latency["llm_chunk"])
-                if index == 1:
-                    tts_result = await self.tts.synthesize_stream([chunk])
-                    first_audio_ms = elapsed()
-                    await emit(
-                        "tts",
-                        "First audio chunk ready",
-                        first_audio_ms=first_audio_ms,
-                        chunk=chunk,
-                        provider=tts_result.provider,
-                    )
-            llm_first_token_ms = latency["llm_first_token"]
-            await emit(
-                "llm",
-                "Streaming LLM output completed",
-                chunks=len(chunks),
-                latency_ms=elapsed() - llm_start,
-                provider=self.llm.name,
-            )
-        else:
+        if gate_result.allowed:
+            llm_start = elapsed()
+            answer = await self._run_llm(corrected, evidence, gate_result, history)
+            answer = self._attach_answer_citations(answer, evidence)
+            llm_ms = elapsed() - llm_start
+            chunks = self.llm.split_chunks(answer)
             llm_first_token_ms = llm_ms
             await emit(
                 "llm",
@@ -160,29 +132,38 @@ class VoiceQAPipeline:
                 latency_ms=llm_ms,
                 provider=self.llm.name,
             )
-            tts_start = elapsed()
-            tts_result = await self.tts.synthesize(answer)
-            first_audio_ms = elapsed()
+        else:
+            llm_ms = 0
+            llm_first_token_ms = 0
+            answer = build_safety_refusal(gate_result)
+            chunks = self.llm.split_chunks(answer)
             await emit(
-                "tts",
-                "TTS synthesis completed",
-                first_audio_ms=first_audio_ms,
-                provider=tts_result.provider,
+                "llm",
+                "LLM skipped because safety gate blocked the request",
+                chunks=len(chunks),
+                latency_ms=0,
+                provider="not_called",
             )
-            tts_first_audio_ms = first_audio_ms - tts_start
+
+        tts_start = elapsed()
+        tts_result = await self.tts.synthesize(answer)
+        first_audio_ms = elapsed()
+        await emit(
+            "tts",
+            "TTS synthesis completed",
+            first_audio_ms=first_audio_ms,
+            provider=tts_result.provider,
+        )
+        tts_first_audio_ms = first_audio_ms - tts_start
 
         total_ms = elapsed()
         await emit("done", "Pipeline finished", total_ms=total_ms)
 
         asr_provider = asr_result.provider
-        llm_provider = getattr(self.llm, "name", self.llm.__class__.__name__)
+        llm_provider = getattr(self.llm, "name", self.llm.__class__.__name__) if gate_result.allowed else "not_called"
         tts_provider = getattr(tts_result, "provider", getattr(self.tts, "name", self.tts.__class__.__name__))
         execution_profile = self._execution_profile(asr_provider, llm_provider, tts_provider)
-        timing_source = (
-            "simulated"
-            if getattr(self.llm, "uses_mock_timing", False) and getattr(self.tts, "supports_streaming", False)
-            else "observed"
-        )
+        timing_source = "observed"
 
         metrics = RunMetrics(
             question_id=question_id,
@@ -223,15 +204,20 @@ class VoiceQAPipeline:
             audio_output=tts_result or self.tts_default_result(),
         )
 
-    async def _sleep_ms(self, ms: int) -> None:
-        import asyncio
-
-        await asyncio.sleep(ms / 1000)
-
     async def _run_llm(self, question: str, evidence: list, gate: GateResult, history: list[dict[str, str]]) -> str:
         import asyncio
 
         return await asyncio.to_thread(self.llm.build_answer, question, evidence, gate, history)
+
+    @staticmethod
+    def _attach_answer_citations(answer: str, evidence: list) -> str:
+        citation_hits = [hit for hit in evidence if getattr(hit, "record_id", "")]
+        if not citation_hits:
+            return answer
+        if any(hit.record_id in answer for hit in citation_hits):
+            return answer
+        citations = "；".join(f"[{hit.record_id}] {hit.title}" for hit in citation_hits[:2])
+        return f"{answer.rstrip()} 依据：{citations}。"
 
     def tts_default_result(self):
         from .models import TTSResult
@@ -239,13 +225,11 @@ class VoiceQAPipeline:
         return TTSResult(provider=getattr(self.tts, "name", self.tts.__class__.__name__))
 
     def _execution_profile(self, asr_provider: str, llm_provider: str, tts_provider: str) -> str:
-        providers = [asr_provider, llm_provider, tts_provider]
-        mock_like = [provider for provider in providers if provider.startswith("mock") or provider == "transcript_fallback"]
-        if len(mock_like) == len(providers):
-            return "demo"
-        if mock_like:
-            return "hybrid"
-        return "real"
+        if asr_provider == "text_input":
+            return "real_text"
+        if llm_provider == "not_called":
+            return "real_guarded"
+        return "real_voice"
 
     def _contextualize_question(self, question: str, history: list[dict[str, str]]) -> str:
         recent_user_turns = [item["content"].strip() for item in history if item.get("role") == "user" and item.get("content")]

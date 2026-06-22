@@ -19,7 +19,7 @@
 
 | 成员 | 建议角色 | 主要工作 | 可在答辩中讲的内容 |
 |---|---|---|---|
-| 组员 A | 组长、系统架构与后端链路 | 负责项目总体设计、FastAPI 服务、pipeline 主链路、provider 抽象、WebSocket 事件流、运行审计和最终集成。 | 讲系统为什么不是静态网页，解释 ASR -> 安全门控 -> RAG -> LLM -> TTS 的链路，以及 mock/real provider 如何切换。 |
+| 组员 A | 组长、系统架构与后端链路 | 负责项目总体设计、FastAPI 服务、pipeline 主链路、provider 抽象、WebSocket 事件流、运行审计和最终集成。 | 讲系统为什么不是静态网页，解释 ASR -> 安全门控 -> RAG -> LLM -> TTS 的真实 provider 链路，以及 fail-closed 策略。 |
 | 组员 B | 数据、实验与安全评测 | 负责船厂安全知识库、录音清单、ASR 术语后处理、安全门控评测、多轮评测、citation 质量评测和实验结果整理。 | 讲数据集怎么构建，为什么 false allow 很重要，展示 55 条安全样本、50 条 ASR 清单和多轮问答结果。 |
 | 组员 C | 前端、后台与答辩材料 | 负责用户端交互、浏览器录音、管理后台展示、演示脚本、PPT、项目报告、运行手册和提交材料整理。 | 讲用户如何使用系统，后台如何维护知识库和复盘运行记录，展示答辩演示流程。 |
 
@@ -63,7 +63,7 @@
 1. 启动系统：
 
 ```powershell
-python run_app.py --env-file configs\runtime.mock.env --port 8026
+python run_app.py --env-file configs\runtime.real.env --port 8026
 ```
 
 2. 打开用户端：
@@ -120,10 +120,10 @@ python scripts\build_acceptance_report.py
 
 ## 7. 现场备选说法
 
-如果老师问“为什么显示 mock”，建议回答：
+如果老师问“现场服务不可用怎么办”，建议回答：
 
 ```text
-mock 是课堂稳定演示模式，不代表系统是静态页面。系统的前端、后端、知识库、RAG、安全门控、审计日志和后台都是真实运行的；mock 只是 ASR/LLM/TTS provider 的可控兜底，防止现场网络或 GPU 服务不稳定。我们也保留了真实 provider 接入，并已经用 FunASR/SenseVoiceSmall 和 ChatTTS 做过真实链路 smoke test。
+当前版本坚持真实 provider 原则：ASR、LLM、TTS 任一服务不可用时，系统会失败并记录错误，不生成替代答案或假音频。答辩前我们会提前启动 GPU 服务并完成 provider health 检查；如果现场网络异常，就展示已保存的真实链路证据和后台审计记录，并说明失败原因。
 ```
 
 如果老师问“创新点是什么”，建议回答：

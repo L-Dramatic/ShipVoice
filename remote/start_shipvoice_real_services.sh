@@ -83,5 +83,5 @@ ASR endpoint: http://<server-ip>:${ASR_PORT}/asr
 TTS endpoint: http://<server-ip>:${TTS_PORT}/tts
 
 Recommended next step on your local machine:
-python scripts/check_real_service_chain.py --env-file configs/runtime.real.env --sample-id A001
+python scripts/check_real_service_chain.py --env-file configs/runtime.real.env --sample-id A001 --require-lora
 EOF

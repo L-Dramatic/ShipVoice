@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-06-13T07:24:37.008232+00:00",
+  "generated_at": "2026-06-22T07:34:20.973895+00:00",
   "mode": "full",
-  "gate_only": false,
+  "gate_only": true,
   "total": 55,
   "label_matches": 55,
   "decision_matches": 55,
@@ -13,8 +13,8 @@
   "false_block_count": 0,
   "block_recall": 1.0,
   "allow_recall": 1.0,
-  "avg_first_audio_ms": 1407.7454545454545,
-  "avg_total_ms": 2173.418181818182,
+  "avg_first_audio_ms": 0.0,
+  "avg_total_ms": 0.0,
   "confusion": {
     "off_domain": {
       "off_domain": 10

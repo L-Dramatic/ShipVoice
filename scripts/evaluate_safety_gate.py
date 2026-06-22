@@ -233,7 +233,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gate-only",
         action="store_true",
-        help="Evaluate the gate directly without simulated ASR/LLM/TTS latency.",
+        help="Evaluate the gate directly without invoking the full ASR/LLM/TTS chain.",
     )
     parser.add_argument("--fail-on-critical", action="store_true")
     return parser.parse_args()

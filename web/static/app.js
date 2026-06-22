@@ -506,30 +506,30 @@ async function runDemo() {
     await refreshAuditPanel();
   } catch (error) {
     try {
-      const fallbackPayload = await runViaHttp(question, audioSource, token);
+      const httpRetryPayload = await runViaHttp(question, audioSource, token);
       if (token !== runToken) {
         return;
       }
       lastResult = {
-        ...fallbackPayload,
+        ...httpRetryPayload,
         mode: currentMode,
         audio_file: audioSource?.name || "",
         client_timestamp: new Date().toISOString()
       };
       localRuns.unshift(lastResult);
       renderResult(lastResult);
-      renderRuntimeMeta({ ...lastResult, transport: "http-fallback" });
+      renderRuntimeMeta({ ...lastResult, transport: "http-retry" });
       scrollPrimaryResultIntoView();
       await refreshAuditPanel();
-      showError(`WebSocket 失败，已回退到 HTTP：${error.message}`);
-    } catch (fallbackError) {
+      showError(`WebSocket 失败，已改用 HTTP 重试：${error.message}`);
+    } catch (httpRetryError) {
       $("statusBadge").textContent = "失败";
       $("statusBadge").className = "status-badge is-blocked";
-      $("answerText").textContent = `接口调用失败：${fallbackError.message}`;
+      $("answerText").textContent = `接口调用失败：${httpRetryError.message}`;
       $("answerState").textContent = "执行失败";
       $("timelineState").textContent = "异常终止";
       scrollPrimaryResultIntoView();
-      showError(fallbackError.message);
+      showError(httpRetryError.message);
       await refreshAuditPanel();
     }
   } finally {

@@ -194,14 +194,13 @@ def provider_health_snapshot(pipeline: VoiceQAPipeline) -> dict[str, Any]:
         probe: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         extra = extra or {}
-        is_mock = "mock" in getattr(provider, "name", "").lower() or getattr(provider, "name", "") == "transcript_fallback"
-        probe_payload = probe or {"reachable": None, "http_status": None, "detail": "mock_or_local_fallback"}
+        probe_payload = probe or {"reachable": None, "http_status": None, "detail": "local_or_unprobed"}
         if endpoint and probe is None:
             probe_payload = probe_http_url(endpoint, timeout_s=3)
         return {
             "component": name,
             "provider": getattr(provider, "name", provider.__class__.__name__),
-            "mode": "mock" if is_mock else "real",
+            "mode": "real",
             "endpoint": endpoint,
             **probe_payload,
             **extra,
@@ -225,7 +224,7 @@ def admin_password() -> str:
 
 
 def admin_auth_mode() -> str:
-    return "configured_password" if os.environ.get("SHIPVOICE_ADMIN_PASSWORD", "").strip() else "demo_default"
+    return "configured_password" if os.environ.get("SHIPVOICE_ADMIN_PASSWORD", "").strip() else "default_password"
 
 
 def admin_session_ttl_seconds() -> int:

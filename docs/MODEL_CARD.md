@@ -8,8 +8,7 @@ ShipVoice is not a single model. It is a cascaded system:
 Input / ASR transcript
   -> safety and domain gate
   -> RAG retrieval over shipyard safety corpus
-  -> LLM answer synthesis
-  -> optional LoRA domain-style adapter
+  -> ShipVoice LoRA online LLM
   -> TTS / playback-oriented output
 ```
 
@@ -21,9 +20,9 @@ Remote experiment model:
 
 Use:
 
-- baseline answer generation
+- baseline answer generation for comparison
 - base-vs-LoRA comparison
-- optional backend model behind safety gate and RAG
+- backing model for the ShipVoice LoRA adapter
 
 ## Completed Fine-Tuned Adapter Experiment
 
@@ -54,7 +53,7 @@ The completed higher-quality training run uses the validated expanded SFT datase
 - Default output directory: `outputs/qwen_lora_shipvoice_expanded`
 - Default script: `remote/run_autodl_pipeline.sh`
 
-The expanded dataset covers domain QA, safety refusal, prompt injection, off-domain refusal, boundary handling, multi-turn grounding, and ASR term correction. The resulting adapter remains an optional style/domain component behind safety gate and RAG.
+The expanded dataset covers domain QA, safety refusal, prompt injection, off-domain refusal, boundary handling, multi-turn grounding, and ASR term correction. The final demo path should serve this adapter online behind the safety gate and RAG layer.
 
 ## Evaluation Summary
 
@@ -70,10 +69,10 @@ The LoRA adapter should not be used as a standalone safety authority.
 Recommended chain:
 
 ```text
-safety/domain gate -> RAG evidence -> base model or LoRA style adapter -> answer post-check
+safety/domain gate -> RAG evidence -> ShipVoice LoRA online model -> answer post-check
 ```
 
-The safety gate and RAG layer are mandatory. LoRA is optional.
+The safety gate, RAG layer, and ShipVoice LoRA online model are mandatory for the final high-quality demo. The base model remains only as an ablation baseline.
 
 ## Safety Behavior
 
@@ -97,7 +96,7 @@ The system should refuse:
 
 Best claim:
 
-> ShipVoice uses fine-tuning as an optional domain-style adaptation component, while safety-critical behavior is enforced through explicit gatekeeping and evidence-grounded RAG.
+> ShipVoice uses a real online LoRA-adapted Qwen model for final answer synthesis, while safety-critical behavior is enforced through explicit gatekeeping and evidence-grounded RAG.
 
 Claims to avoid:
 

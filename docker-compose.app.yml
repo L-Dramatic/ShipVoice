@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: shipvoice-app
     env_file:
-      - ./configs/runtime.mock.env
+      - ./configs/runtime.real.env
     ports:
       - "8022:8022"
     volumes:

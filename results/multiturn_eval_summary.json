@@ -5,9 +5,9 @@
   "gate_accuracy": 1.0,
   "top1_title_accuracy": 1.0,
   "title_hit_at_3": 1.0,
-  "keyword_recall": 0.9722222222222222,
+  "keyword_recall": 0.7824055555555556,
   "followup_grounding_accuracy": 1.0,
-  "avg_total_ms": 2935.1666666666665,
-  "avg_first_audio_ms": 1522.9444444444443,
+  "avg_total_ms": 9317.666666666666,
+  "avg_first_audio_ms": 9317.666666666666,
   "mode": "full"
 }

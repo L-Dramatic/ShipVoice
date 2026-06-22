@@ -110,10 +110,10 @@ export async function slide02(presentation, ctx) {
   title(slide,ctx,"船厂安全问答不能只做“语音转文字 + 大模型”","高风险作业场景需要领域术语、审批约束和拒答边界。");
   box(slide,ctx,"术语密集：密闭舱室、舾装、管路试压、分段吊装等问题需要专业语境。",68,210,350,126,C.white,C.blue);
   box(slide,ctx,"安全关键：错误建议可能诱导跳过审批、检测、监护或消防准备。",464,210,350,126,C.white,C.red);
-  box(slide,ctx,"现场演示风险：GPU、网络或模型服务不可用时，系统仍要能稳定答辩。",860,210,350,126,C.white,C.gold);
+  box(slide,ctx,"真实链路约束：GPU、网络或模型服务不可用时，系统必须暴露失败而不是生成替代结果。",860,210,350,126,C.white,C.gold);
   metric(slide,ctx,"安全前置","先门控，再生成",150,410,250,C.red);
   metric(slide,ctx,"证据约束","RAG 不是装饰",515,410,250,C.blue);
-  metric(slide,ctx,"可降级","mock fallback 保底",880,410,250,C.green);
+  metric(slide,ctx,"真实性","fail-closed",880,410,250,C.green);
   footer(slide,ctx);
   return slide;
 }
@@ -255,7 +255,7 @@ export async function slide09(presentation, ctx) {
   title(slide,ctx,"交付物不是截图工程：代码、日志、adapter、评测都可追溯","老师可以从 README 跑到验证脚本。");
   const cmds=[
     ["本地验证","python scripts\\\\validate_project.py --quick"],
-    ["本地演示","python run_demo.py -> http://127.0.0.1:8010"],
+    ["本地应用","python run_app.py --env-file configs/runtime.real.env --port 8026"],
     ["安全评测","python scripts\\\\evaluate_safety_gate.py --fail-on-critical"],
     ["远端训练","remote/train_qwen_lora.py"],
     ["远端评测","remote/evaluate_qwen_lora.py"],
@@ -332,7 +332,7 @@ def write_workspace() -> None:
                 "4 RAG: knowledge base and hit-rate.",
                 "5 Safety gate: refusal boundary.",
                 "6 Demo: runnable local panel.",
-                "7 Fine-tuning: real Qwen LoRA run.",
+                "7 Fine-tuning: real Qwen LoRA run and online serving path.",
                 "8 Evaluation: base vs LoRA tradeoff.",
                 "9 Reproducibility: commands and artifacts.",
                 "10 Conclusion: safety architecture is the core claim.",

@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 class PipelineConfig:
     project_name: str
     latency_targets_ms: dict[str, int]
-    mock_latency_ms: dict[str, int]
+    retrieval_latency_budget_ms: int
     asr: dict[str, Any]
     rag: dict[str, Any]
     llm: dict[str, Any]
@@ -30,7 +30,7 @@ def load_config(path: str | Path | None = None) -> PipelineConfig:
     return PipelineConfig(
         project_name=str(data["project_name"]),
         latency_targets_ms=dict(data["latency_targets_ms"]),
-        mock_latency_ms=dict(data["mock_latency_ms"]),
+        retrieval_latency_budget_ms=int(data.get("retrieval_latency_budget_ms", 0)),
         asr=dict(data.get("asr", {})),
         rag=dict(data.get("rag", {})),
         llm=dict(data.get("llm", {})),

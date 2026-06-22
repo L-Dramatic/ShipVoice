@@ -28,7 +28,7 @@ ShipVoice_Final_Submission/
     web/
     README.md
     requirements.txt
-    run_demo.py
+    run_app.py
   evidence/
     results/latency_metrics.csv
     results/safety_gate_eval.csv
@@ -60,7 +60,7 @@ ShipVoice_Final_Submission/
 
 ## 推荐答辩口径
 
-本项目不是简单把 ASR、LLM、TTS 串起来，而是在船厂安全这一高风险领域里加入了安全门控、RAG 证据检索、可运行演示、可复现实验和 Qwen LoRA 微调对照。LoRA 是加分实验，正式系统的安全边界仍由门控和证据层保证。
+本项目不是简单把 ASR、LLM、TTS 串起来，而是在船厂安全这一高风险领域里加入了安全门控、RAG 证据检索、可运行演示、可复现实验和 Qwen LoRA 微调对照。最终高质量演示应使用 ShipVoice LoRA 在线模型，安全边界仍由门控、证据层和审计共同保证。
 
 ## 当前比赛级补强进展
 

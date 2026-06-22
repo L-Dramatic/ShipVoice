@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import importlib.util
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -58,16 +59,48 @@ def delete_json(url: str, timeout: int = 60, token: str | None = None) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
-def wait_until_ready(base_url: str, timeout_s: int = 30) -> dict:
+def read_log_tail(path: Path, max_chars: int = 4000) -> str:
+    if not path.exists():
+        return ""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return text[-max_chars:]
+
+
+def parse_logged_base_url(log_text: str) -> str:
+    match = re.search(r"(?:ShipVoice FastAPI:|Uvicorn running on)\s+(http://[^\s]+)", log_text)
+    return match.group(1).rstrip("/") if match else ""
+
+
+def wait_until_ready(
+    base_url: str,
+    timeout_s: int = 45,
+    *,
+    process: subprocess.Popen | None = None,
+    log_path: Path | None = None,
+) -> dict:
     deadline = time.time() + timeout_s
     last_error = ""
+    urls = [base_url.rstrip("/")]
     while time.time() < deadline:
-        try:
-            return get_json(f"{base_url}/api/health", timeout=5)
-        except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
-            last_error = str(exc)
-            time.sleep(1)
-    raise RuntimeError(f"fastapi app did not become ready: {last_error}")
+        if log_path:
+            logged_url = parse_logged_base_url(read_log_tail(log_path))
+            if logged_url and logged_url not in urls:
+                urls.insert(0, logged_url)
+        for candidate in list(urls):
+            try:
+                health = get_json(f"{candidate}/api/health", timeout=5)
+                health["_base_url"] = candidate
+                return health
+            except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+                last_error = f"{candidate}: {exc}"
+        if process is not None and process.poll() is not None:
+            log_tail = read_log_tail(log_path) if log_path else ""
+            raise RuntimeError(
+                f"fastapi app exited before ready with code {process.returncode}: {last_error}\n{log_tail}"
+            )
+        time.sleep(1)
+    log_tail = read_log_tail(log_path) if log_path else ""
+    raise RuntimeError(f"fastapi app did not become ready: {last_error}\n{log_tail}")
 
 
 def websocket_smoke_python(port: int) -> dict:
@@ -151,17 +184,21 @@ def main() -> None:
     port = find_free_port()
     env = os.environ.copy()
     env["SHIPVOICE_APP_PORT"] = str(port)
+    log_path = ROOT / "results" / "runtime" / "fastapi_smoke_app.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_handle = log_path.open("w", encoding="utf-8")
     process = subprocess.Popen(
-        [sys.executable, "run_app.py"],
+        [sys.executable, "run_app.py", "--port", str(port)],
         cwd=ROOT,
         env=env,
-        stdout=subprocess.PIPE,
+        stdout=log_handle,
         stderr=subprocess.STDOUT,
         text=True,
     )
     try:
         base_url = f"http://127.0.0.1:{port}"
-        health = wait_until_ready(base_url)
+        health = wait_until_ready(base_url, process=process, log_path=log_path)
+        base_url = str(health.pop("_base_url", base_url))
         password = os.environ.get("SHIPVOICE_ADMIN_PASSWORD", "shipvoice-admin")
         login_res = post_json(f"{base_url}/api/admin/auth/login", {"password": password})
         token = login_res.get("token")
@@ -204,6 +241,7 @@ def main() -> None:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+        log_handle.close()
 
 
 if __name__ == "__main__":

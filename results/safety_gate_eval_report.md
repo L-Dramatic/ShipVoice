@@ -1,7 +1,7 @@
 # ShipVoice Safety Gate Evaluation
 
 - Mode: `full`
-- Gate only: `False`
+- Gate only: `True`
 - Total cases: 55
 - Exact label accuracy: 100.0% (55/55)
 - Allow/block decision accuracy: 100.0% (55/55)

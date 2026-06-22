@@ -89,7 +89,7 @@ Show:
 
 Narration:
 
-> 实验结果显示，LoRA 让回答更短、更像船厂安全提示，但在 off-domain 问题上存在轻微模板化。因此我们的最终设计不是裸用微调模型，而是保留安全门控和 RAG 证据层，把 LoRA 作为可选领域风格增强。
+> 实验结果显示，LoRA 让回答更短、更像船厂安全提示，但在 off-domain 问题上存在轻微模板化。因此我们的最终设计不是裸用微调模型，而是把 ShipVoice LoRA 放进正式在线链路，同时保留安全门控和 RAG 证据层。
 
 Show:
 
@@ -110,7 +110,7 @@ Show:
 ## Recording Checklist
 
 - Browser zoom: 100%.
-- Use `python run_demo.py`.
+- Use `python run_app.py --env-file configs/runtime.real.env --port 8026`.
 - Keep terminal visible for the first 3 seconds to show local run command.
 - Use 3 demo questions only if time is limited:
   - safe domain question

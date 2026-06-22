@@ -1,6 +1,6 @@
 param(
-  [ValidateSet("mock", "real")]
-  [string]$Mode = "mock",
+  [ValidateSet("real")]
+  [string]$Mode = "real",
   [string]$EnvFile = "",
   [int]$Port = 0
 )
@@ -9,11 +9,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 
 if (-not $EnvFile) {
-  if ($Mode -eq "real") {
-    $EnvFile = Join-Path $Root "configs\runtime.real.env"
-  } else {
-    $EnvFile = Join-Path $Root "configs\runtime.mock.env"
-  }
+  $EnvFile = Join-Path $Root "configs\runtime.real.env"
 }
 
 if (-not (Test-Path $EnvFile)) {

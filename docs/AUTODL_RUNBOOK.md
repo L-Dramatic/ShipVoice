@@ -9,6 +9,7 @@
 1. 安装依赖并跑 smoke test。
 2. 用 Qwen 做 LoRA/QLoRA 小规模训练。
 3. 跑微调前后对比评测。
+4. 启动 ShipVoice LoRA 在线链路，生成最终端到端验收证据。
 
 ## 推荐机器
 
@@ -165,3 +166,17 @@ touch /root/autodl-tmp/shipvoice/NO_SHUTDOWN
 - 方法：4-bit LoRA/QLoRA。
 - 结果：`train_loss = 0.1677`，训练耗时约 724 秒。
 - 归档：`results/remote_autodl_20260621_expanded/summary.json` 与 `summary.md`。
+
+## 最终在线链路启动
+
+如果 bundle 已经包含 `outputs/qwen_lora_shipvoice_expanded`，远端解压后直接执行：
+
+```bash
+bash remote/start_full_lora_stack.sh /root/autodl-tmp/shipvoice
+```
+
+停止并关机：
+
+```bash
+SHUTDOWN_AFTER_STOP=1 bash remote/stop_full_lora_stack.sh /root/autodl-tmp/shipvoice
+```

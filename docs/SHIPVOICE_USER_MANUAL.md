@@ -6,7 +6,7 @@
 - 管理后台：http://127.0.0.1:8026/admin.html
 - API 文档：http://127.0.0.1:8026/docs
 
-当前启动的是稳定演示模式：ASR 为转写兜底，LLM 为 mock_llm，TTS 为 mock_tts。这个模式适合课堂演示、验收测试和前端展示；如果要接入真实大模型、真实语音识别和真实语音合成，需要切换到 `configs/runtime.real.env`。
+当前系统采用真实链路运行策略：ASR、LLM、TTS 都必须连接真实 provider。真实服务没有启动或端点配置错误时，问答请求会失败并显示错误；系统不会生成替代答案或假音频。
 
 ## 1. 这个系统是做什么的
 
@@ -86,7 +86,7 @@ http://127.0.0.1:8026/
 - webm
 - ogg
 
-当前本地演示模式下，ASR 走转写兜底逻辑，所以主要用于展示“音频输入链路已经接入”。如果要严格展示真实语音识别效果，需要切换到真实 ASR provider。
+音频上传后会被编码为 `audio_base64` 发送到后端，并交给真实 ASR provider 转写。如果 ASR 服务没有启动，本次请求会失败。
 
 ### 2.5 直接录音
 
@@ -265,7 +265,7 @@ shipvoice-admin
 
 - 前端支持直接录音。
 - 后端 API 已支持音频输入字段。
-- 当前演示模式是转写兜底，真实模式可接 ASR。
+- 音频输入会交给真实 ASR provider 转写，服务不可用时请求失败。
 
 ### 第五步：演示后台
 
@@ -290,18 +290,18 @@ http://127.0.0.1:8026/admin.html
 
 ## 6. 本地启动和停止
 
-### 6.1 启动 mock 演示模式
+### 6.1 启动真实链路模式
 
 在项目根目录运行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\start_shipvoice_app.ps1 -Mode mock -Port 8026
+powershell -ExecutionPolicy Bypass -File scripts\start_shipvoice_app.ps1 -Mode real -Port 8026
 ```
 
 也可以直接运行：
 
 ```powershell
-python run_app.py --env-file configs\runtime.mock.env --port 8026
+python run_app.py --env-file configs\runtime.real.env --port 8026
 ```
 
 启动后访问：
@@ -310,15 +310,17 @@ python run_app.py --env-file configs\runtime.mock.env --port 8026
 http://127.0.0.1:8026/
 ```
 
-### 6.2 启动真实 provider 模式
+### 6.2 启动前必须确认的 provider
 
-真实模式需要先配置 `configs/runtime.real.env`，再运行：
+启动前先确认 `configs/runtime.real.env` 中的三个端点已经可用：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\start_shipvoice_app.ps1 -Mode real -Port 8026
+```text
+SHIPVOICE_ASR_ENDPOINT
+SHIPVOICE_OPENAI_BASE_URL
+SHIPVOICE_TTS_ENDPOINT
 ```
 
-真实模式适合接入真实 ASR、LLM、TTS 服务，但稳定性取决于远程服务是否启动、API 是否可用、网络是否正常。
+如果使用 AutoDL/GPU 机器，需要先启动远程 ASR、LLM、TTS 服务，再用 SSH 隧道或公网地址接回本机。
 
 ### 6.3 停止当前后台服务
 
@@ -429,11 +431,17 @@ echo $env:SHIPVOICE_ADMIN_PASSWORD
 3. 关闭占用麦克风的软件。
 4. 如果仍失败，改用音频文件上传。
 
-### 为什么显示 mock
+### 为什么请求失败
 
-因为当前启动的是课堂稳定演示模式。mock 模式不是假网页，它仍然有真实前后端、真实 API、真实知识库检索、真实审计日志和真实后台；只是 ASR/LLM/TTS provider 使用可控兜底，避免答辩时因为远程模型或 GPU 服务不稳定导致演示失败。
+当前版本不会在模型服务不可用时伪造结果。常见原因包括：
 
-如果要展示真实链路，需要启动真实 provider 服务，并切换到 `runtime.real.env`。
+1. ASR、LLM 或 TTS 服务没有启动。
+2. `configs/runtime.real.env` 中的端口和实际端口不一致。
+3. SSH 隧道断开。
+4. LLM 模型还没有加载完成。
+5. TTS 服务返回了空音频。
+
+遇到失败时，先打开后台 `/admin.html` 查看 provider health，再检查远程服务日志。
 
 ## 9. 答辩时强调的亮点
 
@@ -446,4 +454,4 @@ echo $env:SHIPVOICE_ADMIN_PASSWORD
 - 有 SQLite 运行日志。
 - 有管理后台，可以做知识治理、评测和复盘。
 - 有自动化测试和验收脚本。
-- mock 模式保证演示稳定，real 模式支持进一步接真实模型链路。
+- 当前主链路是真实 provider 链路，服务缺失时系统会失败并暴露错误。

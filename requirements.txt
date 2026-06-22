@@ -1,5 +1,4 @@
-# 当前 mock 演示版只依赖 Python 标准库。
-# 后续真实模型接入时再按模块安装：
+# ShipVoice 应用本体依赖。真实 ASR/LLM/TTS 模型服务在远端 GPU 环境独立安装。
 # fastapi
 # uvicorn
 # websockets
@@ -15,3 +14,4 @@
 # modelscope
 fastapi
 uvicorn
+python-docx

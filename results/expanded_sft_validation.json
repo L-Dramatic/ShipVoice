@@ -37,6 +37,6 @@
     "max_output_chars": 270
   },
   "train_eval_exact_input_overlap": 0,
-  "train_path": "data\\training\\shipvoice_sft_train_expanded.jsonl",
-  "eval_path": "data\\training\\shipvoice_sft_eval_holdout.jsonl"
+  "train_path": "data/training/shipvoice_sft_train_expanded.jsonl",
+  "eval_path": "data/training/shipvoice_sft_eval_holdout.jsonl"
 }

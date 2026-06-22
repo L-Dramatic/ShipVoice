@@ -18,7 +18,6 @@ python run_app.py
 或者显式指定运行环境文件：
 
 ```powershell
-python run_app.py --env-file configs\runtime.mock.env
 python run_app.py --env-file configs\runtime.real.env
 ```
 
@@ -122,7 +121,6 @@ python scripts\validate_project.py --quick
 切换启动模式的 PowerShell 脚本：
 
 ```powershell
-.\scripts\start_shipvoice_app.ps1 -Mode mock
 .\scripts\start_shipvoice_app.ps1 -Mode real
 ```
 
@@ -130,7 +128,8 @@ python scripts\validate_project.py --quick
 
 1. 数据库仍是 `SQLite`，适合课程项目和单机原型，不适合高并发生产环境。
 2. 还没有用户系统、权限控制、任务队列、对象存储等企业级能力。
-3. 评测结果已经结构化入库，但还没有做更强的趋势分析、回归告警、批量对比。
+3. 当前运行链路依赖外部真实 ASR、LLM、TTS 服务；服务未启动时问答请求会失败。
+4. 评测结果已经结构化入库，但还没有做更强的趋势分析、回归告警、批量对比。
 
 ## 下一阶段建议
 

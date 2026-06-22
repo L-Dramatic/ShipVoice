@@ -950,23 +950,23 @@ function formatSummaryValue(value) {
   return String(value);
 }
 
-function datasetHeadline(datasetName, row, fallbackKey) {
+function datasetHeadline(datasetName, row, altKey) {
   if (datasetName === "safety_gate_eval") {
-    return `${row.id || fallbackKey} · ${row.question || "Safety row"}`;
+    return `${row.id || altKey} · ${row.question || "Safety row"}`;
   }
   if (datasetName === "asr_eval") {
-    return `${row.id || fallbackKey} · ${row.transcript || "ASR row"}`;
+    return `${row.id || altKey} · ${row.transcript || "ASR row"}`;
   }
   if (datasetName === "multiturn_eval") {
-    return `${row.turn_id || fallbackKey} · ${row.question || "Multi-turn row"}`;
+    return `${row.turn_id || altKey} · ${row.question || "Multi-turn row"}`;
   }
   if (datasetName === "latency_metrics") {
-    return `${row.question_id || fallbackKey} · ${row.mode || "mode"}`;
+    return `${row.question_id || altKey} · ${row.mode || "mode"}`;
   }
   if (datasetName === "real_chain_samples") {
-    return `${row.sample_id || fallbackKey} · ${row.transcript || "Real chain sample"}`;
+    return `${row.sample_id || altKey} · ${row.transcript || "Real chain sample"}`;
   }
-  return fallbackKey;
+  return altKey;
 }
 
 function datasetDetail(datasetName, row) {

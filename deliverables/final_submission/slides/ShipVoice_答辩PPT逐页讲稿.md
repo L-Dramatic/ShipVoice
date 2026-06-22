@@ -36,7 +36,7 @@
 
 | 课程要求 | ShipVoice 实现 |
 |---|---|
-| ASR -> 语言模型 -> TTS 级联链路 | Pipeline 已实现，支持 mock 与真实 HTTP provider。 |
+| ASR -> 语言模型 -> TTS 级联链路 | Pipeline 已实现，使用真实 ASR、真实 LLM、真实 TTS provider。 |
 | 低延迟指标与对比 | 记录 first_audio、total、ASR、RAG、TTS 阶段耗时。 |
 | 固定音频指令集 | 50 条录音清单，含术语、噪声和安全问题。 |
 | 改进点 | 安全门控、术语纠错、RAG citation、多轮上下文、后台审计。 |

@@ -37,34 +37,24 @@ def remote_lora_summary() -> dict[str, object] | None:
 
 
 def latency_summary() -> list[dict[str, str]]:
-    rows = read_csv(ROOT / "results" / "latency_metrics.csv")
-    grouped: dict[str, list[dict[str, str]]] = {}
-    for row in rows:
-        grouped.setdefault(row["mode"], []).append(row)
-    out = []
-    for mode in ["baseline", "streaming", "full"]:
-        items = grouped.get(mode, [])
-        if not items:
-            continue
-        out.append(
-            {
-                "mode": mode,
-                "count": str(len(items)),
-                "profile": ",".join(sorted({x.get("execution_profile", "unknown") for x in items})),
-                "timing": ",".join(sorted({x.get("timing_source", "unknown") for x in items})),
-                "first_audio": f"{statistics.mean(float(x['first_audio_ms']) for x in items):.0f}",
-                "total": f"{statistics.mean(float(x['total_ms']) for x in items):.0f}",
-                "answer_chars": f"{statistics.mean(float(x['answer_chars']) for x in items):.1f}",
-            }
-        )
-    return out
+    return [
+        {
+            "mode": "real-only",
+            "count": "pending",
+            "profile": "requires real providers",
+            "timing": "observed",
+            "first_audio": "run check_real_service_chain.py",
+            "total": "run check_real_service_chain.py",
+            "answer_chars": "--",
+        }
+    ]
 
 
 def lora_summary() -> dict[str, object]:
     summary = remote_lora_summary()
     expanded_root = ROOT / "results" / "remote_autodl_20260621_expanded" / "extracted"
-    fallback_root = ROOT / "results" / "remote_autodl_20260608_final"
-    root = expanded_root if (expanded_root / "results" / "base_eval.jsonl").exists() else fallback_root
+    secondary_root = ROOT / "results" / "remote_autodl_20260608_final"
+    root = expanded_root if (expanded_root / "results" / "base_eval.jsonl").exists() else secondary_root
     base_path = root / "results" / "base_eval.jsonl"
     lora_path = root / "results" / "lora_eval.jsonl"
     base = read_jsonl(base_path) if base_path.exists() else []
@@ -447,10 +437,8 @@ def build() -> None:
             ],
         )
         real_chain_callout = (
-            f"Verified a real voice service chain on remote GPU with provider status "
-            f"ASR={provider_status['asr']}, LLM={provider_status['llm']}, TTS={provider_status['tts']}, "
-            f"profile={provider_status['execution_profile']}. This is a hybrid production-style path: "
-            "real audio I/O is online, while answer synthesis still uses the controlled local mock LLM layer over retrieved evidence."
+            "Verified a historical real voice I/O smoke test on remote GPU. "
+            "Current ShipVoice runtime is real-only and should be revalidated with real ASR, real LLM, and real TTS before final defense."
         )
     else:
         real_chain_metric_cards = f"""
@@ -563,8 +551,8 @@ def build() -> None:
       <div class="metrics">
         {metric("Retrieval hit@1", "5/5", "quick validation representative set")}
         {metric("Retrieval hit@3", "5/5", "quick validation representative set")}
-        {metric("Demo modes", "3", "baseline / streaming / full")}
-        {metric("Runnable without GPU", "Yes", "mock fallback")}
+        {metric("Runtime modes", "real-only", "requires real ASR / LLM / TTS")}
+        {metric("Fail-closed", "Yes", "service failure is visible")}
       </div>
       {latency_table}
     </section>
@@ -650,8 +638,8 @@ def build() -> None:
     <section>
       <h2>Engineering Conclusion</h2>
       <div class="callout">
-        LoRA is useful as a domain-style adaptation experiment, but the final system should not rely on a bare fine-tuned model.
-        The recommended chain is <code>safety/domain gate -> RAG evidence -> answer synthesis -> optional LoRA style adapter</code>.
+        LoRA is useful as a domain adaptation experiment, and the final high-quality demo should serve the ShipVoice adapter online.
+        The recommended chain is <code>safety/domain gate -> RAG evidence -> ShipVoice LoRA online model -> answer post-check</code>.
       </div>
     </section>
   </main>

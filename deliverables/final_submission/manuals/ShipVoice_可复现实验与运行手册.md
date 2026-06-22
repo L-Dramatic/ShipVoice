@@ -1,6 +1,6 @@
 # ShipVoice 可复现实验与运行手册
 
-本文档面向老师、助教和小组成员，用于在没有开发者现场协助的情况下启动 ShipVoice、复现实验结果、检查后台能力并理解各项指标。手册尽量采用可直接复制的命令，并明确区分稳定演示模式和真实模型链路模式。
+本文档面向老师、助教和小组成员，用于在没有开发者现场协助的情况下启动 ShipVoice、复现实验结果、检查后台能力并理解各项指标。当前版本采用真实链路运行策略：ASR、LLM、TTS 必须连接真实 provider，任一服务不可用时系统直接失败并记录错误。
 
 ## 1. 环境说明
 
@@ -15,7 +15,7 @@ PowerShell
 现代浏览器：Edge 或 Chrome
 ```
 
-如果只运行 mock 稳定演示模式，不需要 GPU，也不需要外部大模型服务。如果要运行真实 ASR、LLM、TTS，需要远程 GPU 或本地模型服务，并在配置文件中填写 endpoint。
+运行问答主链路需要远程 GPU 或本地模型服务，并在配置文件中填写真实 ASR、LLM、TTS endpoint。前端、后台、知识库和静态评测数据可以在本地打开，但问答请求必须依赖真实 provider。
 
 ## 2. 安装依赖
 
@@ -41,12 +41,18 @@ python -m unittest discover -s tests
 
 正常情况下应看到所有测试通过。测试中如出现第三方库的 deprecation warning，不代表项目失败，关键是最终结果为 OK。
 
-## 3. 启动稳定演示模式
+## 3. 启动真实链路系统
 
-稳定演示模式不依赖远程服务，适合课堂答辩和老师现场快速验收。
+启动前先确认 `configs/runtime.real.env` 中的三个端点已经可用：
+
+```text
+SHIPVOICE_ASR_ENDPOINT
+SHIPVOICE_OPENAI_BASE_URL
+SHIPVOICE_TTS_ENDPOINT
+```
 
 ```powershell
-python run_app.py --env-file configs\runtime.mock.env --port 8026
+python run_app.py --env-file configs\runtime.real.env --port 8026
 ```
 
 浏览器打开：
@@ -70,7 +76,7 @@ http://127.0.0.1:8026/docs
 如果 8026 端口被占用，可以换成其他端口：
 
 ```powershell
-python run_app.py --env-file configs\runtime.mock.env --port 8030
+python run_app.py --env-file configs\runtime.real.env --port 8030
 ```
 
 后台默认密码：
@@ -115,7 +121,7 @@ shipvoice-admin
 有限空间作业前需要做什么安全检查？
 ```
 
-停止录音后点击“获取安全建议”。mock 模式下系统主要验证音频输入链路和前后端传输，真实 ASR 效果需要切换到 real provider。
+停止录音后点击“获取安全建议”。音频会发送到真实 ASR provider 转写；如果 ASR 服务没有启动，本次请求会失败。
 
 ## 5. 管理后台验收流程
 
@@ -358,7 +364,7 @@ avg_tts_first_audio_ms = 14794.0
 avg_first_audio_ms = 15238.67
 ```
 
-解释时要注意：该结果证明真实 ASR 和 TTS 已接通，但也说明 ChatTTS 首音频延迟偏高。课程演示可以使用 mock 稳定模式，真实链路结果作为实验证据展示。
+解释时要注意：该历史结果证明真实 ASR 和 TTS 已接通，但当前系统已经升级为 ASR、LLM、TTS 全真实 provider 策略，最终答辩前应重新运行 `scripts/check_real_service_chain.py` 生成最新全链路证据。
 
 ## 8. 常见问题
 
@@ -384,16 +390,16 @@ echo $env:SHIPVOICE_ADMIN_PASSWORD
 
 ```powershell
 $env:SHIPVOICE_ADMIN_PASSWORD="shipvoice-admin"
-python run_app.py --env-file configs\runtime.mock.env --port 8026
+python run_app.py --env-file configs\runtime.real.env --port 8026
 ```
 
 ### 录音按钮不能使用
 
 浏览器需要允许麦克风权限。建议使用 Edge 或 Chrome，并通过 `http://127.0.0.1` 访问，不要直接打开本地 HTML 文件。
 
-### 为什么页面显示 mock
+### 为什么请求失败
 
-mock 表示 ASR、LLM 或 TTS provider 使用稳定兜底实现，不代表系统是假的。系统仍然有真实前端、真实后端、真实知识库、真实 RAG、真实安全门控、真实审计日志和真实后台。mock 的作用是保证课堂现场不因 GPU、网络或外部模型服务失败而无法演示。真实模型链路的证据保存在 `results/remote_real_chain_20260612_chattts_48359/summary.json`。
+当前版本不生成替代答案或假音频。请求失败通常说明 ASR、LLM、TTS 中至少一个真实服务不可用，或者端点配置与实际端口不一致。请先打开后台 Provider Health，再检查远程 GPU 服务、SSH 隧道和模型加载日志。
 
 ### 评测指标和现场问答不完全一致
 

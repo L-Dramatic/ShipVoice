@@ -11,10 +11,10 @@ This report evaluates whether generated answers are grounded in auditable RAG ci
 - Citation ID hit@1: 100.00%
 - Citation ID hit@3: 100.00%
 - Top-1 schema completeness: 100.00%
-- Citation schema completeness: 80.00%
+- Citation schema completeness: 100.00%
 - Answer citation ID rate: 100.00%
 - Avg top-1 confidence: 1.000
-- Avg total latency: 2413 ms
+- Avg total latency: 5309 ms
 
 | ID | Category | Gate | Expected citation | Top-1 citation | Hit@3 | Complete | Answer cites ID |
 | --- | --- | --- | --- | --- | --- | --- | --- |

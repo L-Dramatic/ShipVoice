@@ -99,20 +99,20 @@
     
         
     <article class="metric">
-      <span>Demo modes</span>
-      <strong>3</strong>
-      <em>baseline / streaming / full</em>
+      <span>Runtime modes</span>
+      <strong>real-only</strong>
+      <em>requires real ASR / LLM / TTS</em>
     </article>
     
         
     <article class="metric">
-      <span>Runnable without GPU</span>
+      <span>Fail-closed</span>
       <strong>Yes</strong>
-      <em>mock fallback</em>
+      <em>service failure is visible</em>
     </article>
     
       </div>
-      <table><thead><tr><th>Mode</th><th>Samples</th><th>Profile</th><th>Timing</th><th>First audio avg(ms)</th><th>Total avg(ms)</th><th>Answer chars</th></tr></thead><tbody><tr><td>baseline</td><td>8</td><td>demo</td><td>simulated</td><td>653</td><td>653</td><td>93.2</td></tr><tr><td>streaming</td><td>8</td><td>demo</td><td>simulated</td><td>1347</td><td>1875</td><td>93.2</td></tr><tr><td>full</td><td>8</td><td>demo</td><td>simulated</td><td>1451</td><td>2411</td><td>143.2</td></tr></tbody></table>
+      <table><thead><tr><th>Mode</th><th>Samples</th><th>Profile</th><th>Timing</th><th>First audio avg(ms)</th><th>Total avg(ms)</th><th>Answer chars</th></tr></thead><tbody><tr><td>real-only</td><td>pending</td><td>requires real providers</td><td>observed</td><td>run check_real_service_chain.py</td><td>run check_real_service_chain.py</td><td>--</td></tr></tbody></table>
     </section>
 
     <section>
@@ -183,7 +183,7 @@
           
     <article class="metric">
       <span>Avg safety run latency</span>
-      <strong>2173 ms</strong>
+      <strong>0 ms</strong>
       <em>full pipeline mode</em>
     </article>
     
@@ -281,7 +281,7 @@
         </div>
         
       <div class="callout">
-        Top-1 title accuracy is 100.0%, title hit@3 is 100.0%, and keyword recall is 97.2%. This measures whether the system can carry prior context into later turns instead of treating each question as isolated.
+        Top-1 title accuracy is 100.0%, title hit@3 is 100.0%, and keyword recall is 78.2%. This measures whether the system can carry prior context into later turns instead of treating each question as isolated.
       </div>
     </section>
 
@@ -291,38 +291,38 @@
         <div class="metrics">
           
     <article class="metric">
-      <span>Verified remote samples</span>
-      <strong>3</strong>
-      <em>A001-A003 real audio end-to-end runs</em>
+      <span>Remote real chain</span>
+      <strong>Not verified</strong>
+      <em>run scripts/check_real_service_chain.py on a remote GPU host</em>
     </article>
     
           
     <article class="metric">
       <span>ASR backend</span>
-      <strong>funasr_asr</strong>
-      <em>iic/SenseVoiceSmall</em>
+      <strong>--</strong>
+      <em>pending remote validation</em>
     </article>
     
           
     <article class="metric">
       <span>TTS backend</span>
-      <strong>chattts</strong>
-      <em>remote Chinese voice synthesis</em>
+      <strong>--</strong>
+      <em>pending remote validation</em>
     </article>
     
           
     <article class="metric">
       <span>Avg first audio</span>
-      <strong>15239 ms</strong>
-      <em>observed on RTX 4090 remote chain</em>
+      <strong>--</strong>
+      <em>pending remote validation</em>
     </article>
     
         </div>
         
       <div class="callout">
-        Verified a real voice service chain on remote GPU with provider status ASR=http_json_asr, LLM=mock_llm, TTS=http_json_tts, profile=hybrid. This is a hybrid production-style path: real audio I/O is online, while answer synthesis still uses the controlled local mock LLM layer over retrieved evidence.
+        Remote real voice chain has not been verified yet.
       </div>
-      <table><thead><tr><th>Sample</th><th>Transcript</th><th>ASR ms</th><th>Retrieval ms</th><th>TTS first audio ms</th><th>Total ms</th></tr></thead><tbody><tr><td>A001</td><td>密闭舱室动火作业前要检查什么？</td><td>129</td><td>165</td><td>16461</td><td>16876</td></tr><tr><td>A002</td><td>舾装阶段管路试压有哪些安全风险？</td><td>150</td><td>166</td><td>13324</td><td>13761</td></tr><tr><td>A003</td><td>船体分段吊装前，需要确认哪些事项？</td><td>195</td><td>166</td><td>14597</td><td>15080</td></tr></tbody></table>
+      <table><thead><tr><th>Sample</th><th>Transcript</th><th>ASR ms</th><th>Retrieval ms</th><th>TTS first audio ms</th><th>Total ms</th></tr></thead><tbody><tr><td>Pending</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td></tr></tbody></table>
     </section>
 
     <section>
@@ -375,8 +375,8 @@
     <section>
       <h2>Engineering Conclusion</h2>
       <div class="callout">
-        LoRA is useful as a domain-style adaptation experiment, but the final system should not rely on a bare fine-tuned model.
-        The recommended chain is <code>safety/domain gate -> RAG evidence -> answer synthesis -> optional LoRA style adapter</code>.
+        LoRA is useful as a domain adaptation experiment, and the final high-quality demo should serve the ShipVoice adapter online.
+        The recommended chain is <code>safety/domain gate -> RAG evidence -> ShipVoice LoRA online model -> answer post-check</code>.
       </div>
     </section>
   </main>

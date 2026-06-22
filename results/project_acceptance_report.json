@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-06-21T08:34:07.738055+00:00",
+  "generated_at": "2026-06-22T07:39:26.421540+00:00",
   "git": {
     "branch": "codex/phase1-enterprise-backend",
-    "commit": "f02486e",
+    "commit": "21c2db8",
     "source_tree_dirty": true,
     "dirty_ignored_paths": [
       "configs/runtime.real.env",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "project": "ShipVoice 船厂安全实时语音问答助手",
-    "assessment": "课程 95+ 目标已具备主要工程与评测证据；引用质量已纳入离线验收。比赛级仍需扩展真实端到端评测、真实规程来源和 TTS 延迟优化。",
+    "assessment": "当前项目已具备课程 95+ 主要工程与实验证据；比赛级仍需扩展真实端到端压测、真实规程来源和 TTS 延迟优化。",
     "recommended_course_score": 97,
     "knowledge_records": 20
   },
@@ -35,7 +35,17 @@
         "src/shipvoice/pipeline.py",
         "src/shipvoice/providers.py"
       ],
-      "notes": "Provider 可配置，mock 和真实 HTTP provider 均可切换。"
+      "notes": "采用真实 provider 与 fail-closed 策略；ASR、LLM、TTS 服务缺失时请求失败并记录错误。"
+    },
+    {
+      "name": "ShipVoice LoRA 在线推理服务",
+      "status": "implemented",
+      "evidence": [
+        "remote/serve_transformers_openai.py",
+        "remote/start_lora_llm.sh",
+        "remote/stop_lora_llm.sh"
+      ],
+      "notes": "远端服务可强制加载 LoRA adapter；adapter 不存在或未加载时启动失败。"
     },
     {
       "name": "管理后台与审计",
@@ -75,25 +85,26 @@
         "results/citation_quality_summary.json",
         "tests/test_evidence_citations.py"
       ],
-      "notes": "前端证据卡片展示 citation ID、source、risk、confidence、tags 和 matched terms；离线 citation title hit@3 100.0%，Top-1 schema 完整率 100.0%。"
+      "notes": "当前 LoRA 链路 citation title hit@3 100.0%，Top-1 schema 完整率 100.0%。"
     },
     {
-      "name": "真实语音链路 smoke test",
-      "status": "verified_smoke",
+      "name": "当前真实语音链路验收",
+      "status": "verified_lora_chain",
       "evidence": [
-        "results/remote_real_chain_20260612_chattts_48359/summary.json"
+        "scripts/check_real_service_chain.py",
+        "results/real_chain_smoke.json"
       ],
-      "notes": "3 条真实录音样本，平均 ASR 158 ms，平均首音 15239 ms。"
+      "notes": "当前 real_chain_smoke 已确认 ShipVoice LoRA adapter 在线加载。"
     },
     {
       "name": "微调与安全数据资产",
-      "status": "prepared",
+      "status": "completed_experiment",
       "evidence": [
-        "data/training/sft_seed.jsonl",
-        "data/training/safety_gate_seed.jsonl",
-        "remote/train_qwen_lora.py"
+        "data/training/shipvoice_sft_train_expanded.jsonl",
+        "remote/train_qwen_lora.py",
+        "results/remote_autodl_20260621_expanded/summary.json"
       ],
-      "notes": "SFT seed 63 条，安全门控 seed 32 条；训练脚本已准备。"
+      "notes": "扩展 SFT 1000 条，holdout 150 条；LoRA train loss 0.1676858789101243，adapter 约 154.1 MB。"
     },
     {
       "name": "容器化与远程部署",
@@ -117,7 +128,7 @@
       "dialogs": 6,
       "turns": 18,
       "followup_grounding_accuracy": 1.0,
-      "keyword_recall": 0.9722222222222222
+      "keyword_recall": 0.7824055555555556
     },
     "citation_quality": {
       "total": 8,
@@ -127,7 +138,7 @@
       "citation_title_hit_at_3": 1.0,
       "citation_id_hit_at_3": 1.0,
       "top1_schema_completeness": 1.0,
-      "citation_schema_completeness": 0.8,
+      "citation_schema_completeness": 1.0,
       "answer_citation_id_rate": 1.0
     },
     "asr_manifest": {
@@ -137,53 +148,66 @@
       "status": "ready"
     },
     "real_chain_smoke": {
-      "num_samples": 3,
-      "avg_asr_ms": 158.0,
-      "avg_retrieval_ms": 165.67,
-      "avg_tts_first_audio_ms": 14794.0,
-      "avg_first_audio_ms": 15238.67
+      "verified_lora_chain": true,
+      "reason": "当前 real_chain_smoke 已确认 ShipVoice LoRA adapter 在线加载。",
+      "sample_id": "A001",
+      "asr_ms": 121,
+      "retrieval_ms": 5,
+      "llm_first_token_ms": 5038,
+      "tts_first_audio_ms": 3294,
+      "first_audio_ms": 8459
+    },
+    "lora_experiment": {
+      "train_examples": 1000,
+      "holdout_examples": 150,
+      "base_rows": 150,
+      "lora_rows": 150,
+      "train_loss": 0.1676858789101243,
+      "adapter_mb": 154.1,
+      "base_off_domain_refusal_count": 1,
+      "lora_off_domain_refusal_count": 10
     }
   },
   "artifacts": [
     {
       "path": "README.md",
       "exists": true,
-      "bytes": 7137
+      "bytes": 8502
     },
     {
       "path": "docs/PHASE1_SCORECARD.md",
       "exists": true,
-      "bytes": 7999
+      "bytes": 1237
     },
     {
       "path": "docs/OPERATIONS_RUNBOOK.md",
       "exists": true,
-      "bytes": 8427
+      "bytes": 2532
     },
     {
       "path": "docs/ARCHITECTURE.md",
       "exists": true,
-      "bytes": 1454
+      "bytes": 2609
     },
     {
       "path": "results/citation_quality_report.md",
       "exists": true,
-      "bytes": 1271
+      "bytes": 1244
     },
     {
       "path": "results/citation_quality_summary.json",
       "exists": true,
-      "bytes": 510
+      "bytes": 495
     },
     {
       "path": "results/citation_quality_eval.csv",
       "exists": true,
-      "bytes": 5353
+      "bytes": 5281
     },
     {
       "path": "deliverables/ShipVoice_Evaluation_Dashboard.html",
       "exists": true,
-      "bytes": 71744
+      "bytes": 19096
     },
     {
       "path": "deliverables/ShipVoice_Final_Defense_Deck_Draft.pptx",
@@ -193,7 +217,7 @@
     {
       "path": "deliverables/ShipVoice_船厂安全实时语音问答助手_项目报告_比赛增强版.docx",
       "exists": true,
-      "bytes": 233598
+      "bytes": 48280
     },
     {
       "path": "web/static/index.html",
@@ -203,7 +227,7 @@
     {
       "path": "web/static/admin.html",
       "exists": true,
-      "bytes": 14692
+      "bytes": 14688
     },
     {
       "path": "Dockerfile",
@@ -212,13 +236,15 @@
     }
   ],
   "limitations": [
-    "真实端到端语音链路目前是 smoke test 级别，尚未扩展到 30+ 条真实端到端压测。",
-    "ChatTTS 真实链路首音延迟约 15 秒，答辩时应如实说明瓶颈在 TTS。",
-    "当前默认本地演示仍使用 mock/fallback provider，真实链路需要启动远程 ASR/TTS/LLM 服务并切换配置。",
+    "当前本地证据必须重新跑 ShipVoice LoRA 在线链路验收，不能再使用旧基座模型结果代表最终系统。",
+    "真实端到端语音链路尚未扩展到 30+ 条真实端到端压测。",
+    "TTS 首音延迟仍需优化，答辩时应如实说明瓶颈在 TTS 服务。",
+    "当前 real-only 版本依赖远程 ASR/TTS/LLM 服务；服务不可用时请求失败并记录错误。",
     "课程版使用 SQLite 与单管理员口令；企业级阶段应升级 PostgreSQL、RBAC 与监控告警。"
   ],
   "next_steps": [
-    "扩展真实端到端评测到至少 30 条录音，并把 mock/real 指标分表呈现。",
+    "启动 remote/start_lora_llm.sh，并运行 check_real_service_chain.py --require-lora 生成当前 LoRA 全链路证据。",
+    "扩展真实端到端评测到至少 30 条录音，并按 ASR、LLM、TTS 阶段拆分指标。",
     "替换或优化 TTS，让首音延迟从 15 秒级降到 3 秒以内。",
     "把 citation 质量评测扩展到更多真实规程来源，并增加来源可信度评分。",
     "把管理后台的评测任务结果接入本验收报告，形成网页内一键验收。"

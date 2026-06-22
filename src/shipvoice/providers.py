@@ -63,11 +63,19 @@ def citation_matched_terms(query: str, title: str, text: str, tags: list[str]) -
         normalized = str(term).strip()
         if normalized and normalized.lower() in query_text and normalized.lower() in haystack:
             matched.append(normalized)
+    if not matched:
+        query_terms = re.findall(r"[A-Za-z0-9]+|[\u4e00-\u9fff]{2,}", query)
+        chars = [ch for ch in query if "\u4e00" <= ch <= "\u9fff"]
+        query_terms.extend("".join(chars[i : i + 2]) for i in range(max(0, len(chars) - 1)))
+        for term in query_terms:
+            normalized = str(term).strip()
+            if normalized and normalized.lower() in haystack:
+                matched.append(normalized)
     return sorted(set(matched), key=lambda item: (-len(item), item))[:8]
 
 
-class TranscriptASRProvider:
-    name = "transcript_fallback"
+class TextInputProvider:
+    name = "text_input"
 
     async def transcribe(
         self,
@@ -78,29 +86,12 @@ class TranscriptASRProvider:
     ) -> ASRResult:
         transcript = transcript_hint.strip()
         if transcript:
-            source = "audio+hint" if audio_bytes else "text"
-            return ASRResult(transcript=transcript, provider=self.name, source=source)
+            if audio_bytes:
+                raise ValueError("Text input path cannot be used as an audio transcription provider.")
+            return ASRResult(transcript=transcript, provider=self.name, source="text")
         if audio_bytes:
-            raise ValueError("ASR provider is transcript_fallback, but no transcript hint was provided.")
-        raise ValueError("Missing transcript input.")
-
-
-class MockASRProvider(TranscriptASRProvider):
-    name = "mock_asr"
-
-    def __init__(self, latency_ms: int) -> None:
-        self.latency_ms = latency_ms
-
-    async def transcribe(
-        self,
-        transcript_hint: str,
-        *,
-        audio_bytes: bytes | None = None,
-        audio_name: str = "",
-    ) -> ASRResult:
-        await asyncio.sleep(self.latency_ms / 1000)
-        result = await super().transcribe(transcript_hint, audio_bytes=audio_bytes, audio_name=audio_name)
-        return ASRResult(transcript=result.transcript, provider=self.name, source=result.source)
+            raise ValueError("Audio input requires a configured real ASR provider.")
+        raise ValueError("Missing text or audio input.")
 
 
 class HttpJsonASRProvider:
@@ -112,12 +103,12 @@ class HttpJsonASRProvider:
         endpoint: str,
         timeout_s: int,
         response_text_path: str,
-        fallback: TranscriptASRProvider,
+        text_input: TextInputProvider,
     ) -> None:
         self.endpoint = endpoint
         self.timeout_s = timeout_s
         self.response_text_path = response_text_path
-        self.fallback = fallback
+        self.text_input = text_input
 
     async def transcribe(
         self,
@@ -127,7 +118,7 @@ class HttpJsonASRProvider:
         audio_name: str = "",
     ) -> ASRResult:
         if not audio_bytes:
-            return await self.fallback.transcribe(transcript_hint, audio_bytes=None, audio_name=audio_name)
+            return await self.text_input.transcribe(transcript_hint, audio_bytes=None, audio_name=audio_name)
 
         payload = {
             "audio_base64": base64.b64encode(audio_bytes).decode("ascii"),
@@ -135,15 +126,11 @@ class HttpJsonASRProvider:
             "transcript_hint": transcript_hint,
         }
 
-        try:
-            data = await asyncio.to_thread(self._post_json, payload)
-            transcript = str(_extract_json_path(data, self.response_text_path, "")).strip()
-            if transcript:
-                return ASRResult(transcript=transcript, provider=self.name, source="audio")
-        except (OSError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, TimeoutError):
-            pass
-
-        return await self.fallback.transcribe(transcript_hint, audio_bytes=audio_bytes, audio_name=audio_name)
+        data = await asyncio.to_thread(self._post_json, payload)
+        transcript = str(_extract_json_path(data, self.response_text_path, "")).strip()
+        if not transcript:
+            raise RuntimeError("ASR service returned an empty transcript.")
+        return ASRResult(transcript=transcript, provider=self.name, source="audio")
 
     def _post_json(self, payload: dict[str, Any]) -> dict[str, Any]:
         request = urllib.request.Request(
@@ -216,9 +203,9 @@ class KeywordSafetyGate:
 
 
 class SimpleRetriever:
-    def __init__(self, knowledge_path: Path | None = None, latency_ms: int = 160) -> None:
+    def __init__(self, knowledge_path: Path | None = None, latency_budget_ms: int = 0) -> None:
         self.knowledge_path = knowledge_path or project_path("data", "knowledge", "ship_safety_seed.md")
-        self.latency_ms = latency_ms
+        self.latency_budget_ms = latency_budget_ms
         self.sections = self._load_sections()
 
     def _load_sections(self) -> list[dict[str, Any]]:
@@ -259,7 +246,6 @@ class SimpleRetriever:
         return [section for section in sections if section["text"]]
 
     async def retrieve(self, query: str, top_k: int = 2) -> list[RetrievalHit]:
-        await asyncio.sleep(self.latency_ms / 1000)
         query_tokens = set(re.findall(r"[\u4e00-\u9fff]{2,}|[A-Za-z0-9]+", query))
         scored: list[tuple[dict[str, Any], int, list[str]]] = []
         for section in self.sections:
@@ -297,9 +283,9 @@ class SimpleRetriever:
 
 
 class HybridRetriever:
-    def __init__(self, index_path: Path, latency_ms: int = 160) -> None:
+    def __init__(self, index_path: Path, latency_budget_ms: int = 0) -> None:
         self.index_path = index_path
-        self.latency_ms = latency_ms
+        self.latency_budget_ms = latency_budget_ms
         self.index = json.loads(index_path.read_text(encoding="utf-8"))
         self.documents: list[dict[str, Any]] = self.index["documents"]
         self.inverted: dict[str, list[dict[str, int]]] = self.index["inverted"]
@@ -312,7 +298,6 @@ class HybridRetriever:
         return words + bigrams
 
     async def retrieve(self, query: str, top_k: int = 3) -> list[RetrievalHit]:
-        await asyncio.sleep(self.latency_ms / 1000)
         query_terms = Counter(self._tokenize(query))
         scores: dict[int, float] = {}
         for term, query_count in query_terms.items():
@@ -386,51 +371,19 @@ def infer_risk_level(title: str, text: str, tags: list[str]) -> str:
     return "medium"
 
 
-class MockLLMProvider:
-    name = "mock_llm"
-    uses_mock_timing = True
-
-    def __init__(self, first_token_ms: int, chunk_ms: int) -> None:
-        self.first_token_ms = first_token_ms
-        self.chunk_ms = chunk_ms
-
-    def build_answer(
-        self,
-        question: str,
-        evidence: list[RetrievalHit],
-        gate: GateResult,
-        history: list[dict[str, str]] | None = None,
-    ) -> str:
-        history = history or []
-        context_prefix = ""
-        last_user = next((item["content"] for item in reversed(history) if item.get("role") == "user"), "")
-        if last_user:
-            context_prefix = f"结合上一轮“{last_user}”的上下文，"
-        if not gate.allowed:
-            return (
-                "该请求不适合继续处理。系统已触发安全门控，不提供绕过安全制度、规避审批或危害现场安全的操作步骤。"
-                "请按船厂安全规程完成审批、检测、监护和应急准备。"
-            )
-        if evidence:
-            lead = evidence[0]
-            citation = lead.record_id or lead.title
-            return (
-                f"{context_prefix}针对“{question}”，建议优先参考 [{citation}]《{lead.title}》。"
-                f"{lead.text} "
-                "执行时应保留审批记录、检测记录和现场监护记录；如果出现气体指标异常、压力异常或人员站位风险，应立即停止作业并复核。"
-            )
-        return (
-            f"{context_prefix}针对“{question}”，应先确认它是否属于造船现场安全问题。"
-            "在缺少可靠知识库证据时，系统只给出保守建议：遵守审批流程、完成风险辨识、安排监护，并在条件不满足时停止作业。"
-        )
-
-    def split_chunks(self, answer: str) -> list[str]:
-        chunks = [chunk for chunk in re.split(r"(?<=[。！？])", answer) if chunk.strip()]
-        return [chunk.strip() for chunk in chunks] or [answer]
+def split_answer_chunks(answer: str) -> list[str]:
+    chunks = [chunk for chunk in re.split(r"(?<=[。！？])", answer) if chunk.strip()]
+    return [chunk.strip() for chunk in chunks] or [answer]
 
 
-class OpenAICompatibleLLMProvider(MockLLMProvider):
-    uses_mock_timing = False
+def build_safety_refusal(gate: GateResult) -> str:
+    return (
+        "该请求已被安全门控拦截。系统不提供绕过安全制度、规避审批、破坏设备、隐瞒记录或危害现场安全的操作步骤。"
+        f"拦截原因：{gate.reason}。请按船厂安全规程完成审批、检测、隔离、监护和应急准备。"
+    )
+
+
+class OpenAICompatibleLLMProvider:
 
     def __init__(
         self,
@@ -439,14 +392,11 @@ class OpenAICompatibleLLMProvider(MockLLMProvider):
         model: str,
         api_key_env: str,
         timeout_s: int,
-        fallback: MockLLMProvider,
     ) -> None:
-        super().__init__(fallback.first_token_ms, fallback.chunk_ms)
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key_env = api_key_env
         self.timeout_s = timeout_s
-        self.fallback = fallback
         self.name = f"openai_compatible:{self.model or 'unknown'}"
 
     def _endpoint(self) -> str:
@@ -463,7 +413,7 @@ class OpenAICompatibleLLMProvider(MockLLMProvider):
     ) -> str:
         history = history or []
         if not gate.allowed:
-            return self.fallback.build_answer(question, evidence, gate, history=history)
+            return build_safety_refusal(gate)
 
         evidence_text = "\n".join(
             (
@@ -510,33 +460,15 @@ class OpenAICompatibleLLMProvider(MockLLMProvider):
             headers=headers,
             method="POST",
         )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
-                data = json.loads(response.read().decode("utf-8"))
-            content = data["choices"][0]["message"]["content"].strip()
-            return content or self.fallback.build_answer(question, evidence, gate, history=history)
-        except (OSError, urllib.error.URLError, urllib.error.HTTPError, KeyError, IndexError, json.JSONDecodeError):
-            return self.fallback.build_answer(question, evidence, gate, history=history)
+        with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        content = data["choices"][0]["message"]["content"].strip()
+        if not content:
+            raise RuntimeError("LLM service returned an empty answer.")
+        return content
 
-
-class MockTTSProvider:
-    name = "mock_tts"
-    supports_streaming = True
-
-    def __init__(self, first_audio_ms: int, chunk_ms: int) -> None:
-        self.first_audio_ms = first_audio_ms
-        self.chunk_ms = chunk_ms
-
-    async def synthesize_stream(self, chunks: list[str]) -> TTSResult:
-        audio_segments: list[str] = []
-        for idx, _chunk in enumerate(chunks, start=1):
-            delay = self.first_audio_ms if idx == 1 else self.chunk_ms
-            await asyncio.sleep(delay / 1000)
-            audio_segments.append(f"mock_audio_segment_{idx:02d}.wav")
-        return TTSResult(provider=self.name, audio_segments=audio_segments)
-
-    async def synthesize(self, text: str) -> TTSResult:
-        return await self.synthesize_stream([text])
+    def split_chunks(self, answer: str) -> list[str]:
+        return split_answer_chunks(answer)
 
 
 class HttpJsonTTSProvider:
@@ -551,26 +483,21 @@ class HttpJsonTTSProvider:
         voice: str,
         response_audio_path: str,
         response_mime_path: str,
-        fallback: MockTTSProvider,
     ) -> None:
         self.endpoint = endpoint
         self.timeout_s = timeout_s
         self.voice = voice
         self.response_audio_path = response_audio_path
         self.response_mime_path = response_mime_path
-        self.fallback = fallback
 
     async def synthesize(self, text: str) -> TTSResult:
         payload = {"text": text, "voice": self.voice}
-        try:
-            data = await asyncio.to_thread(self._post_json, payload)
-            audio_base64 = str(_extract_json_path(data, self.response_audio_path, "")).strip()
-            mime_type = str(_extract_json_path(data, self.response_mime_path, "audio/wav")).strip() or "audio/wav"
-            if audio_base64:
-                return TTSResult(provider=self.name, audio_base64=audio_base64, mime_type=mime_type)
-        except (OSError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, TimeoutError):
-            pass
-        return await self.fallback.synthesize(text)
+        data = await asyncio.to_thread(self._post_json, payload)
+        audio_base64 = str(_extract_json_path(data, self.response_audio_path, "")).strip()
+        mime_type = str(_extract_json_path(data, self.response_mime_path, "audio/wav")).strip() or "audio/wav"
+        if not audio_base64:
+            raise RuntimeError("TTS service returned an empty audio payload.")
+        return TTSResult(provider=self.name, audio_base64=audio_base64, mime_type=mime_type)
 
     def _post_json(self, payload: dict[str, Any]) -> dict[str, Any]:
         request = urllib.request.Request(
@@ -583,70 +510,67 @@ class HttpJsonTTSProvider:
             return json.loads(response.read().decode("utf-8"))
 
 
-def build_asr(config: PipelineConfig) -> TranscriptASRProvider | MockASRProvider | HttpJsonASRProvider:
-    latency = config.mock_latency_ms
+def build_asr(config: PipelineConfig) -> TextInputProvider | HttpJsonASRProvider:
     asr_config = config.asr
-    fallback = TranscriptASRProvider()
-    provider = os.environ.get("SHIPVOICE_ASR_PROVIDER", str(asr_config.get("provider", "transcript_fallback"))).lower()
-    if provider == "mock":
-        return MockASRProvider(latency["asr"])
+    text_input = TextInputProvider()
+    provider = os.environ.get("SHIPVOICE_ASR_PROVIDER", str(asr_config.get("provider", "http_json"))).lower()
+    if provider in {"text", "text_input"}:
+        return text_input
     if provider == "http_json":
         endpoint = os.environ.get("SHIPVOICE_ASR_ENDPOINT", str(asr_config.get("endpoint", ""))).strip()
-        if endpoint:
-            return HttpJsonASRProvider(
-                endpoint=endpoint,
-                timeout_s=int(asr_config.get("timeout_s", 60)),
-                response_text_path=str(asr_config.get("response_text_path", "text")),
-                fallback=fallback,
-            )
-    return fallback
+        if not endpoint:
+            raise RuntimeError("SHIPVOICE_ASR_ENDPOINT is required when SHIPVOICE_ASR_PROVIDER=http_json.")
+        return HttpJsonASRProvider(
+            endpoint=endpoint,
+            timeout_s=int(asr_config.get("timeout_s", 60)),
+            response_text_path=str(asr_config.get("response_text_path", "text")),
+            text_input=text_input,
+        )
+    raise RuntimeError(f"Unsupported ASR provider: {provider}")
 
 
 def build_retriever(config: PipelineConfig) -> SimpleRetriever | HybridRetriever:
-    latency = config.mock_latency_ms
     rag_config = config.rag
     provider = str(rag_config.get("provider", "simple"))
     if provider == "hybrid":
         index_path = project_path(*str(rag_config.get("index_path", "data/knowledge/ship_safety_index.json")).split("/"))
         if index_path.exists():
-            return HybridRetriever(index_path=index_path, latency_ms=latency["retrieval"])
-    return SimpleRetriever(latency_ms=latency["retrieval"])
+            return HybridRetriever(index_path=index_path, latency_budget_ms=config.retrieval_latency_budget_ms)
+    return SimpleRetriever(latency_budget_ms=config.retrieval_latency_budget_ms)
 
 
-def build_llm(config: PipelineConfig) -> MockLLMProvider | OpenAICompatibleLLMProvider:
-    latency = config.mock_latency_ms
-    fallback = MockLLMProvider(latency["llm_first_token"], latency["llm_chunk"])
+def build_llm(config: PipelineConfig) -> OpenAICompatibleLLMProvider:
     llm_config = config.llm
-    provider = os.environ.get("SHIPVOICE_LLM_PROVIDER", str(llm_config.get("provider", "mock"))).lower()
+    provider = os.environ.get("SHIPVOICE_LLM_PROVIDER", str(llm_config.get("provider", "openai_compatible"))).lower()
     if provider in {"openai", "openai_compatible", "ollama", "vllm"}:
         base_url = os.environ.get("SHIPVOICE_OPENAI_BASE_URL", str(llm_config.get("openai_base_url", ""))).strip()
         model = os.environ.get("SHIPVOICE_LLM_MODEL", str(llm_config.get("model", ""))).strip()
-        if base_url and model:
-            return OpenAICompatibleLLMProvider(
-                base_url=base_url,
-                model=model,
-                api_key_env=str(llm_config.get("api_key_env", "SHIPVOICE_OPENAI_API_KEY")),
-                timeout_s=int(llm_config.get("timeout_s", 60)),
-                fallback=fallback,
-            )
-    return fallback
+        if not base_url:
+            raise RuntimeError("SHIPVOICE_OPENAI_BASE_URL is required for the real LLM provider.")
+        if not model:
+            raise RuntimeError("SHIPVOICE_LLM_MODEL is required for the real LLM provider.")
+        return OpenAICompatibleLLMProvider(
+            base_url=base_url,
+            model=model,
+            api_key_env=str(llm_config.get("api_key_env", "SHIPVOICE_OPENAI_API_KEY")),
+            timeout_s=int(llm_config.get("timeout_s", 60)),
+        )
+    raise RuntimeError(f"Unsupported LLM provider: {provider}")
 
 
-def build_tts(config: PipelineConfig) -> MockTTSProvider | HttpJsonTTSProvider:
-    latency = config.mock_latency_ms
-    fallback = MockTTSProvider(latency["tts_first_audio"], latency["tts_chunk"])
+def build_tts(config: PipelineConfig) -> HttpJsonTTSProvider:
     tts_config = config.tts
-    provider = os.environ.get("SHIPVOICE_TTS_PROVIDER", str(tts_config.get("provider", "mock"))).lower()
+    provider = os.environ.get("SHIPVOICE_TTS_PROVIDER", str(tts_config.get("provider", "http_json"))).lower()
     if provider == "http_json":
         endpoint = os.environ.get("SHIPVOICE_TTS_ENDPOINT", str(tts_config.get("endpoint", ""))).strip()
         voice = os.environ.get("SHIPVOICE_TTS_VOICE", str(tts_config.get("voice", "alloy"))).strip() or "alloy"
-        if endpoint:
-            return HttpJsonTTSProvider(
-                endpoint=endpoint,
-                timeout_s=int(tts_config.get("timeout_s", 60)),
-                voice=voice,
-                response_audio_path=str(tts_config.get("response_audio_path", "audio_base64")),
-                response_mime_path=str(tts_config.get("response_mime_path", "mime_type")),
-                fallback=fallback,
-            )
-    return fallback
+        if not endpoint:
+            raise RuntimeError("SHIPVOICE_TTS_ENDPOINT is required when SHIPVOICE_TTS_PROVIDER=http_json.")
+        return HttpJsonTTSProvider(
+            endpoint=endpoint,
+            timeout_s=int(tts_config.get("timeout_s", 60)),
+            voice=voice,
+            response_audio_path=str(tts_config.get("response_audio_path", "audio_base64")),
+            response_mime_path=str(tts_config.get("response_mime_path", "mime_type")),
+        )
+    raise RuntimeError(f"Unsupported TTS provider: {provider}")
