@@ -72,6 +72,7 @@ const clientSessionId = ensureSessionId();
 let micVisualizer = null;
 let ttsVisualizer = null;
 let radarVisualizer = null;
+let ttsAudioObjectUrl = null;
 
 class AudioVisualizer {
   constructor(canvasId, type = "mic") {
@@ -335,6 +336,11 @@ function init() {
   });
   ttsPlayer.addEventListener("ended", () => {
     ttsVisualizer.stop();
+  });
+  ttsPlayer.addEventListener("error", () => {
+    const error = ttsPlayer.error;
+    const code = error?.code ? `错误码 ${error.code}` : "未知错误";
+    showError(`语音回答加载失败：${code}。可以刷新后重试，或先查看文字回答。`);
   });
 
   void loadHealth();
@@ -857,11 +863,38 @@ function renderAudioOutput(audioOutput) {
   if (!audioBase64) {
     player.hidden = true;
     player.removeAttribute("src");
+    revokeTtsAudioObjectUrl();
     return;
   }
   const mimeType = audioOutput.mime_type || "audio/wav";
-  player.src = `data:${mimeType};base64,${audioBase64}`;
-  player.hidden = false;
+  try {
+    revokeTtsAudioObjectUrl();
+    const blob = base64ToBlob(audioBase64, mimeType);
+    ttsAudioObjectUrl = URL.createObjectURL(blob);
+    player.src = ttsAudioObjectUrl;
+    player.hidden = false;
+    player.load();
+  } catch (error) {
+    player.hidden = true;
+    player.removeAttribute("src");
+    showError(`语音回答准备失败：${error.message}`);
+  }
+}
+
+function revokeTtsAudioObjectUrl() {
+  if (ttsAudioObjectUrl) {
+    URL.revokeObjectURL(ttsAudioObjectUrl);
+    ttsAudioObjectUrl = null;
+  }
+}
+
+function base64ToBlob(base64, mimeType) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: mimeType });
 }
 
 function resetStageRail() {
