@@ -1,20 +1,38 @@
-# 运行手册
+# ShipVoice 运行手册
 
-## 1. 默认 mock 演示
+## 1. 启动本地真实链路应用
 
 ```powershell
-python run_demo.py
+.\scripts\start_shipvoice_app.ps1 -Mode real
 ```
 
-打开：
+默认地址：
 
 ```text
-http://127.0.0.1:8010
+http://127.0.0.1:8022
 ```
 
-面板会调用本地 `/api/run`，默认使用 mock ASR、mock LLM、mock TTS，但 RAG 检索已经使用结构化知识库索引。
+## 2. 准备真实 provider 配置
 
-## 2. 构建知识库索引
+先准备：
+
+```powershell
+Copy-Item configs\runtime.real.env.example configs\runtime.real.env
+```
+
+或：
+
+```powershell
+Copy-Item configs\runtime.lora.env.example configs\runtime.real.env
+```
+
+确认 ASR、LLM、TTS 端点可用后启动：
+
+```powershell
+.\scripts\start_shipvoice_app.ps1 -Mode real
+```
+
+## 3. 构建知识库索引
 
 ```powershell
 python scripts\build_knowledge_index.py
@@ -32,79 +50,82 @@ data\knowledge\ship_safety_corpus.jsonl
 data\knowledge\ship_safety_index.json
 ```
 
-## 3. 检索评测
+## 4. 检索评测
 
 ```powershell
 python scripts\evaluate_retrieval.py
 ```
 
-当前目标：固定测试集中有明确答案来源的问题，`hit@3` 必须全中。
-
-## 4. 单条问题调试
+## 5. 单条问题调试
 
 ```powershell
 python scripts\run_single.py "舾装阶段管路试压有哪些安全风险？" --mode full
 ```
 
-输出包括转写、门控、证据、回答和延迟指标。
-
-## 5. 切换真实 OpenAI-compatible LLM
-
-适用于 Ollama、vLLM、LM Studio、OpenAI-compatible 云服务。
-
-### Ollama 示例
+## 6. 真实链路检查
 
 ```powershell
-$env:SHIPVOICE_LLM_PROVIDER="ollama"
-$env:SHIPVOICE_OPENAI_BASE_URL="http://127.0.0.1:11434/v1"
-$env:SHIPVOICE_LLM_MODEL="qwen2.5:7b-instruct"
-python run_demo.py
+python scripts\check_real_service_chain.py --env-file configs\runtime.real.env --sample-id A001 --require-lora
 ```
 
-### vLLM 示例
+最终验收一键脚本：
 
 ```powershell
-$env:SHIPVOICE_LLM_PROVIDER="vllm"
-$env:SHIPVOICE_OPENAI_BASE_URL="http://127.0.0.1:8000/v1"
-$env:SHIPVOICE_LLM_MODEL="Qwen/Qwen2.5-7B-Instruct"
-python run_demo.py
-```
-
-### 远程 API 示例
-
-```powershell
-$env:SHIPVOICE_LLM_PROVIDER="openai_compatible"
-$env:SHIPVOICE_OPENAI_BASE_URL="https://your-provider.example.com/v1"
-$env:SHIPVOICE_LLM_MODEL="your-model-name"
-$env:SHIPVOICE_OPENAI_API_KEY="不要把 key 写进代码"
-python run_demo.py
-```
-
-如果真实 LLM 服务不可用，Provider 会自动回退到 mock 回答，保证演示面板不崩。
-
-## 6. 生成 SFT 种子数据
-
-```powershell
-python scripts\generate_sft_seed.py
+powershell -ExecutionPolicy Bypass -File scripts\run_lora_final_validation.ps1 -EnvFile configs\runtime.real.env -SampleId A001
 ```
 
 输出：
 
 ```text
-data\training\sft_seed.jsonl
+results\real_chain_smoke.json
 ```
 
-这是后续 Qwen LoRA/QLoRA 的种子数据，不是最终训练集。最终训练集需要继续扩展到 1000-3000 条领域 QA。
+检查项包括：
 
-## 7. 当前一键验证
+1. ASR `/health`
+2. TTS `/health`
+3. LLM `/v1/models` 与 `/health`，确认 ShipVoice LoRA adapter 已加载
+4. 一条真实录音是否能跑通
+5. 本地 pipeline 是否真的走了真实 provider
+
+## 7. 全项目 quick validation
 
 ```powershell
 python scripts\validate_project.py --quick
 ```
 
-完整 benchmark：
+这一步只做结构、数据、评测脚本和编译检查，不调用真实 ASR/LLM/TTS。
+
+## 8. 全项目 full validation
 
 ```powershell
 python scripts\validate_project.py --full
 ```
 
+真实服务已经全部在线时，再运行：
+
+```powershell
+python scripts\validate_project.py --quick --with-services
+```
+
+## 9. 容器方式启动
+
+```powershell
+docker compose -f docker-compose.app.yml up --build
+```
+
+## 10. 远程 GPU 服务
+
+ASR / TTS：
+
+```bash
+bash remote/start_full_lora_stack.sh /root/autodl-tmp/shipvoice
+bash remote/stop_full_lora_stack.sh /root/autodl-tmp/shipvoice
+```
+
+ShipVoice LoRA LLM：
+
+```bash
+bash remote/start_lora_llm.sh /root/autodl-tmp/shipvoice
+bash remote/stop_lora_llm.sh /root/autodl-tmp/shipvoice
+```

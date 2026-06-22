@@ -5,14 +5,12 @@
     "first_audio_pass": 3000,
     "total_response_pass": 8000
   },
-  "mock_latency_ms": {
-    "vad": 120,
-    "asr": 680,
-    "retrieval": 160,
-    "llm_first_token": 420,
-    "llm_chunk": 260,
-    "tts_first_audio": 520,
-    "tts_chunk": 360
+  "retrieval_latency_budget_ms": 160,
+  "asr": {
+    "provider": "http_json",
+    "endpoint": "http://127.0.0.1:18001/asr",
+    "timeout_s": 60,
+    "response_text_path": "text"
   },
   "rag": {
     "provider": "hybrid",
@@ -21,11 +19,19 @@
     "top_k": 3
   },
   "llm": {
-    "provider": "mock",
-    "openai_base_url": "http://127.0.0.1:11434/v1",
-    "model": "qwen2.5:7b-instruct",
+    "provider": "openai_compatible",
+    "openai_base_url": "http://127.0.0.1:18034/v1",
+    "model": "shipvoice-qwen2.5-7b-lora",
     "api_key_env": "SHIPVOICE_OPENAI_API_KEY",
     "timeout_s": 60
+  },
+  "tts": {
+    "provider": "http_json",
+    "endpoint": "http://127.0.0.1:18002/tts",
+    "timeout_s": 60,
+    "voice": "zh-CN-XiaoxiaoNeural",
+    "response_audio_path": "audio_base64",
+    "response_mime_path": "mime_type"
   },
   "domain_terms": [
     "舾装",
@@ -106,6 +112,10 @@
     "旅游",
     "考研",
     "写代码",
+    "爱情诗",
+    "浪漫",
+    "写诗",
+    "写一首",
     "电影",
     "彩票"
   ]

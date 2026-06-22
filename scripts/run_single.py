@@ -44,11 +44,15 @@ async def main() -> None:
     print(f"门控：{result.gate.label} / {result.gate.reason}")
     print("证据：")
     for idx, hit in enumerate(result.evidence, start=1):
-        print(f"  {idx}. {hit.title} score={hit.score}")
+        citation = hit.record_id or f"E{idx}"
+        terms = ",".join(hit.matched_terms) if hit.matched_terms else "-"
+        print(
+            f"  {idx}. [{citation}] {hit.title} "
+            f"risk={hit.risk_level} confidence={hit.confidence:.2f} score={hit.score} terms={terms}"
+        )
     print(f"回答：{result.answer}")
     print(f"指标：first_audio={result.metrics.first_audio_ms}ms total={result.metrics.total_ms}ms")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-

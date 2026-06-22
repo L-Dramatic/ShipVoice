@@ -1,0 +1,40 @@
+{
+  "num_samples": 3,
+  "samples": [
+    {
+      "sample_id": "A001",
+      "transcript": "密闭舱室动火作业前要检查什么？",
+      "tts_provider": "http_json_tts",
+      "first_audio_ms": 16876,
+      "total_ms": 16876,
+      "asr_ms": 129,
+      "retrieval_ms": 165,
+      "tts_first_audio_ms": 16461
+    },
+    {
+      "sample_id": "A002",
+      "transcript": "舾装阶段管路试压有哪些安全风险？",
+      "tts_provider": "http_json_tts",
+      "first_audio_ms": 13761,
+      "total_ms": 13761,
+      "asr_ms": 150,
+      "retrieval_ms": 166,
+      "tts_first_audio_ms": 13324
+    },
+    {
+      "sample_id": "A003",
+      "transcript": "船体分段吊装前，需要确认哪些事项？",
+      "tts_provider": "http_json_tts",
+      "first_audio_ms": 15079,
+      "total_ms": 15080,
+      "asr_ms": 195,
+      "retrieval_ms": 166,
+      "tts_first_audio_ms": 14597
+    }
+  ],
+  "avg_first_audio_ms": 15238.67,
+  "avg_total_ms": 15239.0,
+  "avg_asr_ms": 158.0,
+  "avg_retrieval_ms": 165.67,
+  "avg_tts_first_audio_ms": 14794.0
+}

@@ -1,0 +1,19 @@
+{
+  "total": 8,
+  "allowed_cases": 5,
+  "blocked_cases": 3,
+  "gate_allowed_accuracy": 1.0,
+  "blocked_no_citation_rate": 1.0,
+  "citation_title_hit_at_1": 1.0,
+  "citation_title_hit_at_3": 1.0,
+  "citation_id_hit_at_1": 1.0,
+  "citation_id_hit_at_3": 1.0,
+  "top1_schema_completeness": 1.0,
+  "citation_schema_completeness": 1.0,
+  "answer_citation_id_rate": 1.0,
+  "avg_top1_confidence": 1.0,
+  "avg_total_ms": 8786,
+  "total_citations": 15,
+  "complete_citations": 15,
+  "mode": "full"
+}

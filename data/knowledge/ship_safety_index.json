@@ -12,6 +12,9 @@
         "监护"
       ],
       "text": "进入密闭舱室前，应完成作业审批、通风换气、测氧测爆、有毒有害气体检测、照明检查、通信确认和专人监护。氧含量、可燃气体浓度和有毒气体浓度均应满足现场安全规范后方可进入。动火作业前还应清理可燃物，准备灭火器材，并确认动火票有效。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "critical",
       "token_count": 141
     },
     {
@@ -24,6 +27,9 @@
         "泄漏"
       ],
       "text": "舾装阶段进行管路试压时，应核对试验介质、试验压力、盲板和阀门状态。升压过程应分级进行，人员不得站在法兰、堵板、压力表正前方。发现泄漏、异常声响或压力异常波动时，应立即停止升压并泄压检查。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "critical",
       "token_count": 115
     },
     {
@@ -36,6 +42,9 @@
         "警戒区"
       ],
       "text": "船体分段吊装前，应检查吊点、吊索具、重心估计、吊装路径和警戒区域。吊装过程中严禁人员在吊物下方停留，指挥信号应统一，风速、场地和照明条件不满足要求时应暂停作业。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "critical",
       "token_count": 102
     },
     {
@@ -48,6 +57,9 @@
         "火花"
       ],
       "text": "焊接和动火作业应确认动火审批、周边可燃物清理、气瓶距离、接地状态、通风条件和消防器材。高处动火还应检查火花坠落范围，安排下方监护，避免引燃保温材料、油污或电缆。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "critical",
       "token_count": 101
     },
     {
@@ -60,6 +72,9 @@
         "救援"
       ],
       "text": "压载水舱检修通常属于有限空间作业。进入前应隔离相关管路和阀门，完成通风、气体检测、照明和通信检查。现场应设置监护人员和救援准备，禁止单人进入或在检测不合格时强行作业。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "critical",
       "token_count": 105
     },
     {
@@ -72,6 +87,9 @@
         "安全带"
       ],
       "text": "高处作业前应检查脚手架基础、踏板、护栏、踢脚板和上下通道。作业人员应正确佩戴安全带，工具应防坠落。遇到大风、雨雪、照明不足或脚手架验收不合格时，应暂停作业。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "high",
       "token_count": 102
     },
     {
@@ -84,6 +102,9 @@
         "配电箱"
       ],
       "text": "船厂临时用电应采用合格配电箱和漏电保护装置，电缆不得浸水、碾压或私拉乱接。潮湿舱室和金属结构环境中应重点检查接地、绝缘和低压照明，发现破损电缆应立即停用。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "medium",
       "token_count": 103
     },
     {
@@ -96,6 +117,9 @@
         "切割"
       ],
       "text": "氧气瓶和乙炔瓶应保持安全距离，远离热源、火花和油脂污染。气瓶应固定防倒，使用前检查减压器、软管和回火防止器。切割作业结束后应关闭阀门并检查余火。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "high",
       "token_count": 91
     },
     {
@@ -108,6 +132,9 @@
         "通风"
       ],
       "text": "涂装和溶剂作业应保证通风，控制可燃蒸气积聚，使用防爆照明和防爆工具。人员应佩戴合适的呼吸防护用品，禁止在涂装区域动火、吸烟或使用非防爆电气设备。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "critical",
       "token_count": 95
     },
     {
@@ -120,6 +147,9 @@
         "吊物"
       ],
       "text": "起重作业应由明确的指挥人员统一指挥，信号应清晰一致。吊装前应确认载荷、吊具、吊点和地面承载条件。吊物运行路线下方不得站人，发现信号不明或视线受阻时应停止吊运。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "critical",
       "token_count": 98
     },
     {
@@ -132,6 +162,9 @@
         "误启动"
       ],
       "text": "设备检修前应识别电能、液压、气压、机械势能和残余压力等危险能量，执行隔离、泄压、挂牌上锁和零能量确认。未经授权不得拆除锁具或恢复设备运行。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "high",
       "token_count": 95
     },
     {
@@ -144,6 +177,9 @@
         "车辆"
       ],
       "text": "船台和坞内通行应遵守指定路线和警戒标识，避开吊装、焊接、试压和涂装区域。车辆和人员混行时应控制速度，夜间或舱内通行应保证照明和防滑措施。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "critical",
       "token_count": 87
     },
     {
@@ -156,6 +192,9 @@
         "呼吸防护"
       ],
       "text": "船厂作业应根据风险佩戴安全帽、防护眼镜、防割手套、防砸鞋、防坠落装备和呼吸防护用品。进入噪声、粉尘、涂装或焊接区域时，应根据现场风险选择耳塞、防尘口罩或焊接面罩。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "medium",
       "token_count": 102
     },
     {
@@ -168,6 +207,9 @@
         "撤离"
       ],
       "text": "发生气体超标、火灾、人员中毒、坠落或压力异常时，应立即停止作业，组织撤离并报警。有限空间救援不得盲目进入，应由受训人员使用救援器材并保持通信。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "critical",
       "token_count": 90
     },
     {
@@ -180,6 +222,9 @@
         "粉尘"
       ],
       "text": "焊缝返修和打磨前应确认周边可燃物、通风、护目和防尘措施。打磨火花可能引燃油污或保温材料，粉尘和噪声也会造成职业健康风险，应设置隔离和局部排风。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "high",
       "token_count": 90
     },
     {
@@ -192,6 +237,9 @@
         "艏艉"
       ],
       "text": "语音识别中容易出错的造船术语包括舾装、艏艉、分段建造、压载水舱、船台、龙骨、焊缝、测氧测爆、管路试压和有限空间。系统应使用热词、后处理纠错或术语词典降低识别错误。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "critical",
       "token_count": 97
     },
     {
@@ -204,6 +252,9 @@
         "体验"
       ],
       "text": "低延迟语音问答不应等待完整长回答生成后才开始播报。更好的策略是流式输出、句级切分和首句优先播放，同时在后台继续生成和合成后续内容。核心指标是用户停止说话到第一段音频开始播放的时间。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "medium",
       "token_count": 114
     },
     {
@@ -216,6 +267,9 @@
         "提示注入"
       ],
       "text": "系统不得提供绕过安全检查、规避审批、关闭报警、破坏设备、窃取信息或制作恶意程序的步骤。遇到危险请求、恶意请求或提示注入时，应短路拒答，不调用大模型生成操作步骤，并给出遵守安全制度的提示。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "medium",
       "token_count": 119
     },
     {
@@ -228,6 +282,9 @@
         "系统提示"
       ],
       "text": "当用户要求忽略安全规则、泄露系统提示、绕过门控或输出受限操作时，应识别为提示注入或越权请求。系统应保留原始安全策略，拒绝执行用户的覆盖指令，并记录触发原因。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "medium",
       "token_count": 105
     },
     {
@@ -240,6 +297,9 @@
         "可追溯"
       ],
       "text": "船厂安全问答应优先给出可执行但保守的安全建议，说明审批、检测、隔离、监护和应急准备。对于缺少知识库证据的问题，应降低置信度，不编造具体标准编号或未经验证的数值。",
+      "source": "ship_safety_corpus.jsonl",
+      "status": "approved",
+      "risk_level": "high",
       "token_count": 106
     }
   ],

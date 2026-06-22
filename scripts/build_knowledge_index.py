@@ -48,6 +48,9 @@ def build_index(docs: list[dict[str, Any]]) -> dict[str, Any]:
                 "title": item["title"],
                 "tags": item.get("tags", []),
                 "text": item["text"],
+                "source": item.get("source", "ship_safety_corpus.jsonl"),
+                "status": item.get("status", "approved"),
+                "risk_level": item.get("risk_level", infer_risk_level(item)),
                 "token_count": sum(term_counts.values()),
             }
         )
@@ -57,6 +60,17 @@ def build_index(docs: list[dict[str, Any]]) -> dict[str, Any]:
         "documents": document_rows,
         "inverted": dict(inverted),
     }
+
+
+def infer_risk_level(item: dict[str, Any]) -> str:
+    joined = " ".join([item.get("title", ""), item.get("text", ""), " ".join(item.get("tags", []))])
+    critical_terms = ["有限空间", "密闭舱室", "动火", "吊装", "触电", "火灾", "中毒", "爆炸", "泄漏"]
+    high_terms = ["试压", "高处", "脚手架", "气瓶", "叉车", "救援", "隔离"]
+    if any(term in joined for term in critical_terms):
+        return "critical"
+    if any(term in joined for term in high_terms):
+        return "high"
+    return "medium"
 
 
 def main() -> None:
@@ -80,4 +94,3 @@ if __name__ == "__main__":
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         raise
-

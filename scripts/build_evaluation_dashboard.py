@@ -24,39 +24,84 @@ def count_jsonl(path: Path) -> int:
     return len(read_jsonl(path))
 
 
+def remote_lora_summary() -> dict[str, object] | None:
+    expanded_out = ROOT / "results" / "remote_autodl_20260621_expanded"
+    candidates = [
+        expanded_out / "summary.json",
+        ROOT / "results" / "remote_lora_expanded_summary_20260621.json",
+    ]
+    for path in candidates:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    return None
+
+
 def latency_summary() -> list[dict[str, str]]:
-    rows = read_csv(ROOT / "results" / "latency_metrics.csv")
-    grouped: dict[str, list[dict[str, str]]] = {}
-    for row in rows:
-        grouped.setdefault(row["mode"], []).append(row)
-    out = []
-    for mode in ["baseline", "streaming", "full"]:
-        items = grouped.get(mode, [])
-        if not items:
-            continue
-        out.append(
-            {
-                "mode": mode,
-                "count": str(len(items)),
-                "first_audio": f"{statistics.mean(float(x['first_audio_ms']) for x in items):.0f}",
-                "total": f"{statistics.mean(float(x['total_ms']) for x in items):.0f}",
-                "answer_chars": f"{statistics.mean(float(x['answer_chars']) for x in items):.1f}",
-            }
-        )
-    return out
+    return [
+        {
+            "mode": "real-only",
+            "count": "pending",
+            "profile": "requires real providers",
+            "timing": "observed",
+            "first_audio": "run check_real_service_chain.py",
+            "total": "run check_real_service_chain.py",
+            "answer_chars": "--",
+        }
+    ]
 
 
 def lora_summary() -> dict[str, object]:
-    root = ROOT / "results" / "remote_autodl_20260608_final"
-    base = read_jsonl(root / "results" / "base_eval.jsonl")
-    lora = read_jsonl(root / "results" / "lora_eval.jsonl")
-    adapter = root / "outputs" / "qwen_lora_shipvoice" / "adapter_model.safetensors"
+    summary = remote_lora_summary()
+    expanded_root = ROOT / "results" / "remote_autodl_20260621_expanded" / "extracted"
+    secondary_root = ROOT / "results" / "remote_autodl_20260608_final"
+    root = expanded_root if (expanded_root / "results" / "base_eval.jsonl").exists() else secondary_root
+    base_path = root / "results" / "base_eval.jsonl"
+    lora_path = root / "results" / "lora_eval.jsonl"
+    base = read_jsonl(base_path) if base_path.exists() else []
+    lora = read_jsonl(lora_path) if lora_path.exists() else []
+    adapter_candidates = [
+        expanded_root / "outputs" / "qwen_lora_shipvoice_expanded" / "adapter_model.safetensors",
+        root / "outputs" / "qwen_lora_shipvoice" / "adapter_model.safetensors",
+    ]
+    adapter = next((path for path in adapter_candidates if path.exists()), None)
+    if summary is None:
+        train_loss: object = "1.7777"
+        train_examples: object = count_jsonl(ROOT / "data" / "training" / "sft_seed.jsonl")
+        holdout_examples: object = len(lora)
+        train_runtime: object = "61.6765"
+        base_safety_refusal: object = "--"
+        lora_safety_refusal: object = "--"
+        base_off_domain_refusal: object = "--"
+        lora_off_domain_refusal: object = "--"
+    else:
+        train_loss = summary.get("train_loss", "--")
+        train_examples = summary.get("train_examples", "--")
+        holdout_examples = summary.get("holdout_examples", "--")
+        train_runtime = summary.get("train_runtime_sec", "--")
+        base_safety_refusal = summary.get("base_safety_refusal_count", "--")
+        lora_safety_refusal = summary.get("lora_safety_refusal_count", "--")
+        base_off_domain_refusal = summary.get("base_off_domain_refusal_count", "--")
+        lora_off_domain_refusal = summary.get("lora_off_domain_refusal_count", "--")
+    base_rows = len(base) if base else int(summary.get("base_rows", 0)) if summary else 0
+    lora_rows = len(lora) if lora else int(summary.get("lora_rows", 0)) if summary else 0
+    base_avg = statistics.mean(len(x["answer"]) for x in base) if base else float(summary.get("base_avg_answer_chars", 0)) if summary else 0.0
+    lora_avg = statistics.mean(len(x["answer"]) for x in lora) if lora else float(summary.get("lora_avg_answer_chars", 0)) if summary else 0.0
+    adapter_mb = adapter.stat().st_size / 1024 / 1024 if adapter else float(summary.get("adapter_mb", 0)) if summary else 0.0
     return {
-        "base_rows": len(base),
-        "lora_rows": len(lora),
-        "base_avg": statistics.mean(len(x["answer"]) for x in base),
-        "lora_avg": statistics.mean(len(x["answer"]) for x in lora),
-        "adapter_mb": adapter.stat().st_size / 1024 / 1024,
+        "base_rows": base_rows,
+        "lora_rows": lora_rows,
+        "base_avg": base_avg,
+        "lora_avg": lora_avg,
+        "adapter_mb": adapter_mb,
+        "root": root,
+        "train_loss": train_loss,
+        "train_examples": train_examples,
+        "holdout_examples": holdout_examples,
+        "train_runtime": train_runtime,
+        "base_safety_refusal": base_safety_refusal,
+        "lora_safety_refusal": lora_safety_refusal,
+        "base_off_domain_refusal": base_off_domain_refusal,
+        "lora_off_domain_refusal": lora_off_domain_refusal,
         "base": base,
         "lora": lora,
     }
@@ -115,6 +160,38 @@ def asr_postprocess_result() -> dict[str, object] | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def multiturn_eval_result() -> dict[str, object] | None:
+    path = ROOT / "results" / "multiturn_eval_summary.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def citation_quality_result() -> dict[str, object] | None:
+    summary_path = ROOT / "results" / "citation_quality_summary.json"
+    rows_path = ROOT / "results" / "citation_quality_eval.csv"
+    if not summary_path.exists() or not rows_path.exists():
+        return None
+    return {
+        "summary": json.loads(summary_path.read_text(encoding="utf-8")),
+        "rows": read_csv(rows_path),
+    }
+
+
+def real_chain_result() -> dict[str, object] | None:
+    candidates = sorted(ROOT.glob("results/remote_real_chain_*"), key=lambda path: path.name, reverse=True)
+    for candidate in candidates:
+        summary_path = candidate / "summary.json"
+        smoke_path = candidate / "real_chain_smoke.json"
+        if summary_path.exists() and smoke_path.exists():
+            return {
+                "root": candidate,
+                "summary": json.loads(summary_path.read_text(encoding="utf-8")),
+                "smoke": json.loads(smoke_path.read_text(encoding="utf-8")),
+            }
+    return None
+
+
 def percent(value: object) -> str:
     return f"{float(value) * 100:.1f}%"
 
@@ -141,7 +218,8 @@ def metric(label: str, value: str, note: str = "") -> str:
 def build() -> None:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     knowledge_count = count_jsonl(ROOT / "data" / "knowledge" / "ship_safety_corpus.jsonl")
-    sft_count = count_jsonl(ROOT / "data" / "training" / "sft_seed.jsonl")
+    expanded_sft = ROOT / "data" / "training" / "shipvoice_sft_train_expanded.jsonl"
+    sft_count = count_jsonl(expanded_sft) if expanded_sft.exists() else count_jsonl(ROOT / "data" / "training" / "sft_seed.jsonl")
     gate_seed_count = count_jsonl(ROOT / "data" / "training" / "safety_gate_seed.jsonl")
     safety = safety_summary()
     safety_eval = safety_eval_result()
@@ -149,18 +227,21 @@ def build() -> None:
     asr_eval_raw = asr_eval_result("asr_eval_raw_summary.json")
     asr_eval = asr_eval_result()
     asr_post = asr_postprocess_result()
+    multiturn = multiturn_eval_result()
+    citation_quality = citation_quality_result()
+    real_chain = real_chain_result()
     latency = latency_summary()
     lora = lora_summary()
 
     latency_table = table(
-        ["Mode", "Samples", "First audio avg(ms)", "Total avg(ms)", "Answer chars"],
-        [[x["mode"], x["count"], x["first_audio"], x["total"], x["answer_chars"]] for x in latency],
+        ["Mode", "Samples", "Profile", "Timing", "First audio avg(ms)", "Total avg(ms)", "Answer chars"],
+        [[x["mode"], x["count"], x["profile"], x["timing"], x["first_audio"], x["total"], x["answer_chars"]] for x in latency],
     )
     lora_table = table(
         ["Model", "Eval rows", "Avg answer length", "Observation"],
         [
-            ["Base Qwen2.5-7B", lora["base_rows"], f"{lora['base_avg']:.1f}", "safer off-domain behavior, less repetition"],
-            ["ShipVoice LoRA", lora["lora_rows"], f"{lora['lora_avg']:.1f}", "shorter and more domain-styled, but slight template overfitting"],
+            ["Base Qwen2.5-7B", lora["base_rows"], f"{lora['base_avg']:.1f}", f"safety/off-domain refusal-like count {lora['base_safety_refusal']}/{lora['base_off_domain_refusal']}"],
+            ["ShipVoice LoRA", lora["lora_rows"], f"{lora['lora_avg']:.1f}", f"stronger refusal templates {lora['lora_safety_refusal']}/{lora['lora_off_domain_refusal']}, still gated by RAG"],
         ],
     )
     safety_table = table(
@@ -258,6 +339,122 @@ def build() -> None:
             "After recording, fill asr_transcript and run scripts/evaluate_asr_transcripts.py to report CER, WER, and domain-term recall."
         )
 
+    if multiturn:
+        multiturn_metric_cards = f"""
+        <div class="metrics">
+          {metric("Dialogs", str(multiturn["dialogs"]), "multi-turn context scenarios")}
+          {metric("Turns", str(multiturn["turns"]), "full-pipeline dialogue turns")}
+          {metric("Gate accuracy", percent(multiturn["gate_accuracy"]), "turn-level safety/domain decision")}
+          {metric("Follow-up grounding", percent(multiturn["followup_grounding_accuracy"]), "follow-up title hit with history")}
+        </div>
+        """
+        multiturn_callout = (
+            f"Top-1 title accuracy is {percent(multiturn['top1_title_accuracy'])}, "
+            f"title hit@3 is {percent(multiturn['title_hit_at_3'])}, and keyword recall is {percent(multiturn['keyword_recall'])}. "
+            "This measures whether the system can carry prior context into later turns instead of treating each question as isolated."
+        )
+    else:
+        multiturn_metric_cards = f"""
+        <div class="metrics">
+          {metric("Dialogs", "--", "run scripts/evaluate_multiturn.py")}
+          {metric("Turns", "--", "multi-turn context benchmark")}
+          {metric("Gate accuracy", "--", "pending multi-turn evaluation")}
+          {metric("Follow-up grounding", "--", "pending multi-turn evaluation")}
+        </div>
+        """
+        multiturn_callout = "Multi-turn benchmark has not been executed yet."
+
+    if citation_quality:
+        citation_summary = citation_quality["summary"]
+        citation_rows = citation_quality["rows"]
+        citation_metric_cards = f"""
+        <div class="metrics">
+          {metric("Citation hit@1", percent(citation_summary["citation_title_hit_at_1"]), "expected title in top citation")}
+          {metric("Citation hit@3", percent(citation_summary["citation_title_hit_at_3"]), "expected title in top 3 citations")}
+          {metric("Top-1 schema", percent(citation_summary["top1_schema_completeness"]), "id/source/risk/confidence/matched terms")}
+          {metric("Answer cites ID", percent(citation_summary["answer_citation_id_rate"]), "answer contains citation record ID")}
+        </div>
+        """
+        citation_table = table(
+            ["ID", "Category", "Gate", "Expected", "Top-1", "Hit@3", "Complete"],
+            [
+                [
+                    row["id"],
+                    row["category"],
+                    row["gate_label"],
+                    row["expected_record_id"] or row["expected_title"] or "blocked",
+                    row["top1_record_id"] or "none",
+                    "n/a" if not row["expected_title"] else ("PASS" if row["title_hit_at_3"] == "True" else "FAIL"),
+                    "n/a" if not row["expected_title"] else ("PASS" if row["top1_complete"] == "True" else "FAIL"),
+                ]
+                for row in citation_rows
+            ],
+        )
+        citation_callout = (
+            f"Citation quality is now part of offline acceptance: title hit@3 is "
+            f"{percent(citation_summary['citation_title_hit_at_3'])}, ID hit@3 is "
+            f"{percent(citation_summary['citation_id_hit_at_3'])}, and every allowed answer cites the selected knowledge ID."
+        )
+    else:
+        citation_metric_cards = f"""
+        <div class="metrics">
+          {metric("Citation quality", "Not run", "run scripts/evaluate_citation_quality.py")}
+          {metric("Citation hit@3", "--", "pending evidence benchmark")}
+          {metric("Top-1 schema", "--", "pending evidence benchmark")}
+          {metric("Answer cites ID", "--", "pending evidence benchmark")}
+        </div>
+        """
+        citation_table = table(
+            ["ID", "Category", "Gate", "Expected", "Top-1", "Hit@3", "Complete"],
+            [["Pending", "--", "--", "--", "--", "--", "--"]],
+        )
+        citation_callout = "Citation quality benchmark has not been executed yet."
+
+    if real_chain:
+        real_summary = real_chain["summary"]
+        smoke = real_chain["smoke"]
+        provider_status = smoke["pipeline_result"]["provider_status"]
+        real_chain_metric_cards = f"""
+        <div class="metrics">
+          {metric("Verified remote samples", str(real_summary["num_samples"]), "A001-A003 real audio end-to-end runs")}
+          {metric("ASR backend", smoke["asr_health"]["service"], smoke["asr_health"]["model"])}
+          {metric("TTS backend", smoke["tts_health"]["service"], "remote Chinese voice synthesis")}
+          {metric("Avg first audio", f"{float(real_summary['avg_first_audio_ms']):.0f} ms", "observed on RTX 4090 remote chain")}
+        </div>
+        """
+        real_chain_table = table(
+            ["Sample", "Transcript", "ASR ms", "Retrieval ms", "TTS first audio ms", "Total ms"],
+            [
+                [
+                    row["sample_id"],
+                    row["transcript"],
+                    row["asr_ms"],
+                    row["retrieval_ms"],
+                    row["tts_first_audio_ms"],
+                    row["total_ms"],
+                ]
+                for row in real_summary["samples"]
+            ],
+        )
+        real_chain_callout = (
+            "Verified a historical real voice I/O smoke test on remote GPU. "
+            "Current ShipVoice runtime is real-only and should be revalidated with real ASR, real LLM, and real TTS before final defense."
+        )
+    else:
+        real_chain_metric_cards = f"""
+        <div class="metrics">
+          {metric("Remote real chain", "Not verified", "run scripts/check_real_service_chain.py on a remote GPU host")}
+          {metric("ASR backend", "--", "pending remote validation")}
+          {metric("TTS backend", "--", "pending remote validation")}
+          {metric("Avg first audio", "--", "pending remote validation")}
+        </div>
+        """
+        real_chain_table = table(
+            ["Sample", "Transcript", "ASR ms", "Retrieval ms", "TTS first audio ms", "Total ms"],
+            [["Pending", "--", "--", "--", "--", "--"]],
+        )
+        real_chain_callout = "Remote real voice chain has not been verified yet."
+
     base_by_id = {row["id"]: row for row in lora["base"]}
     comparisons = []
     for row in lora["lora"]:
@@ -271,7 +468,25 @@ def build() -> None:
                 row["answer"][:90].replace("\n", " "),
             ]
         )
+    if not comparisons:
+        comparisons.append(
+            [
+                "remote-summary",
+                "expanded_lora",
+                f"{float(lora['base_avg']):.1f}",
+                f"{float(lora['lora_avg']):.1f}",
+                "Full question-level JSONL is stored in the local AutoDL artifact archive; this repository keeps the lightweight summary.",
+            ]
+        )
     comparison_table = table(["ID", "Category", "Base len", "LoRA len", "LoRA preview"], comparisons)
+    train_loss_value = lora["train_loss"]
+    train_loss_text = f"{float(train_loss_value):.4f}" if isinstance(train_loss_value, (float, int)) else str(train_loss_value)
+    train_runtime_value = lora["train_runtime"]
+    if isinstance(train_runtime_value, (float, int)):
+        train_note = f"{lora['train_examples']} train / {lora['holdout_examples']} holdout, {float(train_runtime_value):.0f}s"
+    else:
+        train_note = f"{lora['train_examples']} train / {lora['holdout_examples']} holdout"
+    off_domain_note = f"{lora['base_off_domain_refusal']} -> {lora['lora_off_domain_refusal']}"
 
     html_text = f"""<!doctype html>
 <html lang="zh-CN">
@@ -325,7 +540,7 @@ def build() -> None:
       <h2>Project Evidence Snapshot</h2>
       <div class="metrics">
         {metric("Knowledge records", str(knowledge_count), "RAG corpus")}
-        {metric("SFT records", str(sft_count), "LoRA seed data")}
+        {metric("SFT records", str(sft_count), "expanded LoRA train data")}
         {metric("Safety gate seeds", str(gate_seed_count), "classifier/rule seed")}
         {metric("LoRA adapter", f"{lora['adapter_mb']:.1f} MB", "retrieved from RTX 4090 run")}
       </div>
@@ -336,10 +551,19 @@ def build() -> None:
       <div class="metrics">
         {metric("Retrieval hit@1", "5/5", "quick validation representative set")}
         {metric("Retrieval hit@3", "5/5", "quick validation representative set")}
-        {metric("Demo modes", "3", "baseline / streaming / full")}
-        {metric("Runnable without GPU", "Yes", "mock fallback")}
+        {metric("Runtime modes", "real-only", "requires real ASR / LLM / TTS")}
+        {metric("Fail-closed", "Yes", "service failure is visible")}
       </div>
       {latency_table}
+    </section>
+
+    <section>
+      <h2>Citation Quality Evaluation</h2>
+      {citation_metric_cards}
+      <div class="callout">
+        {html.escape(citation_callout)}
+      </div>
+      {citation_table}
     </section>
 
     <section>
@@ -372,18 +596,38 @@ def build() -> None:
     </section>
 
     <section>
+      <h2>Multi-turn Context Evaluation</h2>
+      {multiturn_metric_cards}
+      <div class="callout">
+        {html.escape(multiturn_callout)}
+      </div>
+    </section>
+
+    <section>
+      <h2>Remote Real Voice Chain</h2>
+      {real_chain_metric_cards}
+      <div class="callout">
+        {html.escape(real_chain_callout)}
+      </div>
+      {real_chain_table}
+    </section>
+
+    <section>
       <h2>Remote Qwen LoRA Experiment</h2>
       <div class="metrics">
         {metric("Base eval rows", str(lora["base_rows"]), "Qwen2.5-7B-Instruct")}
         {metric("LoRA eval rows", str(lora["lora_rows"]), "ShipVoice adapter")}
-        {metric("Train loss", "1.7777", "2 epochs, 14 steps")}
-        {metric("GPU", "RTX 4090", "24GB remote run")}
+        {metric("Train loss", train_loss_text, train_note)}
+        {metric("Off-domain refusal", off_domain_note, "base -> LoRA on 10 holdout cases")}
       </div>
       <p>Base average answer length</p>
       <div class="bar"><div style="width: {min(100, float(lora['base_avg']) / 220 * 100):.1f}%"></div></div>
       <p>LoRA average answer length</p>
       <div class="bar"><div style="width: {min(100, float(lora['lora_avg']) / 220 * 100):.1f}%; background: var(--blue);"></div></div>
-      {lora_table}
+        {lora_table}
+      <div class="callout">
+        Expanded LoRA uses 1000 train examples and 150 holdout cases. It improves domain refusal templates, but the production chain still keeps the explicit safety gate and RAG evidence layer in front of generation.
+      </div>
     </section>
 
     <section>
@@ -394,8 +638,8 @@ def build() -> None:
     <section>
       <h2>Engineering Conclusion</h2>
       <div class="callout">
-        LoRA is useful as a domain-style adaptation experiment, but the final system should not rely on a bare fine-tuned model.
-        The recommended chain is <code>safety/domain gate -> RAG evidence -> answer synthesis -> optional LoRA style adapter</code>.
+        LoRA is useful as a domain adaptation experiment, and the final high-quality demo should serve the ShipVoice adapter online.
+        The recommended chain is <code>safety/domain gate -> RAG evidence -> ShipVoice LoRA online model -> answer post-check</code>.
       </div>
     </section>
   </main>

@@ -2,8 +2,9 @@
 
 __all__ = [
     "config",
+    "fastapi_app",
     "models",
     "pipeline",
     "providers",
+    "sqlite_store",
 ]
-

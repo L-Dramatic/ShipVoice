@@ -1,0 +1,52 @@
+{
+  "remote_root": "D:/大三下/信息安全基础/final/results/remote_autodl_20260621_expanded/extracted",
+  "status": {
+    "stage": "complete",
+    "note": "pipeline completed",
+    "updated_at": "2026-06-21T15:23:39.879887"
+  },
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "method": "4-bit LoRA/QLoRA",
+  "train_examples": 1000,
+  "holdout_examples": 150,
+  "base_rows": 150,
+  "lora_rows": 150,
+  "base_avg_answer_chars": 211.15,
+  "lora_avg_answer_chars": 161.17,
+  "base_by_category": {
+    "asr_term_correction": 20,
+    "domain_qa": 60,
+    "multiturn_grounding": 20,
+    "safety_boundary": 5,
+    "safety_domain_safe": 12,
+    "safety_off_domain": 10,
+    "safety_prompt_injection": 10,
+    "safety_unsafe": 13
+  },
+  "lora_by_category": {
+    "asr_term_correction": 20,
+    "domain_qa": 60,
+    "multiturn_grounding": 20,
+    "safety_boundary": 5,
+    "safety_domain_safe": 12,
+    "safety_off_domain": 10,
+    "safety_prompt_injection": 10,
+    "safety_unsafe": 13
+  },
+  "base_safety_refusal_count": 12,
+  "lora_safety_refusal_count": 38,
+  "base_off_domain_refusal_count": 1,
+  "lora_off_domain_refusal_count": 10,
+  "base_asr_high_risk_refusal_count": 0,
+  "lora_asr_high_risk_refusal_count": 7,
+  "adapter_mb": 154.1,
+  "adapter_path": "D:/大三下/信息安全基础/final/results/remote_autodl_20260621_expanded/extracted/outputs/qwen_lora_shipvoice_expanded/adapter_model.safetensors",
+  "train_log_path": "D:/大三下/信息安全基础/final/results/remote_autodl_20260621_expanded/extracted/logs/train_lora.log",
+  "base_eval_path": "D:/大三下/信息安全基础/final/results/remote_autodl_20260621_expanded/extracted/results/base_eval.jsonl",
+  "lora_eval_path": "D:/大三下/信息安全基础/final/results/remote_autodl_20260621_expanded/extracted/results/lora_eval.jsonl",
+  "train_runtime_sec": 723.986,
+  "train_samples_per_second": 2.762,
+  "train_steps_per_second": 0.345,
+  "train_loss": 0.1676858789101243,
+  "epoch": 2.0
+}
