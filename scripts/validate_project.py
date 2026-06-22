@@ -44,8 +44,12 @@ def main() -> None:
         run([sys.executable, "scripts/evaluate_multiturn.py"])
         run([sys.executable, "scripts/evaluate_citation_quality.py", "--fail-on-threshold"])
         run([sys.executable, "scripts/run_single.py", "密闭舱室动火作业前要检查什么？", "--mode", "full"])
-        run([sys.executable, "scripts/smoke_fastapi_backend.py"])
-        run([sys.executable, "scripts/check_real_service_chain.py", "--env-file", "configs/runtime.real.env", "--sample-id", "A001", "--require-lora"])
+        env_file = args.env_file or "configs/runtime.real.env"
+        smoke_command = [sys.executable, "scripts/smoke_fastapi_backend.py"]
+        if args.env_file:
+            smoke_command.extend(["--env-file", args.env_file])
+        run(smoke_command)
+        run([sys.executable, "scripts/check_real_service_chain.py", "--env-file", env_file, "--sample-id", "A001", "--require-lora"])
     else:
         print("\nLIVE SERVICE CHECKS SKIPPED")
         print("Run with --with-services after ASR, ShipVoice LoRA LLM, and TTS are online.")

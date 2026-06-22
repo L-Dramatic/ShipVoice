@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-06-22T07:39:26.421540+00:00",
+  "generated_at": "2026-06-22T09:47:46.914274+00:00",
   "git": {
     "branch": "codex/phase1-enterprise-backend",
-    "commit": "21c2db8",
+    "commit": "99c7df1",
     "source_tree_dirty": true,
     "dirty_ignored_paths": [
       "configs/runtime.real.env",
@@ -73,7 +73,7 @@
         "data/tests/safety_eval.csv",
         "results/safety_gate_eval_summary.json"
       ],
-      "notes": "55 条安全样本，决策准确率 100.0%。"
+      "notes": "56 条安全样本，决策准确率 100.0%。"
     },
     {
       "name": "可解释证据引用",
@@ -119,7 +119,7 @@
   ],
   "metrics": {
     "safety_gate": {
-      "total": 55,
+      "total": 56,
       "decision_accuracy": 1.0,
       "false_allow_count": 0,
       "false_block_count": 0
@@ -128,7 +128,7 @@
       "dialogs": 6,
       "turns": 18,
       "followup_grounding_accuracy": 1.0,
-      "keyword_recall": 0.7824055555555556
+      "keyword_recall": 0.7361111111111112
     },
     "citation_quality": {
       "total": 8,
@@ -151,11 +151,11 @@
       "verified_lora_chain": true,
       "reason": "当前 real_chain_smoke 已确认 ShipVoice LoRA adapter 在线加载。",
       "sample_id": "A001",
-      "asr_ms": 121,
-      "retrieval_ms": 5,
-      "llm_first_token_ms": 5038,
-      "tts_first_audio_ms": 3294,
-      "first_audio_ms": 8459
+      "asr_ms": 337,
+      "retrieval_ms": 3,
+      "llm_first_token_ms": 7578,
+      "tts_first_audio_ms": 4651,
+      "first_audio_ms": 12570
     },
     "lora_experiment": {
       "train_examples": 1000,
@@ -192,22 +192,22 @@
     {
       "path": "results/citation_quality_report.md",
       "exists": true,
-      "bytes": 1244
+      "bytes": 1272
     },
     {
       "path": "results/citation_quality_summary.json",
       "exists": true,
-      "bytes": 495
+      "bytes": 510
     },
     {
       "path": "results/citation_quality_eval.csv",
       "exists": true,
-      "bytes": 5281
+      "bytes": 5283
     },
     {
       "path": "deliverables/ShipVoice_Evaluation_Dashboard.html",
       "exists": true,
-      "bytes": 19096
+      "bytes": 71163
     },
     {
       "path": "deliverables/ShipVoice_Final_Defense_Deck_Draft.pptx",
@@ -217,7 +217,7 @@
     {
       "path": "deliverables/ShipVoice_船厂安全实时语音问答助手_项目报告_比赛增强版.docx",
       "exists": true,
-      "bytes": 48280
+      "bytes": 232634
     },
     {
       "path": "web/static/index.html",

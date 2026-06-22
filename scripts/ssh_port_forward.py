@@ -6,6 +6,7 @@ import socket
 import socketserver
 import sys
 import threading
+import time
 
 import paramiko
 
@@ -99,6 +100,7 @@ def main() -> None:
     transport = client.get_transport()
     if transport is None or not transport.is_active():
         raise RuntimeError("ssh transport is not active")
+    transport.set_keepalive(30)
 
     servers: list[_ThreadingTCPServer] = []
     threads: list[threading.Thread] = []
@@ -125,9 +127,9 @@ def main() -> None:
             )
 
         print("tunnels ready", flush=True)
-        transport.set_keepalive(30)
-        for thread in threads:
-            thread.join()
+        while transport.is_active():
+            time.sleep(1)
+        print("ssh transport is no longer active; stopping tunnels", file=sys.stderr, flush=True)
     except KeyboardInterrupt:
         pass
     finally:
@@ -139,4 +141,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -15,6 +15,9 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from shipvoice.config import load_env_file  # noqa: E402
 
 
 def find_free_port(preferred: int = 8035) -> int:
@@ -194,11 +197,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip /ws/run end-to-end inference. Use this when ASR/LLM/TTS GPU services are offline.",
     )
+    parser.add_argument("--env-file", default="", help="Load real provider environment before starting the app.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.env_file:
+        load_env_file(args.env_file)
     port = find_free_port(args.base_port)
     env = os.environ.copy()
     env["SHIPVOICE_APP_PORT"] = str(port)

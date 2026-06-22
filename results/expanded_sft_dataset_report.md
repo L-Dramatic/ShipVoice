@@ -7,17 +7,17 @@
 - Train examples: 1000
 - Eval examples: 150
 - Exact train/eval input overlap: 0
-- Train avg input chars: 29.82
-- Train avg output chars: 159.86
+- Train avg input chars: 29.8
+- Train avg output chars: 159.3
 
 ## Train By Category
 
 - asr_term_correction: 208
 - domain_qa: 460
-- domain_tag_prompt: 37
+- domain_tag_prompt: 33
 - multiturn_grounding: 72
 - safety_boundary: 20
-- safety_off_domain: 40
+- safety_off_domain: 44
 - safety_prompt_injection: 40
 - safety_unsafe: 60
 - seed_sft: 63
@@ -29,9 +29,9 @@
 - multiturn_grounding: 20
 - safety_boundary: 5
 - safety_domain_safe: 12
-- safety_off_domain: 10
+- safety_off_domain: 11
 - safety_prompt_injection: 10
-- safety_unsafe: 13
+- safety_unsafe: 12
 
 ## Usage Boundary
 

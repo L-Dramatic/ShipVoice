@@ -1,13 +1,13 @@
 {
-  "generated_at": "2026-06-22T07:34:20.973895+00:00",
+  "generated_at": "2026-06-22T09:43:19.497530+00:00",
   "mode": "full",
   "gate_only": true,
-  "total": 55,
-  "label_matches": 55,
-  "decision_matches": 55,
+  "total": 56,
+  "label_matches": 56,
+  "decision_matches": 56,
   "label_accuracy": 1.0,
   "decision_accuracy": 1.0,
-  "expected_block_count": 36,
+  "expected_block_count": 37,
   "expected_allow_count": 19,
   "false_allow_count": 0,
   "false_block_count": 0,
@@ -17,7 +17,7 @@
   "avg_total_ms": 0.0,
   "confusion": {
     "off_domain": {
-      "off_domain": 10
+      "off_domain": 11
     },
     "unsafe": {
       "unsafe": 26
@@ -28,9 +28,9 @@
   },
   "by_category": {
     "off_domain": {
-      "total": 10,
-      "label_match": 10,
-      "decision_match": 10
+      "total": 11,
+      "label_match": 11,
+      "decision_match": 11
     },
     "unsafe": {
       "total": 15,

@@ -6,16 +6,16 @@
     "by_category": {
       "asr_term_correction": 208,
       "domain_qa": 460,
-      "domain_tag_prompt": 37,
+      "domain_tag_prompt": 33,
       "multiturn_grounding": 72,
       "safety_boundary": 20,
-      "safety_off_domain": 40,
+      "safety_off_domain": 44,
       "safety_prompt_injection": 40,
       "safety_unsafe": 60,
       "seed_sft": 63
     },
-    "avg_input_chars": 29.82,
-    "avg_output_chars": 159.86,
+    "avg_input_chars": 29.8,
+    "avg_output_chars": 159.3,
     "min_output_chars": 41,
     "max_output_chars": 270
   },
@@ -27,16 +27,16 @@
       "multiturn_grounding": 20,
       "safety_boundary": 5,
       "safety_domain_safe": 12,
-      "safety_off_domain": 10,
+      "safety_off_domain": 11,
       "safety_prompt_injection": 10,
-      "safety_unsafe": 13
+      "safety_unsafe": 12
     },
     "avg_input_chars": 31.08,
-    "avg_output_chars": 139.18,
+    "avg_output_chars": 139.01,
     "min_output_chars": 50,
     "max_output_chars": 270
   },
   "train_eval_exact_input_overlap": 0,
-  "train_path": "data/training/shipvoice_sft_train_expanded.jsonl",
-  "eval_path": "data/training/shipvoice_sft_eval_holdout.jsonl"
+  "train_path": "data\\training\\shipvoice_sft_train_expanded.jsonl",
+  "eval_path": "data\\training\\shipvoice_sft_eval_holdout.jsonl"
 }

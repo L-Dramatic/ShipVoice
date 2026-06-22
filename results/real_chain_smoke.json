@@ -1,7 +1,7 @@
 {
   "sample_id": "A001",
-  "env_file": "/root/autodl-tmp/shipvoice/configs/runtime.real.env",
-  "audio_path": "/root/autodl-tmp/shipvoice/data/audio/raw/A001.m4a",
+  "env_file": "D:\\大三下\\信息安全基础\\final\\configs\\runtime.real.env",
+  "audio_path": "D:\\大三下\\信息安全基础\\final\\data\\audio\\raw\\A001.m4a",
   "asr_health": {
     "ok": "true",
     "service": "funasr_asr",
@@ -37,7 +37,7 @@
       "device": "cuda:0",
       "dtype": "bfloat16",
       "quantization": "4bit",
-      "loaded_at": 1782105716
+      "loaded_at": 1782119530
     }
   },
   "llm_require_lora": true,
@@ -45,7 +45,7 @@
   "pipeline_result": {
     "question": "密闭舱室动火作业前要检查什么？",
     "transcript": "密闭舱室动火作业前要检查什么？",
-    "answer": "关于密闭舱室动火作业，应优先执行以下要求：动火作业前应完成审批，清理可燃物，准备灭火器材。氧含量、可燃气体浓度和有毒气体浓度均应满足现场安全规范后方可进入。动火期间应安排专人监护，禁止在风险区域动用明火、吸烟或使用非防爆电气设备。 如果现场条件不满足，应立即暂停作业，重新完成风险确认、审批和监护安排。 依据：[KS001] 密闭舱室与有限空间作业；[KS004] 焊接与动火作业。",
+    "answer": "关于密闭舱室动火作业，应优先执行以下要求：动火作业前应完成审批，通风换气，测氧测爆，有毒有害气体检测，照明检查，通信确认和专人监护。氧含量、可燃气体浓度和有毒气体浓度均应满足现场安全规范后方可进入。动火作业时应准备灭火器材，清理可燃物，确认动火票有效。 如果现场条件不满足，应立即暂停作业，重新完成风险确认、审批和监护安排。 依据：[KS001] 密闭舱室与有限空间作业；[KS004] 焊接与动火作业。",
     "gate": {
       "label": "domain_safe",
       "allowed": true,
@@ -70,13 +70,13 @@
       "tts_provider": "http_json_tts",
       "execution_profile": "real_voice",
       "timing_source": "observed",
-      "first_audio_ms": 8459,
-      "total_ms": 8459,
-      "asr_ms": 121,
-      "retrieval_ms": 5,
-      "llm_first_token_ms": 5038,
-      "tts_first_audio_ms": 3294,
-      "answer_chars": 191,
+      "first_audio_ms": 12570,
+      "total_ms": 12570,
+      "asr_ms": 337,
+      "retrieval_ms": 3,
+      "llm_first_token_ms": 7578,
+      "tts_first_audio_ms": 4651,
+      "answer_chars": 202,
       "evidence_count": 3
     },
     "audio_output": {
@@ -84,8 +84,8 @@
       "audio_segments": [],
       "audio_base64": "<redacted>",
       "mime_type": "audio/mpeg",
-      "audio_base64_len": 339072,
-      "audio_base64_sha256": "0b9d31dfb9adace5b582248722880de6f150af1d8a7b397bc95d1fe999e3a0e4"
+      "audio_base64_len": 359808,
+      "audio_base64_sha256": "6248ca5f0d24b7991db6580d4391464fd84b4ef9c6eb483c78a8ac590b5d9a6f"
     }
   }
 }
