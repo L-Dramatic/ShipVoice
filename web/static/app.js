@@ -923,6 +923,8 @@ async function startRecording() {
   try {
     clearRecording();
     discardRecording = false;
+    $("recordingStatus").textContent = "正在请求麦克风权限...";
+    $("audioHint").textContent = "请在浏览器权限提示中允许使用麦克风。";
     recordingStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
@@ -954,8 +956,10 @@ async function startRecording() {
     stopRecordingTracks();
     mediaRecorder = null;
     recordingChunks = [];
-    showError(`无法开始录音：${error.message}`);
-    $("recordingStatus").textContent = "录音启动失败，请检查浏览器麦克风权限。";
+    const hint = recorderErrorHint(error);
+    showError(hint);
+    $("recordingStatus").textContent = hint;
+    $("audioHint").textContent = "也可以先用手机或系统录音机录好音频，再通过“上传音频”提交。";
   }
 }
 
@@ -1053,6 +1057,24 @@ function audioExtensionFromMime(mimeType) {
     return "wav";
   }
   return "webm";
+}
+
+function recorderErrorHint(error) {
+  const name = String(error?.name || "");
+  const message = String(error?.message || "未知错误");
+  if (name === "NotAllowedError" || name === "SecurityError" || message.toLowerCase().includes("permission")) {
+    return "麦克风权限被浏览器拒绝。请点击地址栏左侧的站点权限图标，把麦克风改为允许，然后刷新页面重试。";
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return "没有检测到可用麦克风。请接入耳机/麦克风，或改用音频文件上传。";
+  }
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return "麦克风被其他程序占用。请关闭会议软件、录音软件或浏览器其他标签后重试。";
+  }
+  if (name === "OverconstrainedError") {
+    return "当前麦克风不支持浏览器请求的录音参数。请换一个输入设备，或改用音频文件上传。";
+  }
+  return `无法开始录音：${message}`;
 }
 
 function currentAudioSource() {
