@@ -337,7 +337,45 @@ def add_cover(doc, markdown_text):
     doc.add_page_break()
 
 
+def replace_mermaid_blocks(content: str) -> str:
+    assets_dir = REPORT_DIR / "assets" / "diagrams"
+    pattern = re.compile(r"```mermaid\n(.*?)```", re.DOTALL)
+
+    def repl(match: re.Match[str]) -> str:
+        for name in ("system_architecture.png", "system_architecture.svg"):
+            image_path = assets_dir / name
+            if image_path.exists():
+                rel = Path("..") / "assets" / "diagrams" / name
+                return f"![系统架构图]({rel.as_posix()})\n\n*图 3-1 ShipVoice 系统架构数据流*"
+        return match.group(0)
+
+    return pattern.sub(repl, content)
+
+
+def add_markdown_image(doc, alt_text, image_path):
+    resolved = (REPORT_DIR / image_path).resolve()
+    if not resolved.exists():
+        paragraph = doc.add_paragraph()
+        add_rich_text(paragraph, f"[图片缺失] {alt_text} ({image_path})", size=10, bold_default=True)
+        return
+    paragraph = doc.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = paragraph.add_run()
+    run.add_picture(str(resolved), width=Inches(6.2))
+    doc.add_paragraph()
+
+
+def add_caption(doc, text):
+    paragraph = doc.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    paragraph.paragraph_format.space_before = Pt(0)
+    paragraph.paragraph_format.space_after = Pt(10)
+    run = paragraph.add_run(text.strip("* "))
+    set_run_font(run, size=9.5, color=MUTED, italic=True)
+
+
 def add_markdown_body(doc, markdown_text):
+    markdown_text = replace_mermaid_blocks(markdown_text)
     lines = markdown_text.splitlines()
     start = 0
     for index, line in enumerate(lines):
@@ -393,6 +431,16 @@ def add_markdown_body(doc, markdown_text):
 
         if not line.strip():
             continue
+
+        image_match = re.match(r"^!\[(.*?)\]\((.*?)\)\s*$", line.strip())
+        if image_match:
+            add_markdown_image(doc, image_match.group(1), image_match.group(2))
+            continue
+
+        if line.strip().startswith("*图 ") and line.strip().endswith("*"):
+            add_caption(doc, line.strip())
+            continue
+
         if line.startswith("# "):
             doc.add_paragraph(line[2:].strip(), style="Heading 1")
         elif line.startswith("## "):

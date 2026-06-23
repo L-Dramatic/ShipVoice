@@ -27,3 +27,6 @@ logs/
 *.m4a
 *.zip
 期末项目2026.doc
+.DS_Store
+*/.DS_Store
+
