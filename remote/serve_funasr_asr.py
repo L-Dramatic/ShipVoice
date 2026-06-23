@@ -45,7 +45,7 @@ def build_app(
             raise HTTPException(status_code=400, detail="audio_base64 is required")
 
         try:
-            audio_bytes = base64.b64decode(payload.audio_base64)
+            audio_bytes = base64.b64decode(payload.audio_base64, validate=True)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=f"invalid base64 audio: {exc}") from exc
 
@@ -68,13 +68,17 @@ def build_app(
             if result and isinstance(result, list):
                 raw_text = str(result[0].get("text", ""))
             text = rich_transcription_postprocess(raw_text).strip()
-            if not text and payload.transcript_hint.strip():
-                text = payload.transcript_hint.strip()
+            if not text:
+                raise HTTPException(status_code=422, detail="asr returned empty transcript")
             return {
                 "text": text,
+                "text_raw": raw_text,
                 "provider": "funasr_sensevoice_service",
                 "audio_name": payload.audio_name,
+                "used_reference_fallback": False,
             }
+        except HTTPException:
+            raise
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=500, detail=f"asr failed: {exc}") from exc
         finally:

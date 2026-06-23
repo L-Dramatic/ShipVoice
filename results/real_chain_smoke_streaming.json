@@ -1,0 +1,118 @@
+{
+  "sample_id": "A001",
+  "env_file": "D:\\ShipVoice\\configs\\runtime.real.env",
+  "audio_path": "D:\\ShipVoice\\data\\audio\\raw\\A001.m4a",
+  "asr_health": {
+    "ok": "true",
+    "service": "funasr_asr",
+    "model": "iic/SenseVoiceSmall",
+    "device": "cuda:0"
+  },
+  "asr_result": {
+    "text": "密闭舱室动火作业前要检查什么？",
+    "provider": "funasr_sensevoice_service",
+    "audio_name": "A001.m4a"
+  },
+  "tts_health": {
+    "ok": "true",
+    "service": "edge_tts",
+    "voice": "zh-CN-XiaoxiaoNeural"
+  },
+  "tts_audio_base64_len": 17856,
+  "llm_health": {
+    "ok": true,
+    "probe_url": "http://127.0.0.1:18034/v1/models",
+    "models": [
+      "shipvoice-qwen2.5-7b-lora"
+    ],
+    "health_url": "http://127.0.0.1:18034/health",
+    "health": {
+      "ok": true,
+      "service": "transformers_openai",
+      "served_model": "shipvoice-qwen2.5-7b-lora",
+      "base_model": "Qwen/Qwen2.5-7B-Instruct",
+      "adapter_loaded": true,
+      "adapter_path": "/root/autodl-tmp/shipvoice/outputs/qwen_lora_shipvoice_expanded",
+      "require_adapter": true,
+      "adapter_hash_algorithm": "sha256-tree-v1",
+      "adapter_sha256": "3462dbff405f71ed3d0b0a0d8484498a2be98ffe84ab5b2f56a2d69e7130d1cf",
+      "adapter_file_count": 10,
+      "adapter_bytes": 177423363,
+      "device": "cuda:0",
+      "dtype": "bfloat16",
+      "quantization": "4bit",
+      "loaded_at": 1782150271
+    }
+  },
+  "llm_require_lora": true,
+  "llm_required_model_substring": "shipvoice",
+  "llm_required_adapter_sha256": "3462dbff405f71ed3d0b0a0d8484498a2be98ffe84ab5b2f56a2d69e7130d1cf",
+  "pipeline_result": {
+    "question": "密闭舱室动火作业前要检查什么？",
+    "transcript": "密闭舱室动火作业前要检查什么？",
+    "answer": "应先执行以下要求：密闭舱室动火作业前，应完成审批、通风、测氧测爆、监护和应急准备。动火作业结束后应再次确认无余火和火星。 如果现场条件不满足，应立即暂停作业，重新完成风险确认、审批和监护安排。",
+    "gate": {
+      "label": "domain_safe",
+      "allowed": true,
+      "reason": "属于造船安全相关问题"
+    },
+    "provider_status": {
+      "input_mode": "audio",
+      "asr": "http_json_asr",
+      "llm": "openai_compatible:shipvoice-qwen2.5-7b-lora",
+      "tts": "http_json_tts",
+      "execution_profile": "real_voice",
+      "timing_source": "server_first_audio_chunk_ready",
+      "timing_note": "Server-side first audio chunk ready time; browser playback start is recorded by client timing.",
+      "response_mode": "llm_token_stream_sentence_tts"
+    },
+    "metrics": {
+      "question_id": "manual",
+      "mode": "streaming",
+      "category": "manual",
+      "gate_label": "domain_safe",
+      "input_mode": "audio",
+      "asr_provider": "http_json_asr",
+      "llm_provider": "openai_compatible:shipvoice-qwen2.5-7b-lora",
+      "tts_provider": "http_json_tts",
+      "execution_profile": "real_voice",
+      "timing_source": "server_first_audio_chunk_ready",
+      "first_audio_ms": 4395,
+      "total_ms": 7259,
+      "asr_ms": 326,
+      "retrieval_ms": 0,
+      "llm_first_token_ms": 219,
+      "tts_first_audio_ms": 1634,
+      "answer_chars": 96,
+      "evidence_count": 0,
+      "server_audio_payload_ready_ms": 4395,
+      "llm_complete_ms": 4703,
+      "tts_complete_ms": 4498,
+      "llm_first_delta_ms": 219,
+      "server_first_audio_chunk_ready_ms": 4395,
+      "server_audio_stream_complete_ms": 7259,
+      "streamed_audio_segments": 3
+    },
+    "audio_output": {
+      "provider": "http_json_tts",
+      "audio_segments": [
+        "<redacted>",
+        "<redacted>",
+        "<redacted>"
+      ],
+      "audio_base64": "",
+      "mime_type": "audio/mpeg",
+      "audio_segments_count": 3,
+      "audio_segments_base64_lens": [
+        76608,
+        35904,
+        63360
+      ],
+      "audio_segments_sha256": [
+        "9f51d9493b40560446234ef3cc6521038b50e8afc7e77238c17cf32c81386c2c",
+        "8456fbc31544244d73e4b156041e6ea881137339a878d264633a07cb7760dbb9",
+        "c50e3bf8a78a33e47b9869fe9756bc9b512babbcfc6ad3907b19f1453c5f1a31"
+      ]
+    }
+  }
+}

@@ -16,7 +16,8 @@
     "provider": "hybrid",
     "index_path": "data/knowledge/ship_safety_index.json",
     "corpus_path": "data/knowledge/ship_safety_corpus.jsonl",
-    "top_k": 3
+    "top_k": 3,
+    "min_score": 2.0
   },
   "llm": {
     "provider": "openai_compatible",

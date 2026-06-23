@@ -552,8 +552,8 @@ function renderOverview(payload) {
     summaryCard("安全门控", `rows ${safety.evaluated_rows ?? safety.rows ?? 0}`, `accuracy ${formatPercent(safety.accuracy)} · critical ${safety.critical_failures ?? 0}`),
     summaryCard("ASR 评测", `rows ${asr.evaluated_rows ?? asr.rows ?? 0}`, `CER ${formatPercent(asr.avg_cer)} · 术语召回 ${formatPercent(asr.term_recall)}`),
     summaryCard("多轮问答", `dialogs ${multiturn.dialogs ?? multiturn.rows ?? 0}`, `gate ${formatPercent(multiturn.gate_accuracy)} · grounding ${formatPercent(multiturn.followup_grounding_accuracy)}`),
-    summaryCard("延迟评测", `rows ${latency.rows ?? 0}`, `first audio ${roundMetric(latency.avg_first_audio_ms)} ms · total ${roundMetric(latency.avg_total_ms)} ms`),
-    summaryCard("真实链路", `samples ${realChain.num_samples ?? realChain.rows ?? 0}`, `ASR ${roundMetric(realChain.avg_asr_ms)} ms · 首音 ${roundMetric(realChain.avg_first_audio_ms)} ms`),
+    summaryCard("延迟评测", `rows ${latency.rows ?? 0}`, `audio ready ${roundMetric(latency.avg_first_audio_ms)} ms · total ${roundMetric(latency.avg_total_ms)} ms`),
+    summaryCard("真实链路", `samples ${realChain.num_samples ?? realChain.rows ?? 0}`, `ASR ${roundMetric(realChain.avg_asr_ms)} ms · 载荷就绪 ${roundMetric(realChain.avg_first_audio_ms)} ms`),
     summaryCard("当前配置", `LLM ${config.llm_provider || "--"}`, `ASR ${config.asr_provider || "--"} · TTS ${config.tts_provider || "--"}`),
     summaryCard("复盘台账", `open ${audit.open_cases ?? 0}`, `high ${audit.high_priority_cases ?? 0} · total ${audit.total_runs ?? 0}`),
     summaryCard("后台作业", `active ${jobs.active_jobs ?? 0}`, `latest ${jobs.latest_job?.status || "--"} · total ${jobs.total_jobs ?? 0}`)
@@ -990,13 +990,13 @@ function datasetDetail(datasetName, row) {
   }
   if (datasetName === "latency_metrics") {
     return {
-      meta: `${row.category || "--"} · first audio ${row.first_audio_ms || "--"} ms · total ${row.total_ms || "--"} ms`,
+      meta: `${row.category || "--"} · audio ready ${row.first_audio_ms || "--"} ms · total ${row.total_ms || "--"} ms`,
       body: trimText(row.question || "", 180)
     };
   }
   if (datasetName === "real_chain_samples") {
     return {
-      meta: `ASR ${row.asr_ms || "--"} ms · retrieval ${row.retrieval_ms || "--"} ms · first audio ${row.first_audio_ms || "--"} ms`,
+      meta: `ASR ${row.asr_ms || "--"} ms · retrieval ${row.retrieval_ms || "--"} ms · audio ready ${row.first_audio_ms || "--"} ms`,
       body: trimText(row.transcript || "", 180)
     };
   }

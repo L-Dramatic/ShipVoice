@@ -1,0 +1,174 @@
+{
+  "transport": "websocket",
+  "input_mode": "audio",
+  "audio_name": "A001.m4a",
+  "result_arrival_ms": 11915,
+  "first_audio_chunk_arrival_ms": 5767,
+  "first_audio_arrival_before_result": true,
+  "transcript": "密闭舱室动火作业前要检查什么？",
+  "answer_preview": "关于密闭舱室动火作业，应优先执行以下要求：动火作业前应完成审批、清理可燃物、准备消防器材、安排监护人员。进入密闭舱室前应完成通风、测氧测爆、有毒有害气体检测，确认不会造成窒息、中毒或爆炸。动火作业结束后应再次检查余火，确认无泄漏、无冒烟、无异常温度。 如果现场条件不满足，应立即暂停作业，重新完成风险确认、审批和监护安排。",
+  "metrics": {
+    "question_id": "manual",
+    "mode": "streaming",
+    "category": "manual",
+    "gate_label": "domain_safe",
+    "input_mode": "audio",
+    "asr_provider": "http_json_asr",
+    "llm_provider": "openai_compatible:shipvoice-qwen2.5-7b-lora",
+    "tts_provider": "http_json_tts",
+    "execution_profile": "real_voice",
+    "timing_source": "server_first_audio_chunk_ready",
+    "first_audio_ms": 5500,
+    "total_ms": 11602,
+    "asr_ms": 305,
+    "retrieval_ms": 0,
+    "llm_first_token_ms": 219,
+    "tts_first_audio_ms": 2504,
+    "answer_chars": 161,
+    "evidence_count": 0,
+    "server_audio_payload_ready_ms": 5500,
+    "llm_complete_ms": 6600,
+    "tts_complete_ms": 8605,
+    "llm_first_delta_ms": 219,
+    "server_first_audio_chunk_ready_ms": 5500,
+    "server_audio_stream_complete_ms": 11601,
+    "streamed_audio_segments": 4
+  },
+  "provider_status": {
+    "input_mode": "audio",
+    "asr": "http_json_asr",
+    "llm": "openai_compatible:shipvoice-qwen2.5-7b-lora",
+    "tts": "http_json_tts",
+    "execution_profile": "real_voice",
+    "timing_source": "server_first_audio_chunk_ready",
+    "timing_note": "Server-side first audio chunk ready time; browser playback start is recorded by client timing.",
+    "response_mode": "llm_token_stream_sentence_tts"
+  },
+  "audio_chunks": [
+    {
+      "type": "audio_chunk",
+      "seq": 0,
+      "arrival_ms": 5767,
+      "server_audio_chunk_ready_ms": 5500,
+      "server_first_audio_chunk_ready_ms": 5500,
+      "audio_base64_len": 93888,
+      "first_chunk": true
+    },
+    {
+      "type": "audio_chunk",
+      "seq": 1,
+      "arrival_ms": 7978,
+      "server_audio_chunk_ready_ms": 7716,
+      "server_first_audio_chunk_ready_ms": 5500,
+      "audio_base64_len": 77760,
+      "first_chunk": false
+    },
+    {
+      "type": "audio_chunk",
+      "seq": 2,
+      "arrival_ms": 9966,
+      "server_audio_chunk_ready_ms": 9706,
+      "server_first_audio_chunk_ready_ms": 5500,
+      "audio_base64_len": 57216,
+      "first_chunk": false
+    },
+    {
+      "type": "audio_chunk",
+      "seq": 3,
+      "arrival_ms": 11853,
+      "server_audio_chunk_ready_ms": 11592,
+      "server_first_audio_chunk_ready_ms": 5500,
+      "audio_base64_len": 63360,
+      "first_chunk": false
+    }
+  ],
+  "timeline_key_events": [
+    {
+      "type": "event",
+      "stage": "asr",
+      "arrival_ms": 556,
+      "payload": {
+        "transcript": "密闭舱室动火作业前要检查什么？",
+        "latency_ms": 305
+      }
+    },
+    {
+      "type": "event",
+      "stage": "llm_first_delta",
+      "arrival_ms": 776,
+      "payload": {
+        "llm_first_delta_ms": 219
+      }
+    },
+    {
+      "type": "audio_chunk",
+      "seq": 0,
+      "arrival_ms": 5767,
+      "server_audio_chunk_ready_ms": 5500,
+      "server_first_audio_chunk_ready_ms": 5500,
+      "audio_base64_len": 93888,
+      "first_chunk": true
+    },
+    {
+      "type": "event",
+      "stage": "llm",
+      "arrival_ms": 7157,
+      "payload": {
+        "chunks": 4,
+        "latency_ms": 6600,
+        "llm_first_delta_ms": 219,
+        "llm_complete_ms": 6600,
+        "provider": "openai_compatible:shipvoice-qwen2.5-7b-lora"
+      }
+    },
+    {
+      "type": "audio_chunk",
+      "seq": 1,
+      "arrival_ms": 7978,
+      "server_audio_chunk_ready_ms": 7716,
+      "server_first_audio_chunk_ready_ms": 5500,
+      "audio_base64_len": 77760,
+      "first_chunk": false
+    },
+    {
+      "type": "audio_chunk",
+      "seq": 2,
+      "arrival_ms": 9966,
+      "server_audio_chunk_ready_ms": 9706,
+      "server_first_audio_chunk_ready_ms": 5500,
+      "audio_base64_len": 57216,
+      "first_chunk": false
+    },
+    {
+      "type": "audio_chunk",
+      "seq": 3,
+      "arrival_ms": 11853,
+      "server_audio_chunk_ready_ms": 11592,
+      "server_first_audio_chunk_ready_ms": 5500,
+      "audio_base64_len": 63360,
+      "first_chunk": false
+    },
+    {
+      "type": "event",
+      "stage": "tts",
+      "arrival_ms": 11853,
+      "payload": {
+        "server_first_audio_chunk_ready_ms": 5500,
+        "server_audio_stream_complete_ms": 11601,
+        "server_audio_payload_ready_ms": 5500,
+        "tts_first_audio_ms": 2504,
+        "tts_complete_ms": 8605,
+        "streamed_audio_segments": 4,
+        "provider": "http_json_tts"
+      }
+    },
+    {
+      "type": "event",
+      "stage": "done",
+      "arrival_ms": 11853,
+      "payload": {
+        "total_ms": 11602
+      }
+    }
+  ]
+}

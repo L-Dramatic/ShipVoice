@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -8,8 +11,9 @@ from typing import Any
 
 import torch
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TextIteratorStreamer
 
 
 class ChatMessage(BaseModel):
@@ -58,6 +62,31 @@ def model_input_device(model: torch.nn.Module) -> torch.device:
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def hash_directory(path: Path) -> dict[str, object]:
+    digest = hashlib.sha256()
+    file_count = 0
+    total_bytes = 0
+    for item in sorted(candidate for candidate in path.rglob("*") if candidate.is_file()):
+        relative = item.relative_to(path).as_posix()
+        stat = item.stat()
+        file_count += 1
+        total_bytes += stat.st_size
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(str(stat.st_size).encode("ascii"))
+        digest.update(b"\0")
+        with item.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        digest.update(b"\0")
+    return {
+        "adapter_hash_algorithm": "sha256-tree-v1",
+        "adapter_sha256": digest.hexdigest() if file_count else "",
+        "adapter_file_count": file_count,
+        "adapter_bytes": total_bytes,
+    }
+
+
 def create_app(
     *,
     model_path: str,
@@ -77,6 +106,12 @@ def create_app(
         raise FileNotFoundError(f"LoRA adapter path does not exist: {adapter_dir}")
     if require_adapter and adapter_dir and not (adapter_dir / "adapter_config.json").exists():
         raise FileNotFoundError(f"LoRA adapter_config.json not found under: {adapter_dir}")
+    adapter_attestation = hash_directory(adapter_dir) if adapter_dir else {
+        "adapter_hash_algorithm": "sha256-tree-v1",
+        "adapter_sha256": "",
+        "adapter_file_count": 0,
+        "adapter_bytes": 0,
+    }
 
     torch_dtype = _dtype(dtype_name)
     tokenizer_source = str(adapter_dir) if adapter_dir and (adapter_dir / "tokenizer_config.json").exists() else model_path
@@ -133,6 +168,7 @@ def create_app(
             "adapter_loaded": bool(loaded_adapter),
             "adapter_path": loaded_adapter,
             "require_adapter": require_adapter,
+            **adapter_attestation,
             "device": input_device,
             "dtype": str(torch_dtype).replace("torch.", ""),
             "quantization": quantization,
@@ -154,9 +190,7 @@ def create_app(
         }
 
     @app.post("/v1/chat/completions")
-    def chat_completions(payload: ChatCompletionRequest) -> dict[str, object]:
-        if payload.stream:
-            raise HTTPException(status_code=400, detail="stream=true is not supported by this service")
+    def chat_completions(payload: ChatCompletionRequest):
         if payload.model and payload.model != served_model_name:
             raise HTTPException(
                 status_code=404,
@@ -182,6 +216,76 @@ def create_app(
             )
         else:
             generation_kwargs["do_sample"] = False
+
+        if payload.stream:
+            request_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+            created = int(time.time())
+            streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
+            stream_kwargs = {**generation_kwargs, "streamer": streamer}
+            errors: list[BaseException] = []
+
+            def run_generation() -> None:
+                try:
+                    with torch.no_grad():
+                        model.generate(**inputs, **stream_kwargs)
+                except BaseException as exc:
+                    errors.append(exc)
+                    if hasattr(streamer, "on_finalized_text"):
+                        streamer.on_finalized_text("", stream_end=True)
+
+            def sse_events():
+                for text in streamer:
+                    if not text:
+                        continue
+                    chunk = {
+                        "id": request_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": served_model_name,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"content": text},
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                if errors:
+                    error_chunk = {
+                        "id": request_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": served_model_name,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {},
+                                "finish_reason": "error",
+                            }
+                        ],
+                        "error": str(errors[0]),
+                    }
+                    yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
+                else:
+                    final_chunk = {
+                        "id": request_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": served_model_name,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {},
+                                "finish_reason": "stop",
+                            }
+                        ],
+                    }
+                    yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+
+            threading.Thread(target=run_generation, daemon=True).start()
+            return StreamingResponse(sse_events(), media_type="text/event-stream")
 
         with torch.no_grad():
             generated = model.generate(**inputs, **generation_kwargs)

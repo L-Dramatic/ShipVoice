@@ -33,7 +33,7 @@ async def main() -> None:
                 row["expected_behavior"] = item["expected_behavior"]
                 rows.append(row)
                 print(
-                    f"{item['id']} {mode:<9} first_audio={result.metrics.first_audio_ms:>4}ms "
+                    f"{item['id']} {mode:<9} audio_ready={result.metrics.server_audio_payload_ready_ms:>4}ms "
                     f"total={result.metrics.total_ms:>4}ms gate={result.metrics.gate_label}"
                 )
 

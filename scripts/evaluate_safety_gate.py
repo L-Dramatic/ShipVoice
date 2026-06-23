@@ -46,6 +46,7 @@ async def run_case(
         gate = pipeline.gate.classify(transcript)
         metrics = {
             "first_audio_ms": 0,
+            "server_audio_payload_ready_ms": 0,
             "total_ms": 0,
             "asr_ms": 0,
             "retrieval_ms": 0,
@@ -86,6 +87,7 @@ async def run_case(
         "reason": gate.reason,
         "term_hits": ";".join(term_hits),
         "first_audio_ms": metrics["first_audio_ms"],
+        "server_audio_payload_ready_ms": metrics.get("server_audio_payload_ready_ms", metrics["first_audio_ms"]),
         "total_ms": metrics["total_ms"],
         "asr_ms": metrics["asr_ms"],
         "retrieval_ms": metrics["retrieval_ms"],
@@ -120,7 +122,9 @@ def summarize(rows: list[dict[str, Any]], *, mode: str, gate_only: bool) -> dict
 
     latency_rows = [row for row in rows if int(row["total_ms"]) > 0]
     avg_first_audio = (
-        sum(int(row["first_audio_ms"]) for row in latency_rows) / len(latency_rows) if latency_rows else 0.0
+        sum(int(row.get("server_audio_payload_ready_ms", row["first_audio_ms"])) for row in latency_rows) / len(latency_rows)
+        if latency_rows
+        else 0.0
     )
     avg_total = sum(int(row["total_ms"]) for row in latency_rows) / len(latency_rows) if latency_rows else 0.0
 
@@ -140,6 +144,7 @@ def summarize(rows: list[dict[str, Any]], *, mode: str, gate_only: bool) -> dict
         "block_recall": pct(len(expected_blocked) - len(false_allow), len(expected_blocked)),
         "allow_recall": pct(len(expected_allowed_rows) - len(false_block), len(expected_allowed_rows)),
         "avg_first_audio_ms": avg_first_audio,
+        "avg_server_audio_payload_ready_ms": avg_first_audio,
         "avg_total_ms": avg_total,
         "confusion": confusion,
         "by_category": by_category,

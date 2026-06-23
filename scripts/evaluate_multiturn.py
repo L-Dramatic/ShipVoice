@@ -84,6 +84,7 @@ async def main() -> None:
                     "followup_grounded": followup_grounded,
                     "total_ms": result.metrics.total_ms,
                     "first_audio_ms": result.metrics.first_audio_ms,
+                    "server_audio_payload_ready_ms": result.metrics.server_audio_payload_ready_ms,
                     "answer": result.answer,
                 }
             )
@@ -105,6 +106,10 @@ async def main() -> None:
         "followup_grounding_accuracy": ratio(sum(1 for row in followup_rows if bool(row["followup_grounded"])), len(followup_rows)),
         "avg_total_ms": ratio(sum(int(row["total_ms"]) for row in rows), turn_count),
         "avg_first_audio_ms": ratio(sum(int(row["first_audio_ms"]) for row in rows), turn_count),
+        "avg_server_audio_payload_ready_ms": ratio(
+            sum(int(row.get("server_audio_payload_ready_ms", row["first_audio_ms"])) for row in rows),
+            turn_count,
+        ),
         "mode": args.mode,
     }
 
@@ -128,7 +133,7 @@ async def main() -> None:
         f"- Keyword recall: {summary['keyword_recall']:.2%}",
         f"- Follow-up grounding accuracy: {summary['followup_grounding_accuracy']:.2%}",
         f"- Avg total latency: {summary['avg_total_ms']:.0f} ms",
-        f"- Avg first audio latency: {summary['avg_first_audio_ms']:.0f} ms",
+        f"- Avg audio payload ready latency: {summary['avg_server_audio_payload_ready_ms']:.0f} ms",
         "",
         "| Turn | Context | Gate | Title hit | Keyword recall |",
         "| --- | --- | --- | --- | --- |",

@@ -65,7 +65,7 @@ python scripts\run_single.py "舾装阶段管路试压有哪些安全风险？" 
 ## 6. 真实链路检查
 
 ```powershell
-python scripts\check_real_service_chain.py --env-file configs\runtime.real.env --sample-id A001 --require-lora
+python scripts\check_real_service_chain.py --env-file configs\runtime.real.env --sample-id A001 --require-lora --require-adapter-sha256 3462dbff405f71ed3d0b0a0d8484498a2be98ffe84ab5b2f56a2d69e7130d1cf
 ```
 
 最终验收一键脚本：
@@ -77,18 +77,44 @@ powershell -ExecutionPolicy Bypass -File scripts\run_lora_final_validation.ps1 -
 输出：
 
 ```text
-results\real_chain_smoke.json
+results\real_chain_smoke_streaming.json
+results\server_real_batch_comparison_20260623.md
+results\server_real_repeated_20260623\summary.json
+results\browser_onplaying_streamable_20260623.json
+results\asr_online_20260623\summary.json
+results\lora_adapter_attestation_20260623.json
 ```
 
 检查项包括：
 
 1. ASR `/health`
 2. TTS `/health`
-3. LLM `/v1/models` 与 `/health`，确认 ShipVoice LoRA adapter 已加载
+3. LLM `/v1/models` 与 `/health`，确认 ShipVoice LoRA adapter 已加载且 SHA 匹配
 4. 一条真实录音是否能跑通
 5. 本地 pipeline 是否真的走了真实 provider
 
-## 7. 全项目 quick validation
+## 7. 流式低延迟复验
+
+真实 ASR、支持 SSE 的 ShipVoice LoRA LLM、TTS 服务都在线后，复验 `streaming` mode：
+
+```powershell
+python scripts\run_single.py "舾装阶段管路试压有哪些安全风险？" --mode streaming
+```
+
+批量复验命令：
+
+```powershell
+python scripts\run_real_chain_batch.py --env-file configs\runtime.real.env --mode baseline --limit 30 --split test --require-lora --output-dir results\server_real_batch_baseline_20260623
+python scripts\run_real_chain_batch.py --env-file configs\runtime.real.env --mode streaming --limit 30 --split test --require-lora --output-dir results\server_real_batch_streaming_20260623
+python scripts\compare_real_chain_batches.py --baseline results\server_real_batch_baseline_20260623\samples.jsonl --streaming results\server_real_batch_streaming_20260623\samples.jsonl
+python scripts\run_real_chain_repeated.py --env-file configs\runtime.real.env --limit 30 --split test --repeats 5 --require-lora --output-dir results\server_real_repeated_20260623
+python scripts\generate_browser_onplaying_harness.py --env-file configs\runtime.real.env --sample-ids A006,A020,A014,A009,A029,A004,A015,A013,A007,A005,A016,A001,A018,A003,A010,A019,A012,A002,A008,A011 --output results\browser_onplaying_streamable_20260623.html
+python scripts\run_browser_onplaying_harness.py --url http://127.0.0.1:8026 --html results\browser_onplaying_streamable_20260623.html --output results\browser_onplaying_streamable_20260623.json --screenshot results\browser_onplaying_streamable_20260623.png
+```
+
+WebSocket 页面复验时，确认运行详情中出现 `llm_first_delta_ms`、`server_first_audio_chunk_ready_ms`、`streamed_audio_segments`，并且前端首段音频由 `audio_chunk` 队列触发播放。2026-06-23 最终低延迟证据见 `results/server_real_repeated_20260623/summary.md` 和 `results/browser_onplaying_streamable_20260623.json`；最终低延迟结论应使用浏览器 `audio.onplaying` 指标，不使用完整 TTS 返回时间替代首播时间。
+
+## 8. 全项目 quick validation
 
 ```powershell
 python scripts\validate_project.py --quick
@@ -96,7 +122,7 @@ python scripts\validate_project.py --quick
 
 这一步只做结构、数据、评测脚本和编译检查，不调用真实 ASR/LLM/TTS。
 
-## 8. 全项目 full validation
+## 9. 全项目 full validation
 
 ```powershell
 python scripts\validate_project.py --full
@@ -108,13 +134,13 @@ python scripts\validate_project.py --full
 python scripts\validate_project.py --quick --with-services
 ```
 
-## 9. 容器方式启动
+## 10. 容器方式启动
 
 ```powershell
 docker compose -f docker-compose.app.yml up --build
 ```
 
-## 10. 远程 GPU 服务
+## 11. 远程 GPU 服务
 
 ASR / TTS：
 

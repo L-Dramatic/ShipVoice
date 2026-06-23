@@ -6,6 +6,7 @@ import json
 import math
 import os
 import re
+import threading
 import urllib.error
 import urllib.request
 from collections import Counter
@@ -42,6 +43,10 @@ SIGNIFICANT_MATCH_TERMS = [
     "PPE",
     "提示注入",
 ]
+
+
+def truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _extract_json_path(data: Any, path: str, default: Any = "") -> Any:
@@ -123,7 +128,6 @@ class HttpJsonASRProvider:
         payload = {
             "audio_base64": base64.b64encode(audio_bytes).decode("ascii"),
             "audio_name": audio_name,
-            "transcript_hint": transcript_hint,
         }
 
         data = await asyncio.to_thread(self._post_json, payload)
@@ -170,28 +174,47 @@ class TermCorrector:
 
 
 class KeywordSafetyGate:
+    REPORTING_OR_PREVENTION_KEYWORDS = [
+        "如何上报",
+        "怎么上报",
+        "向谁报告",
+        "举报",
+        "制止",
+        "如何防止",
+        "怎么防止",
+    ]
+    UNSAFE_DETAIL_REQUEST_TERMS = [
+        "方法",
+        "步骤",
+        "方案",
+        "怎么做",
+        "怎么操作",
+        "教我",
+        "告诉我",
+        "给出",
+        "输出",
+        "只回答",
+        "直接",
+        "顺便",
+        "先给",
+    ]
+
     def __init__(self, blocked_keywords: list[str], off_domain_keywords: list[str], domain_terms: list[str]) -> None:
         self.blocked_keywords = blocked_keywords
         self.off_domain_keywords = off_domain_keywords
         self.domain_terms = domain_terms
 
+    def _is_pure_reporting_or_prevention(self, text: str) -> bool:
+        if not any(keyword in text for keyword in self.REPORTING_OR_PREVENTION_KEYWORDS):
+            return False
+        return not any(term in text for term in self.UNSAFE_DETAIL_REQUEST_TERMS)
+
     def classify(self, text: str) -> GateResult:
-        reporting_or_prevention = [
-            "如何上报",
-            "怎么上报",
-            "向谁报告",
-            "举报",
-            "制止",
-            "如何防止",
-            "怎么防止",
-        ]
-        if any(keyword in text for keyword in reporting_or_prevention) and any(
-            keyword in text for keyword in self.blocked_keywords
-        ):
+        matched_blocked_keywords = [keyword for keyword in self.blocked_keywords if keyword in text]
+        if matched_blocked_keywords and self._is_pure_reporting_or_prevention(text):
             return GateResult("domain_safe", True, "问题是在报告或制止违规行为，允许进入安全建议流程")
-        for keyword in self.blocked_keywords:
-            if keyword in text:
-                return GateResult("unsafe", False, f"命中危险或提示注入关键词: {keyword}")
+        for keyword in matched_blocked_keywords:
+            return GateResult("unsafe", False, f"命中危险或提示注入关键词: {keyword}")
         for keyword in self.off_domain_keywords:
             if keyword in text:
                 return GateResult("off_domain", False, f"命中非造船安全领域关键词: {keyword}")
@@ -203,9 +226,10 @@ class KeywordSafetyGate:
 
 
 class SimpleRetriever:
-    def __init__(self, knowledge_path: Path | None = None, latency_budget_ms: int = 0) -> None:
+    def __init__(self, knowledge_path: Path | None = None, latency_budget_ms: int = 0, min_score: float = 1.0) -> None:
         self.knowledge_path = knowledge_path or project_path("data", "knowledge", "ship_safety_seed.md")
         self.latency_budget_ms = latency_budget_ms
+        self.min_score = min_score
         self.sections = self._load_sections()
 
     def _load_sections(self) -> list[dict[str, Any]]:
@@ -264,8 +288,12 @@ class SimpleRetriever:
             scored.append((section, score, citation_matched_terms(query, title, text, tags)))
         scored.sort(key=lambda item: item[1], reverse=True)
         top_score = max([score for _section, score, _terms in scored[:top_k]] or [0])
+        if top_score < self.min_score:
+            return []
         hits: list[RetrievalHit] = []
         for section, score, matched_terms in scored[:top_k]:
+            if score < self.min_score:
+                continue
             hits.append(
                 RetrievalHit(
                     title=str(section["title"]),
@@ -283,9 +311,10 @@ class SimpleRetriever:
 
 
 class HybridRetriever:
-    def __init__(self, index_path: Path, latency_budget_ms: int = 0) -> None:
+    def __init__(self, index_path: Path, latency_budget_ms: int = 0, min_score: float = 1.0) -> None:
         self.index_path = index_path
         self.latency_budget_ms = latency_budget_ms
+        self.min_score = min_score
         self.index = json.loads(index_path.read_text(encoding="utf-8"))
         self.documents: list[dict[str, Any]] = self.index["documents"]
         self.inverted: dict[str, list[dict[str, int]]] = self.index["inverted"]
@@ -326,8 +355,12 @@ class HybridRetriever:
 
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         top_score = float(ranked[0][1]) if ranked else 0.0
+        if top_score < self.min_score:
+            return []
         hits: list[RetrievalHit] = []
         for doc_id, score in ranked[:top_k]:
+            if float(score) < self.min_score:
+                continue
             doc = self.documents[doc_id]
             hits.append(
                 RetrievalHit(
@@ -342,21 +375,6 @@ class HybridRetriever:
                     confidence=round(float(score) / top_score, 3) if top_score else 0.0,
                 )
             )
-        if not hits:
-            for doc in self.documents[:top_k]:
-                hits.append(
-                    RetrievalHit(
-                        title=str(doc["title"]),
-                        text=str(doc["text"]),
-                        score=0,
-                        record_id=str(doc.get("id", "")),
-                        source=str(doc.get("source", "ship_safety_corpus.jsonl")),
-                        tags=list(doc.get("tags", [])),
-                        risk_level=str(doc.get("risk_level", infer_risk_level(str(doc["title"]), str(doc["text"]), doc.get("tags", [])))),
-                        matched_terms=[],
-                        confidence=0.0,
-                    )
-                )
         return hits
 
 
@@ -384,6 +402,7 @@ def build_safety_refusal(gate: GateResult) -> str:
 
 
 class OpenAICompatibleLLMProvider:
+    supports_streaming = True
 
     def __init__(
         self,
@@ -404,17 +423,14 @@ class OpenAICompatibleLLMProvider:
             return self.base_url
         return f"{self.base_url}/chat/completions"
 
-    def build_answer(
+    def _build_messages(
         self,
         question: str,
         evidence: list[RetrievalHit],
         gate: GateResult,
         history: list[dict[str, str]] | None = None,
-    ) -> str:
+    ) -> list[dict[str, str]]:
         history = history or []
-        if not gate.allowed:
-            return build_safety_refusal(gate)
-
         evidence_text = "\n".join(
             (
                 f"[{hit.record_id or idx}] {hit.title} "
@@ -444,20 +460,35 @@ class OpenAICompatibleLLMProvider:
                 "content": f"问题: {question}\n\n可用知识库证据:\n{evidence_text}",
             }
         )
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": 0.2,
-            "stream": False,
-        }
+        return messages
+
+    def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         api_key = os.environ.get(self.api_key_env)
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
+        return headers
+
+    def build_answer(
+        self,
+        question: str,
+        evidence: list[RetrievalHit],
+        gate: GateResult,
+        history: list[dict[str, str]] | None = None,
+    ) -> str:
+        if not gate.allowed:
+            return build_safety_refusal(gate)
+
+        payload = {
+            "model": self.model,
+            "messages": self._build_messages(question, evidence, gate, history),
+            "temperature": 0.2,
+            "stream": False,
+        }
         request = urllib.request.Request(
             self._endpoint(),
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers=headers,
+            headers=self._headers(),
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
@@ -466,6 +497,82 @@ class OpenAICompatibleLLMProvider:
         if not content:
             raise RuntimeError("LLM service returned an empty answer.")
         return content
+
+    def _stream_answer_sync(
+        self,
+        question: str,
+        evidence: list[RetrievalHit],
+        gate: GateResult,
+        history: list[dict[str, str]] | None = None,
+    ):
+        if not gate.allowed:
+            yield build_safety_refusal(gate)
+            return
+        payload = {
+            "model": self.model,
+            "messages": self._build_messages(question, evidence, gate, history),
+            "temperature": 0.2,
+            "stream": True,
+        }
+        request = urllib.request.Request(
+            self._endpoint(),
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers=self._headers(),
+            method="POST",
+        )
+        emitted = False
+        with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
+            for raw_line in response:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                data = line.removeprefix("data:").strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    payload = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if payload.get("error"):
+                    raise RuntimeError(f"LLM streaming error: {payload['error']}")
+                choice = (payload.get("choices") or [{}])[0]
+                delta = choice.get("delta") or {}
+                text = str(delta.get("content") or choice.get("text") or "").strip("\x00")
+                if text:
+                    emitted = True
+                    yield text
+        if not emitted:
+            raise RuntimeError("LLM streaming returned no content.")
+
+    async def stream_answer(
+        self,
+        question: str,
+        evidence: list[RetrievalHit],
+        gate: GateResult,
+        history: list[dict[str, str]] | None = None,
+    ):
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[str | BaseException | None] = asyncio.Queue()
+
+        def worker() -> None:
+            try:
+                for delta in self._stream_answer_sync(question, evidence, gate, history):
+                    loop.call_soon_threadsafe(queue.put_nowait, delta)
+            except BaseException as exc:  # propagate provider errors into the async stream
+                loop.call_soon_threadsafe(queue.put_nowait, exc)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        threading.Thread(target=worker, daemon=True).start()
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            if isinstance(item, BaseException):
+                raise item
+            yield item
 
     def split_chunks(self, answer: str) -> list[str]:
         return split_answer_chunks(answer)
@@ -532,11 +639,12 @@ def build_asr(config: PipelineConfig) -> TextInputProvider | HttpJsonASRProvider
 def build_retriever(config: PipelineConfig) -> SimpleRetriever | HybridRetriever:
     rag_config = config.rag
     provider = str(rag_config.get("provider", "simple"))
+    min_score = float(rag_config.get("min_score", 1.0))
     if provider == "hybrid":
         index_path = project_path(*str(rag_config.get("index_path", "data/knowledge/ship_safety_index.json")).split("/"))
         if index_path.exists():
-            return HybridRetriever(index_path=index_path, latency_budget_ms=config.retrieval_latency_budget_ms)
-    return SimpleRetriever(latency_budget_ms=config.retrieval_latency_budget_ms)
+            return HybridRetriever(index_path=index_path, latency_budget_ms=config.retrieval_latency_budget_ms, min_score=min_score)
+    return SimpleRetriever(latency_budget_ms=config.retrieval_latency_budget_ms, min_score=min_score)
 
 
 def build_llm(config: PipelineConfig) -> OpenAICompatibleLLMProvider:
@@ -549,6 +657,13 @@ def build_llm(config: PipelineConfig) -> OpenAICompatibleLLMProvider:
             raise RuntimeError("SHIPVOICE_OPENAI_BASE_URL is required for the real LLM provider.")
         if not model:
             raise RuntimeError("SHIPVOICE_LLM_MODEL is required for the real LLM provider.")
+        if truthy_env("SHIPVOICE_REQUIRE_LORA"):
+            required_substring = os.environ.get("SHIPVOICE_REQUIRE_LLM_MODEL_SUBSTRING", "shipvoice").strip() or "shipvoice"
+            if required_substring.lower() not in model.lower():
+                raise RuntimeError(
+                    "SHIPVOICE_REQUIRE_LORA=1 requires SHIPVOICE_LLM_MODEL to contain "
+                    f"{required_substring!r}; got {model!r}."
+                )
         return OpenAICompatibleLLMProvider(
             base_url=base_url,
             model=model,

@@ -1,0 +1,361 @@
+{
+  "generated_at": "2026-06-22T17:25:37.612146+00:00",
+  "baseline_samples_path": "results\\server_real_batch_baseline_20260623\\samples.jsonl",
+  "streaming_samples_path": "results\\server_real_batch_streaming_20260623\\samples.jsonl",
+  "baseline": {
+    "mode": "baseline",
+    "num_samples": 30,
+    "num_failed": 0,
+    "num_gate_allowed": 20,
+    "num_streamed_segments_samples": 0,
+    "all_ok": {
+      "asr_ms": {
+        "count": 30,
+        "avg": 301.03,
+        "p50": 309.5,
+        "p90": 343.0,
+        "p95": 347.95,
+        "min": 213.0,
+        "max": 360.0
+      },
+      "llm_first_delta_ms": {
+        "count": 30,
+        "avg": 0.0,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "llm_complete_ms": {
+        "count": 30,
+        "avg": 2839.47,
+        "p50": 2845.0,
+        "p90": 6332.5,
+        "p95": 6622.95,
+        "min": 0.0,
+        "max": 7003.0
+      },
+      "first_audio_ready_ms": {
+        "count": 30,
+        "avg": 5487.6,
+        "p50": 4874.0,
+        "p90": 10590.5,
+        "p95": 10615.0,
+        "min": 2030.0,
+        "max": 10738.0
+      },
+      "server_audio_stream_complete_ms": {
+        "count": 30,
+        "avg": 5487.6,
+        "p50": 4874.0,
+        "p90": 10590.5,
+        "p95": 10615.0,
+        "min": 2030.0,
+        "max": 10738.0
+      },
+      "total_ms": {
+        "count": 30,
+        "avg": 5487.6,
+        "p50": 4874.0,
+        "p90": 10590.5,
+        "p95": 10615.0,
+        "min": 2030.0,
+        "max": 10738.0
+      },
+      "streamed_audio_segments": {
+        "count": 30,
+        "avg": 0.0,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      }
+    },
+    "gate_allowed": {
+      "asr_ms": {
+        "count": 20,
+        "avg": 315.3,
+        "p50": 318.0,
+        "p90": 343.9,
+        "p95": 352.4,
+        "min": 269.0,
+        "max": 360.0
+      },
+      "llm_first_delta_ms": {
+        "count": 20,
+        "avg": 0.0,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "llm_complete_ms": {
+        "count": 20,
+        "avg": 4259.2,
+        "p50": 4175.5,
+        "p90": 6447.9,
+        "p95": 6808.25,
+        "min": 1485.0,
+        "max": 7003.0
+      },
+      "first_audio_ready_ms": {
+        "count": 20,
+        "avg": 7161.9,
+        "p50": 7220.5,
+        "p90": 10606.0,
+        "p95": 10629.7,
+        "min": 3489.0,
+        "max": 10738.0
+      },
+      "server_audio_stream_complete_ms": {
+        "count": 20,
+        "avg": 7161.9,
+        "p50": 7220.5,
+        "p90": 10606.0,
+        "p95": 10629.7,
+        "min": 3489.0,
+        "max": 10738.0
+      },
+      "total_ms": {
+        "count": 20,
+        "avg": 7161.9,
+        "p50": 7220.5,
+        "p90": 10606.0,
+        "p95": 10629.7,
+        "min": 3489.0,
+        "max": 10738.0
+      },
+      "streamed_audio_segments": {
+        "count": 20,
+        "avg": 0.0,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      }
+    }
+  },
+  "streaming": {
+    "mode": "streaming",
+    "num_samples": 30,
+    "num_failed": 0,
+    "num_gate_allowed": 20,
+    "num_streamed_segments_samples": 20,
+    "all_ok": {
+      "asr_ms": {
+        "count": 30,
+        "avg": 307.43,
+        "p50": 313.0,
+        "p90": 344.3,
+        "p95": 354.15,
+        "min": 220.0,
+        "max": 363.0
+      },
+      "llm_first_delta_ms": {
+        "count": 30,
+        "avg": 139.63,
+        "p50": 208.0,
+        "p90": 216.1,
+        "p95": 217.55,
+        "min": 0.0,
+        "max": 220.0
+      },
+      "llm_complete_ms": {
+        "count": 30,
+        "avg": 3665.0,
+        "p50": 3448.5,
+        "p90": 8067.4,
+        "p95": 8999.7,
+        "min": 0.0,
+        "max": 9516.0
+      },
+      "first_audio_ready_ms": {
+        "count": 30,
+        "avg": 3243.03,
+        "p50": 3165.5,
+        "p90": 4784.7,
+        "p95": 5325.95,
+        "min": 1932.0,
+        "max": 5838.0
+      },
+      "server_audio_stream_complete_ms": {
+        "count": 30,
+        "avg": 6795.77,
+        "p50": 6212.5,
+        "p90": 12718.4,
+        "p95": 13557.2,
+        "min": 1932.0,
+        "max": 14212.0
+      },
+      "total_ms": {
+        "count": 30,
+        "avg": 6795.77,
+        "p50": 6212.5,
+        "p90": 12718.4,
+        "p95": 13557.2,
+        "min": 1932.0,
+        "max": 14212.0
+      },
+      "streamed_audio_segments": {
+        "count": 30,
+        "avg": 2.93,
+        "p50": 3.0,
+        "p90": 6.0,
+        "p95": 6.55,
+        "min": 0.0,
+        "max": 7.0
+      }
+    },
+    "gate_allowed": {
+      "asr_ms": {
+        "count": 20,
+        "avg": 322.2,
+        "p50": 326.0,
+        "p90": 348.3,
+        "p95": 360.15,
+        "min": 266.0,
+        "max": 363.0
+      },
+      "llm_first_delta_ms": {
+        "count": 20,
+        "avg": 209.45,
+        "p50": 211.5,
+        "p90": 217.1,
+        "p95": 218.1,
+        "min": 177.0,
+        "max": 220.0
+      },
+      "llm_complete_ms": {
+        "count": 20,
+        "avg": 5497.5,
+        "p50": 5503.5,
+        "p90": 8777.4,
+        "p95": 9236.7,
+        "min": 2636.0,
+        "max": 9516.0
+      },
+      "first_audio_ready_ms": {
+        "count": 20,
+        "avg": 3834.9,
+        "p50": 3655.5,
+        "p90": 5285.9,
+        "p95": 5389.6,
+        "min": 2115.0,
+        "max": 5838.0
+      },
+      "server_audio_stream_complete_ms": {
+        "count": 20,
+        "avg": 9164.0,
+        "p50": 8819.0,
+        "p90": 13087.4,
+        "p95": 14036.25,
+        "min": 5082.0,
+        "max": 14212.0
+      },
+      "total_ms": {
+        "count": 20,
+        "avg": 9164.0,
+        "p50": 8819.0,
+        "p90": 13087.4,
+        "p95": 14036.25,
+        "min": 5082.0,
+        "max": 14212.0
+      },
+      "streamed_audio_segments": {
+        "count": 20,
+        "avg": 4.4,
+        "p50": 4.0,
+        "p90": 6.1,
+        "p95": 7.0,
+        "min": 2.0,
+        "max": 7.0
+      }
+    }
+  },
+  "matched_deltas": {
+    "all_ok": {
+      "matched_count": 30,
+      "matched_sample_ids": [
+        "A001",
+        "A002",
+        "A003",
+        "A004",
+        "A005",
+        "A006",
+        "A007",
+        "A008",
+        "A009",
+        "A010",
+        "A011",
+        "A012",
+        "A013",
+        "A014",
+        "A015",
+        "A016",
+        "A017",
+        "A018",
+        "A019",
+        "A020",
+        "A021",
+        "A022",
+        "A023",
+        "A024",
+        "A025",
+        "A026",
+        "A027",
+        "A028",
+        "A029",
+        "A030"
+      ],
+      "streaming_first_audio_faster_count": 27,
+      "streaming_first_audio_not_faster_count": 3,
+      "first_audio_ready_ms_saved": {
+        "avg": 2244.57,
+        "p50": 1822.0,
+        "p90": 6007.3,
+        "p95": 6763.15,
+        "min": -152.0,
+        "max": 7237.0
+      }
+    },
+    "gate_allowed": {
+      "matched_count": 20,
+      "matched_sample_ids": [
+        "A001",
+        "A002",
+        "A003",
+        "A004",
+        "A005",
+        "A006",
+        "A007",
+        "A008",
+        "A009",
+        "A010",
+        "A011",
+        "A012",
+        "A013",
+        "A014",
+        "A015",
+        "A016",
+        "A018",
+        "A019",
+        "A020",
+        "A029"
+      ],
+      "streaming_first_audio_faster_count": 20,
+      "streaming_first_audio_not_faster_count": 0,
+      "first_audio_ready_ms_saved": {
+        "avg": 3327.0,
+        "p50": 2820.5,
+        "p90": 6316.3,
+        "p95": 7211.35,
+        "min": 280.0,
+        "max": 7237.0
+      }
+    }
+  }
+}

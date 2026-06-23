@@ -216,6 +216,7 @@ def build_report() -> dict[str, Any]:
         },
     ]
 
+    real_chain_metrics = real_chain.get("pipeline_result", {}).get("metrics", {})
     metrics = {
         "safety_gate": {
             "total": safety.get("total", 0),
@@ -250,11 +251,11 @@ def build_report() -> dict[str, Any]:
             "verified_lora_chain": lora_chain_verified,
             "reason": lora_chain_reason,
             "sample_id": real_chain.get("sample_id", ""),
-            "asr_ms": real_chain.get("pipeline_result", {}).get("metrics", {}).get("asr_ms"),
-            "retrieval_ms": real_chain.get("pipeline_result", {}).get("metrics", {}).get("retrieval_ms"),
-            "llm_first_token_ms": real_chain.get("pipeline_result", {}).get("metrics", {}).get("llm_first_token_ms"),
-            "tts_first_audio_ms": real_chain.get("pipeline_result", {}).get("metrics", {}).get("tts_first_audio_ms"),
-            "first_audio_ms": real_chain.get("pipeline_result", {}).get("metrics", {}).get("first_audio_ms"),
+            "asr_ms": real_chain_metrics.get("asr_ms"),
+            "retrieval_ms": real_chain_metrics.get("retrieval_ms"),
+            "llm_first_token_ms": real_chain_metrics.get("llm_complete_ms", real_chain_metrics.get("llm_first_token_ms")),
+            "tts_first_audio_ms": real_chain_metrics.get("tts_complete_ms", real_chain_metrics.get("tts_first_audio_ms")),
+            "first_audio_ms": real_chain_metrics.get("server_audio_payload_ready_ms", real_chain_metrics.get("first_audio_ms")),
         },
         "lora_experiment": {
             "train_examples": lora_summary.get("train_examples", 0),
@@ -287,7 +288,7 @@ def build_report() -> dict[str, Any]:
     limitations = [
         "当前本地证据必须重新跑 ShipVoice LoRA 在线链路验收，不能再使用旧基座模型结果代表最终系统。",
         "真实端到端语音链路尚未扩展到 30+ 条真实端到端压测。",
-        "TTS 首音延迟仍需优化，答辩时应如实说明瓶颈在 TTS 服务。",
+        "TTS 完整合成耗时仍需优化，答辩时应如实说明瓶颈在 TTS 服务。",
         "当前 real-only 版本依赖远程 ASR/TTS/LLM 服务；服务不可用时请求失败并记录错误。",
         "课程版使用 SQLite 与单管理员口令；企业级阶段应升级 PostgreSQL、RBAC 与监控告警。",
     ]
@@ -295,7 +296,7 @@ def build_report() -> dict[str, Any]:
     next_steps = [
         "启动 remote/start_lora_llm.sh，并运行 check_real_service_chain.py --require-lora 生成当前 LoRA 全链路证据。",
         "扩展真实端到端评测到至少 30 条录音，并按 ASR、LLM、TTS 阶段拆分指标。",
-        "替换或优化 TTS，让首音延迟从 15 秒级降到 3 秒以内。",
+        "替换或优化 TTS，让音频载荷就绪时间从 15 秒级降到 3 秒以内。",
         "把 citation 质量评测扩展到更多真实规程来源，并增加来源可信度评分。",
         "把管理后台的评测任务结果接入本验收报告，形成网页内一键验收。",
     ]
@@ -380,7 +381,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"| 多轮问答 | {multiturn_result} |",
             f"| Citation 质量 | {citation_result} |",
             f"| ASR 清单 | 已评测 {metrics['asr_manifest']['evaluated_rows']} 条，缺失音频 {metrics['asr_manifest']['missing_audio_rows']}，术语召回 {pct(metrics['asr_manifest']['term_recall'])}，状态 `{metrics['asr_manifest']['status']}` |",
-            f"| 当前真实链路 | LoRA 在线验收 `{metrics['real_chain_smoke']['verified_lora_chain']}`，样本 `{metrics['real_chain_smoke']['sample_id'] or 'n/a'}`，ASR {ms(metrics['real_chain_smoke']['asr_ms'])}，检索 {ms(metrics['real_chain_smoke']['retrieval_ms'])}，LLM 首 token {ms(metrics['real_chain_smoke']['llm_first_token_ms'])}，TTS 首音 {ms(metrics['real_chain_smoke']['tts_first_audio_ms'])}，端到端首音 {ms(metrics['real_chain_smoke']['first_audio_ms'])} |",
+            f"| 当前真实链路 | LoRA 在线验收 `{metrics['real_chain_smoke']['verified_lora_chain']}`，样本 `{metrics['real_chain_smoke']['sample_id'] or 'n/a'}`，ASR {ms(metrics['real_chain_smoke']['asr_ms'])}，检索 {ms(metrics['real_chain_smoke']['retrieval_ms'])}，LLM 完成 {ms(metrics['real_chain_smoke']['llm_first_token_ms'])}，TTS 完成 {ms(metrics['real_chain_smoke']['tts_first_audio_ms'])}，音频载荷就绪 {ms(metrics['real_chain_smoke']['first_audio_ms'])} |",
             f"| LoRA 实验 | 训练 {metrics['lora_experiment']['train_examples']} 条，holdout {metrics['lora_experiment']['holdout_examples']} 条，base/lora 评测 {metrics['lora_experiment']['base_rows']}/{metrics['lora_experiment']['lora_rows']}，train loss {metrics['lora_experiment']['train_loss']}，adapter {metrics['lora_experiment']['adapter_mb']} MB，off-domain 拒答 {metrics['lora_experiment']['base_off_domain_refusal_count']} -> {metrics['lora_experiment']['lora_off_domain_refusal_count']} |",
             "",
             "## 交付物检查",

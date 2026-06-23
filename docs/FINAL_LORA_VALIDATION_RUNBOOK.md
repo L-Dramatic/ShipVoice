@@ -6,7 +6,7 @@
 真实 ASR -> 安全门控 -> RAG -> ShipVoice LoRA 在线模型 -> 真实 TTS
 ```
 
-只有下面验收全部通过后，才能把项目重新认定为课程 95+ 当前证据完整版本。
+只有下面验收全部通过后，才能把项目认定为 A2 真实链路证据完整版本。本文不再使用“95+”自评分作为验收标准。
 
 ## 1. 本机准备
 
@@ -100,6 +100,7 @@ SHIPVOICE_OPENAI_BASE_URL=http://127.0.0.1:18034/v1
 SHIPVOICE_LLM_MODEL=shipvoice-qwen2.5-7b-lora
 SHIPVOICE_REQUIRE_LORA=1
 SHIPVOICE_REQUIRE_LLM_MODEL_SUBSTRING=shipvoice
+SHIPVOICE_LORA_ADAPTER_SHA256=3462dbff405f71ed3d0b0a0d8484498a2be98ffe84ab5b2f56a2d69e7130d1cf
 SHIPVOICE_TTS_PROVIDER=http_json
 SHIPVOICE_TTS_ENDPOINT=http://127.0.0.1:18002/tts
 SHIPVOICE_TTS_VOICE=zh-CN-XiaoxiaoNeural
@@ -124,18 +125,30 @@ evaluation dashboard rebuild
 final real-only gate
 ```
 
+当前 2026-06-23 已补充完成的最终证据还包括：
+
+```powershell
+python scripts\attest_lora_adapter.py --env-file configs\runtime.real.env --output results\lora_adapter_attestation_20260623.json
+python scripts\evaluate_asr_online.py --env-file configs\runtime.real.env --output-dir results\asr_online_20260623
+python scripts\run_real_chain_repeated.py --env-file configs\runtime.real.env --limit 30 --split test --repeats 5 --require-lora --output-dir results\server_real_repeated_20260623
+python scripts\run_browser_onplaying_harness.py --url http://127.0.0.1:8026 --html results\browser_onplaying_streamable_20260623.html --output results\browser_onplaying_streamable_20260623.json --screenshot results\browser_onplaying_streamable_20260623.png
+```
+
 ## 6. 通过标准
 
 以下全部满足才算完成当前阶段：
 
 1. `scripts\check_real_service_chain.py --require-lora` 通过。
-2. `results\real_chain_smoke.json` 中 `llm_require_lora` 为 `true`。
-3. `results\real_chain_smoke.json` 中 `llm_health.health.adapter_loaded` 为 `true`。
-4. `provider_status.llm` 包含 `shipvoice-qwen2.5-7b-lora`。
-5. `provider_status.asr` 为真实 HTTP ASR。
-6. `provider_status.tts` 为真实 HTTP TTS。
-7. `results\project_acceptance_report.md` 中课程目标分回到 `95+` 档。
-8. `deliverables\ShipVoice_Evaluation_Dashboard.html` 刷新为最新证据。
+2. `results\real_chain_smoke_streaming.json` 中 `llm_require_lora` 为 `true`。
+3. `results\real_chain_smoke_streaming.json` 中 `llm_health.health.adapter_loaded` 为 `true`。
+4. `results\lora_adapter_attestation_20260623.json` 中 `sha_match` 为 `true`。
+5. `provider_status.llm` 包含 `shipvoice-qwen2.5-7b-lora`。
+6. `provider_status.asr` 为真实 HTTP ASR。
+7. `provider_status.tts` 为真实 HTTP TTS。
+8. `results\asr_online_20260623\summary.json` 显示 50/50 evaluated，且不使用 transcript hint。
+9. `results\server_real_repeated_20260623\summary.json` 显示 300/300 ok，100/100 gate-allowed 配对中 streaming 更快。
+10. `results\browser_onplaying_streamable_20260623.json` 显示 20/20 ok，并包含 `client_audio_onplaying_ms` p50/p90/p95。
+11. 后续报告、PPT、Dashboard 从最终 manifest 刷新为最新证据，不再引用旧 0% CER 或旧单轮低延迟数字。
 
 如果任一项不满足，不允许在报告或答辩中宣称最终链路已完成。
 

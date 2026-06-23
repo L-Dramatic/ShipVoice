@@ -70,6 +70,13 @@ class RunMetrics:
     tts_first_audio_ms: int
     answer_chars: int
     evidence_count: int
+    server_audio_payload_ready_ms: int = 0
+    llm_complete_ms: int = 0
+    tts_complete_ms: int = 0
+    llm_first_delta_ms: int = 0
+    server_first_audio_chunk_ready_ms: int = 0
+    server_audio_stream_complete_ms: int = 0
+    streamed_audio_segments: int = 0
 
     def to_row(self) -> dict[str, Any]:
         return asdict(self)

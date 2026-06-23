@@ -7,9 +7,13 @@ WORKDIR /app
 
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin shipvoice
 
-COPY . /app
+COPY --chown=shipvoice:shipvoice . /app
+RUN mkdir -p /app/results/runtime && chown -R shipvoice:shipvoice /app/results
 
 EXPOSE 8022
 
-CMD ["python", "run_app.py", "--host", "0.0.0.0", "--port", "8022"]
+USER shipvoice
+
+CMD ["python", "run_app.py", "--host", "0.0.0.0", "--port", "8022", "--no-auto-port"]

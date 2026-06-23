@@ -183,11 +183,11 @@ def real_chain_result() -> dict[str, object] | None:
     for candidate in candidates:
         summary_path = candidate / "summary.json"
         smoke_path = candidate / "real_chain_smoke.json"
-        if summary_path.exists() and smoke_path.exists():
+        if summary_path.exists():
             return {
                 "root": candidate,
                 "summary": json.loads(summary_path.read_text(encoding="utf-8")),
-                "smoke": json.loads(smoke_path.read_text(encoding="utf-8")),
+                "smoke": json.loads(smoke_path.read_text(encoding="utf-8")) if smoke_path.exists() else {},
             }
     return None
 
@@ -234,7 +234,7 @@ def build() -> None:
     lora = lora_summary()
 
     latency_table = table(
-        ["Mode", "Samples", "Profile", "Timing", "First audio avg(ms)", "Total avg(ms)", "Answer chars"],
+        ["Mode", "Samples", "Profile", "Timing", "Audio payload ready avg(ms)", "Total avg(ms)", "Answer chars"],
         [[x["mode"], x["count"], x["profile"], x["timing"], x["first_audio"], x["total"], x["answer_chars"]] for x in latency],
     )
     lora_table = table(
@@ -413,24 +413,32 @@ def build() -> None:
     if real_chain:
         real_summary = real_chain["summary"]
         smoke = real_chain["smoke"]
-        provider_status = smoke["pipeline_result"]["provider_status"]
+        smoke_pipeline = smoke.get("pipeline_result", {}) if isinstance(smoke, dict) else {}
+        provider_status = smoke_pipeline.get("provider_status", {}) or {
+            "asr": real_summary.get("asr_provider", "--"),
+            "tts": real_summary.get("tts_provider", "--"),
+        }
+        asr_health = smoke.get("asr_health", {}) if isinstance(smoke, dict) else {}
+        tts_health = smoke.get("tts_health", {}) if isinstance(smoke, dict) else {}
+        avg_audio_ready_ms = real_summary.get("avg_server_audio_payload_ready_ms", real_summary.get("avg_first_audio_ms", 0))
+        sample_note = "real audio end-to-end runs"
         real_chain_metric_cards = f"""
         <div class="metrics">
-          {metric("Verified remote samples", str(real_summary["num_samples"]), "A001-A003 real audio end-to-end runs")}
-          {metric("ASR backend", smoke["asr_health"]["service"], smoke["asr_health"]["model"])}
-          {metric("TTS backend", smoke["tts_health"]["service"], "remote Chinese voice synthesis")}
-          {metric("Avg first audio", f"{float(real_summary['avg_first_audio_ms']):.0f} ms", "observed on RTX 4090 remote chain")}
+          {metric("Verified remote samples", str(real_summary["num_samples"]), sample_note)}
+          {metric("ASR backend", str(asr_health.get("service", provider_status.get("asr", "--"))), str(asr_health.get("model", "")))}
+          {metric("TTS backend", str(tts_health.get("service", provider_status.get("tts", "--"))), "remote Chinese voice synthesis")}
+          {metric("Avg audio payload ready", f"{float(avg_audio_ready_ms):.0f} ms", "server-side payload-ready timing")}
         </div>
         """
         real_chain_table = table(
-            ["Sample", "Transcript", "ASR ms", "Retrieval ms", "TTS first audio ms", "Total ms"],
+            ["Sample", "Transcript", "ASR ms", "Retrieval ms", "TTS complete ms", "Total ms"],
             [
                 [
                     row["sample_id"],
                     row["transcript"],
                     row["asr_ms"],
                     row["retrieval_ms"],
-                    row["tts_first_audio_ms"],
+                    row.get("tts_complete_ms", row.get("tts_first_audio_ms", 0)),
                     row["total_ms"],
                 ]
                 for row in real_summary["samples"]
@@ -446,11 +454,11 @@ def build() -> None:
           {metric("Remote real chain", "Not verified", "run scripts/check_real_service_chain.py on a remote GPU host")}
           {metric("ASR backend", "--", "pending remote validation")}
           {metric("TTS backend", "--", "pending remote validation")}
-          {metric("Avg first audio", "--", "pending remote validation")}
+          {metric("Avg audio payload ready", "--", "pending remote validation")}
         </div>
         """
         real_chain_table = table(
-            ["Sample", "Transcript", "ASR ms", "Retrieval ms", "TTS first audio ms", "Total ms"],
+            ["Sample", "Transcript", "ASR ms", "Retrieval ms", "TTS complete ms", "Total ms"],
             [["Pending", "--", "--", "--", "--", "--"]],
         )
         real_chain_callout = "Remote real voice chain has not been verified yet."

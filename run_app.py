@@ -27,11 +27,21 @@ def find_free_port(preferred: int = 8022) -> int:
     raise RuntimeError(f"No free local port found from {preferred} to {preferred + 19}")
 
 
+def ensure_port_available(host: str, port: int) -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind((host, port))
+        except OSError as exc:
+            raise RuntimeError(f"Port {host}:{port} is not available.") from exc
+    return port
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Start the ShipVoice FastAPI app.")
     parser.add_argument("--env-file", default=os.getenv("SHIPVOICE_ENV_FILE", ""), help="Optional .env-style runtime file.")
     parser.add_argument("--port", type=int, default=0, help="Preferred local port. Overrides SHIPVOICE_APP_PORT.")
     parser.add_argument("--host", default=os.getenv("SHIPVOICE_APP_HOST", "127.0.0.1"), help="Bind host.")
+    parser.add_argument("--no-auto-port", action="store_true", help="Fail if the requested port is occupied.")
     args = parser.parse_args()
 
     if args.env_file:
@@ -39,7 +49,8 @@ def main() -> None:
         print(f"Loaded env file: {loaded['SHIPVOICE_ENV_FILE']}")
 
     preferred_port = args.port or int(os.getenv("SHIPVOICE_APP_PORT", "8022"))
-    port = find_free_port(preferred_port)
+    no_auto_port = args.no_auto_port or os.getenv("SHIPVOICE_NO_AUTO_PORT", "").strip().lower() in {"1", "true", "yes", "on"}
+    port = ensure_port_available(args.host, preferred_port) if no_auto_port else find_free_port(preferred_port)
     app = create_app()
     print(f"Runtime profile: ASR={os.getenv('SHIPVOICE_ASR_PROVIDER', '(config)')} "
           f"LLM={os.getenv('SHIPVOICE_LLM_PROVIDER', '(config)')} "

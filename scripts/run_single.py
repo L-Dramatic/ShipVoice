@@ -51,7 +51,7 @@ async def main() -> None:
             f"risk={hit.risk_level} confidence={hit.confidence:.2f} score={hit.score} terms={terms}"
         )
     print(f"回答：{result.answer}")
-    print(f"指标：first_audio={result.metrics.first_audio_ms}ms total={result.metrics.total_ms}ms")
+    print(f"指标：audio_ready={result.metrics.server_audio_payload_ready_ms}ms total={result.metrics.total_ms}ms")
 
 
 if __name__ == "__main__":

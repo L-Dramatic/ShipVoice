@@ -4,7 +4,7 @@
 
 目标不是只把 ASR、LLM、TTS 串起来，而是做成一个可演示、可测量、可扩展的船厂安全语音助手：
 
-- 低延迟：流式 ASR、流式 LLM、句级 TTS、首句优先播放。
+- 延迟治理：真实 ASR、LoRA LLM、TTS 链路已打通并完成 30×2×5 重复实验与浏览器 `audio.onplaying` 批量取证；`streaming` 模式已实现 LLM token/SSE 流、句级切分、TTS 分段合成和 WebSocket 音频 chunk 首句优先播放。
 - 领域增强：造船安全知识库、RAG 检索、术语热词、LLM LoRA/QLoRA 微调。
 - 安全增强：领域门控、危险/恶意输入短路拒答、提示注入检测。
 - 实验闭环：基线、改进、消融、延迟统计、术语识别与安全拦截评测。
@@ -43,7 +43,7 @@ TTS: http://127.0.0.1:18002/tts
 运行真实链路检查：
 
 ```powershell
-python scripts\check_real_service_chain.py --env-file configs\runtime.real.env --sample-id A001 --require-lora
+python scripts\check_real_service_chain.py --env-file configs\runtime.real.env --sample-id A001 --require-lora --require-adapter-sha256 3462dbff405f71ed3d0b0a0d8484498a2be98ffe84ab5b2f56a2d69e7130d1cf
 ```
 
 GPU 服务在线后运行最终验收：
@@ -55,7 +55,12 @@ powershell -ExecutionPolicy Bypass -File scripts\run_lora_final_validation.ps1 -
 输出文件：
 
 ```text
-results\real_chain_smoke.json
+results\real_chain_smoke_streaming.json
+results\server_real_batch_comparison_20260623.md
+results\server_real_repeated_20260623\summary.json
+results\browser_onplaying_streamable_20260623.json
+results\asr_online_20260623\summary.json
+results\lora_adapter_attestation_20260623.json
 ```
 
 生成课程验收报告：
@@ -96,8 +101,7 @@ python run_app.py --port 8026
 ```json
 {
   "audio_base64": "...",
-  "audio_name": "sample.wav",
-  "transcript_hint": "可选文本提示"
+  "audio_name": "sample.wav"
 }
 ```
 
@@ -179,16 +183,16 @@ python run_app.py --port 8026
 
 ### 已验证的真实语音链路
 
-2026-06-12 已完成一轮远端真实 ASR/TTS 链路验证，结果归档于 `results/remote_real_chain_20260612_chattts_48359/`。该历史结果中的 LLM 仍是旧受控回答层，不能作为当前 real-only 主链路证据；后续应重新跑 `scripts/check_real_service_chain.py`，生成 ASR、LLM、TTS 全真实的最新结果。
+2026-06-12 已完成一轮远端真实 ASR/TTS 链路验证，结果归档于 `results/remote_real_chain_20260612_chattts_48359/`。该历史结果中的 LLM 仍是旧受控回答层，不能作为当前 real-only 主链路证据；当前主链路证据应使用 2026-06-23 的 ASR、ShipVoice LoRA LLM、TTS 全真实结果。
 
 - 远端 ASR：`FunASR / SenseVoiceSmall`
 - 远端 TTS：`ChatTTS`
 - 验证样本：`A001-A003` 共 3 条真实录音
 - 平均 ASR：`158 ms`
 - 平均检索：`165.67 ms`
-- 平均端到端首音：`15238.67 ms`
+- 平均音频载荷就绪：`15238.67 ms`
 
-这轮验证只能证明系统具备真实语音输入与真实语音输出能力；当前版本已经把主链路升级为 ShipVoice LoRA 在线模型，最终答辩证据必须重新运行 `scripts/check_real_service_chain.py --require-lora`。
+当前验证已经证明系统具备真实语音输入、ShipVoice LoRA 在线模型和真实语音输出能力。服务器侧低延迟证据见 `results/server_real_repeated_20260623/summary.json`，浏览器首播证据见 `results/browser_onplaying_streamable_20260623.json`，LoRA adapter SHA 证据见 `results/lora_adapter_attestation_20260623.json`。
 
 ## 目录结构
 
@@ -227,4 +231,7 @@ web/static/              答辩演示面板
 - 课程高分评分证据：[docs/PHASE1_SCORECARD.md](docs/PHASE1_SCORECARD.md)
 - 演示与运维操作手册：[docs/OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)
 - 引用质量评测：[results/citation_quality_report.md](results/citation_quality_report.md)
+- 在线 ASR 质量评测：[results/asr_online_20260623/report.md](results/asr_online_20260623/report.md)
+- 30×2×5 低延迟重复实验：[results/server_real_repeated_20260623/summary.md](results/server_real_repeated_20260623/summary.md)
+- 浏览器首播批量取证：[results/browser_onplaying_streamable_20260623.json](results/browser_onplaying_streamable_20260623.json)
 - 一键验收报告：[results/project_acceptance_report.md](results/project_acceptance_report.md)

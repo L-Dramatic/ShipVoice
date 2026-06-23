@@ -59,6 +59,7 @@ def llm_health_check(
     api_key: str = "",
     required_model_substring: str = "",
     require_lora: bool = False,
+    required_adapter_sha256: str = "",
 ) -> dict:
     headers: dict[str, str] = {}
     if api_key:
@@ -84,6 +85,13 @@ def llm_health_check(
     if require_lora:
         if not isinstance(health_payload, dict) or health_payload.get("adapter_loaded") is not True:
             raise SystemExit(f"LoRA adapter is not confirmed by {health_url}: {health_payload}")
+    if required_adapter_sha256:
+        actual_sha = str(health_payload.get("adapter_sha256", "")).strip().lower()
+        expected_sha = required_adapter_sha256.strip().lower()
+        if actual_sha != expected_sha:
+            raise SystemExit(
+                f"LoRA adapter SHA check failed at {health_url}: expected {expected_sha}, got {actual_sha or '<missing>'}"
+            )
 
     return {
         "ok": True,
@@ -109,6 +117,15 @@ async def run_pipeline(question: str, audio_path: Path, mode: str) -> dict:
         audio_output["audio_base64_len"] = len(audio_base64)
         audio_output["audio_base64_sha256"] = hashlib.sha256(audio_base64.encode("ascii")).hexdigest()
         audio_output["audio_base64"] = "<redacted>"
+    audio_segments = audio_output.get("audio_segments")
+    if isinstance(audio_segments, list) and audio_segments:
+        segment_values = [str(item) for item in audio_segments]
+        audio_output["audio_segments_count"] = len(segment_values)
+        audio_output["audio_segments_base64_lens"] = [len(item) for item in segment_values]
+        audio_output["audio_segments_sha256"] = [
+            hashlib.sha256(item.encode("ascii")).hexdigest() for item in segment_values
+        ]
+        audio_output["audio_segments"] = ["<redacted>"] * len(segment_values)
 
     return {
         "question": result.question,
@@ -133,6 +150,7 @@ def main() -> None:
     parser.add_argument("--llm-base-url", default=os.environ.get("SHIPVOICE_OPENAI_BASE_URL", ""))
     parser.add_argument("--llm-model", default=os.environ.get("SHIPVOICE_LLM_MODEL", ""))
     parser.add_argument("--require-llm-model-substring", default=os.environ.get("SHIPVOICE_REQUIRE_LLM_MODEL_SUBSTRING", ""))
+    parser.add_argument("--require-adapter-sha256", default=os.environ.get("SHIPVOICE_LORA_ADAPTER_SHA256", ""))
     parser.add_argument("--require-lora", action="store_true", default=os.environ.get("SHIPVOICE_REQUIRE_LORA", "0") in {"1", "true", "yes"})
     parser.add_argument("--output", type=Path, default=ROOT / "results" / "real_chain_smoke.json")
     args = parser.parse_args()
@@ -150,6 +168,8 @@ def main() -> None:
             args.llm_model = os.environ.get("SHIPVOICE_LLM_MODEL", "")
         if not args.require_llm_model_substring:
             args.require_llm_model_substring = os.environ.get("SHIPVOICE_REQUIRE_LLM_MODEL_SUBSTRING", "")
+        if not args.require_adapter_sha256:
+            args.require_adapter_sha256 = os.environ.get("SHIPVOICE_LORA_ADAPTER_SHA256", "")
         args.require_lora = args.require_lora or os.environ.get("SHIPVOICE_REQUIRE_LORA", "0") in {"1", "true", "yes"}
 
     rows = read_csv(args.manifest)
@@ -182,7 +202,6 @@ def main() -> None:
         {
             "audio_base64": audio_base64,
             "audio_name": audio_path.name,
-            "transcript_hint": row.get("transcript", ""),
         },
     )
 
@@ -202,6 +221,7 @@ def main() -> None:
         api_key=os.environ.get("SHIPVOICE_OPENAI_API_KEY", ""),
         required_model_substring=args.require_llm_model_substring,
         require_lora=args.require_lora,
+        required_adapter_sha256=args.require_adapter_sha256,
     )
 
     os.environ["SHIPVOICE_ASR_PROVIDER"] = "http_json"
@@ -227,6 +247,7 @@ def main() -> None:
         "llm_health": llm_health,
         "llm_require_lora": args.require_lora,
         "llm_required_model_substring": args.require_llm_model_substring,
+        "llm_required_adapter_sha256": args.require_adapter_sha256,
         "pipeline_result": pipeline_result,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

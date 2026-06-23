@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import subprocess
 import sys
@@ -16,6 +17,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from shipvoice.config import load_env_file  # noqa: E402
 import shipvoice.fastapi_app as fastapi_app_module  # noqa: E402
 from shipvoice.fastapi_app import create_app  # noqa: E402
+from shipvoice.models import GateResult, PipelineResult, RunMetrics, TTSResult  # noqa: E402
 
 
 @contextmanager
@@ -26,6 +28,24 @@ def replace_attr(target: object, name: str, value: object):
         yield value
     finally:
         setattr(target, name, original)
+
+
+@contextmanager
+def patched_env(**updates: str | None):
+    previous = {key: os.environ.get(key) for key in updates}
+    for key, value in updates.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 class CallRecorder:
@@ -45,10 +65,63 @@ class CallRecorder:
         return len(self.calls)
 
 
+class MinimalStore:
+    def __init__(self) -> None:
+        self.records: list[object] = []
+
+    def insert_audit(self, record: object) -> None:
+        self.records.append(record)
+
+
+class SlowPipeline:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def run_once(self, question: str, **kwargs: object) -> PipelineResult:
+        await asyncio.sleep(0.2)
+        self.calls += 1
+        metrics = RunMetrics(
+            question_id="manual",
+            mode=str(kwargs.get("mode", "full")),
+            category="manual",
+            gate_label="domain_safe",
+            input_mode="text",
+            asr_provider="fake_asr",
+            llm_provider="fake_llm",
+            tts_provider="fake_tts",
+            execution_profile="test",
+            timing_source="server_audio_payload_ready",
+            first_audio_ms=1,
+            total_ms=1,
+            asr_ms=0,
+            retrieval_ms=0,
+            llm_first_token_ms=1,
+            tts_first_audio_ms=1,
+            answer_chars=2,
+            evidence_count=0,
+            server_audio_payload_ready_ms=1,
+            llm_complete_ms=1,
+            tts_complete_ms=1,
+        )
+        return PipelineResult(
+            question=question,
+            transcript=question,
+            answer="ok",
+            gate=GateResult(label="domain_safe", allowed=True, reason="test"),
+            evidence=[],
+            events=[],
+            metrics=metrics,
+            provider_status={},
+            audio_output=TTSResult(provider="fake_tts", audio_base64="UklGRg==", mime_type="audio/wav"),
+        )
+
+
 class AdminApiTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        load_env_file(str(ROOT / "configs" / "runtime.fullreal.local.env"))
+        env_path = ROOT / "configs" / "runtime.fullreal.local.env"
+        if env_path.exists():
+            load_env_file(str(env_path))
         os.environ["SHIPVOICE_ADMIN_PASSWORD"] = "test-admin-password"
         os.environ["SHIPVOICE_ADMIN_SESSION_SECRET"] = "shipvoice-admin-test-secret"
         cls.app = create_app()
@@ -82,6 +155,95 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
         session_response = await self.client.get("/api/admin/auth/session", headers=headers)
         self.assertEqual(session_response.status_code, 200)
         self.assertEqual(session_response.json()["session"]["subject"], "shipvoice-admin")
+
+    async def test_live_and_ready_endpoints_are_separate(self) -> None:
+        live_response = await self.client.get("/api/live")
+        self.assertEqual(live_response.status_code, 200)
+        self.assertTrue(live_response.json()["ok"])
+
+        ready_snapshot = {
+            "asr": {"endpoint": "http://asr.local/health", "reachable": True, "http_status": 200},
+            "llm": {
+                "endpoint": "http://llm.local/v1/models",
+                "reachable": True,
+                "http_status": 200,
+                "model": "shipvoice-qwen2.5-7b-lora",
+                "model_available": True,
+                "health_reachable": True,
+                "health_http_status": 200,
+                "adapter_loaded": True,
+                "adapter_sha256": "abc123",
+            },
+            "tts": {"endpoint": "http://tts.local/health", "reachable": True, "http_status": 200},
+            "updated_at": "2026-06-22T00:00:00+00:00",
+        }
+        with replace_attr(fastapi_app_module, "provider_health_snapshot", CallRecorder(return_value=ready_snapshot)):
+            ready_response = await self.client.get("/api/ready")
+        self.assertEqual(ready_response.status_code, 200)
+        self.assertTrue(ready_response.json()["ready"])
+
+        with (
+            patched_env(SHIPVOICE_REQUIRE_LORA="1", SHIPVOICE_LORA_ADAPTER_SHA256="abc123"),
+            replace_attr(fastapi_app_module, "provider_health_snapshot", CallRecorder(return_value=ready_snapshot)),
+        ):
+            attested_response = await self.client.get("/api/ready")
+        self.assertEqual(attested_response.status_code, 200)
+        self.assertTrue(attested_response.json()["ready"])
+
+        with (
+            patched_env(SHIPVOICE_REQUIRE_LORA="1", SHIPVOICE_LORA_ADAPTER_SHA256="wrong"),
+            replace_attr(fastapi_app_module, "provider_health_snapshot", CallRecorder(return_value=ready_snapshot)),
+        ):
+            sha_mismatch_response = await self.client.get("/api/ready")
+        self.assertEqual(sha_mismatch_response.status_code, 503)
+        self.assertFalse(sha_mismatch_response.json()["ready"])
+        self.assertIn("adapter SHA", sha_mismatch_response.json()["components"]["llm"]["ready_reason"])
+
+        not_ready_snapshot = {
+            **ready_snapshot,
+            "tts": {"endpoint": "http://tts.local/health", "reachable": False, "http_status": None},
+        }
+        with replace_attr(fastapi_app_module, "provider_health_snapshot", CallRecorder(return_value=not_ready_snapshot)):
+            not_ready_response = await self.client.get("/api/ready")
+        self.assertEqual(not_ready_response.status_code, 503)
+        self.assertFalse(not_ready_response.json()["ready"])
+
+    async def test_same_session_concurrent_run_is_rejected(self) -> None:
+        with (
+            patched_env(SHIPVOICE_RUN_QUEUE_WAIT_SECONDS="0.05", SHIPVOICE_RUN_TIMEOUT_SECONDS="5"),
+            replace_attr(fastapi_app_module, "VoiceQAPipeline", SlowPipeline),
+            replace_attr(fastapi_app_module, "SQLiteAppStore", MinimalStore),
+        ):
+            app = create_app()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+            first = asyncio.create_task(
+                client.post(
+                    "/api/run",
+                    json={
+                        "session_id": "session-lock-test",
+                        "client_request_id": "session-lock-test:first",
+                        "question": "ship safety work",
+                        "mode": "full",
+                    },
+                )
+            )
+            await asyncio.sleep(0.02)
+            second = await client.post(
+                "/api/run",
+                json={
+                    "session_id": "session-lock-test",
+                    "client_request_id": "session-lock-test:second",
+                    "question": "ship safety work",
+                    "mode": "full",
+                },
+            )
+            first_response = await first
+
+        self.assertEqual(first_response.status_code, 200, first_response.text)
+        self.assertEqual(second.status_code, 409)
+        second_payload = second.json()
+        second_error = second_payload.get("error") or second_payload.get("detail", {}).get("error")
+        self.assertEqual(second_error, "session already has a run in progress")
 
     async def test_admin_export_formats(self) -> None:
         sample_run = {

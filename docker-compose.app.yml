@@ -13,7 +13,7 @@ services:
       - ./results:/app/results
       - ./configs:/app/configs
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8022/api/health', timeout=5).read()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8022/api/ready', timeout=5).read()"]
       interval: 20s
       timeout: 5s
       retries: 5

@@ -51,7 +51,7 @@
           <h2>运行模式</h2>
           <div class="segmented" role="tablist" aria-label="运行模式">
             <button class="mode-button is-active" data-mode="full">安全 RAG</button>
-            <button class="mode-button" data-mode="streaming">流式</button>
+            <button class="mode-button" data-mode="streaming">流式低延迟</button>
             <button class="mode-button" data-mode="baseline">基线</button>
           </div>
         </section>
@@ -151,8 +151,12 @@
 
             <section class="metrics-grid" aria-label="核心指标">
               <article class="metric">
-                <span>首段音频延迟</span>
+                <span>音频载荷就绪</span>
                 <strong id="firstAudioMetric">--</strong>
+              </article>
+              <article class="metric">
+                <span>浏览器开始播放</span>
+                <strong id="clientPlaybackMetric">--</strong>
               </article>
               <article class="metric">
                 <span>总响应时间</span>
@@ -234,6 +238,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=audio-replay-20260622"></script>
+    <script src="./app.js?v=client-timing-20260622"></script>
   </body>
 </html>

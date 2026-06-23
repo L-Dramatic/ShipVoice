@@ -164,7 +164,9 @@ def load_latency_metrics() -> dict[str, dict[str, float]]:
                 "count": len(rows),
                 "profile": ",".join(sorted({r.get("execution_profile", "unknown") for r in rows})),
                 "timing_source": ",".join(sorted({r.get("timing_source", "unknown") for r in rows})),
-                "first_audio_ms": statistics.mean(float(r["first_audio_ms"]) for r in rows),
+                "first_audio_ms": statistics.mean(
+                    float(r.get("server_audio_payload_ready_ms", r["first_audio_ms"])) for r in rows
+                ),
                 "total_ms": statistics.mean(float(r["total_ms"]) for r in rows),
                 "answer_chars": statistics.mean(float(r["answer_chars"]) for r in rows),
             }
@@ -179,7 +181,7 @@ def load_latency_metrics() -> dict[str, dict[str, float]]:
             "count": 1,
             "profile": str(providers.get("execution_profile", "real_voice")),
             "timing_source": str(providers.get("timing_source", "observed")),
-            "first_audio_ms": float(metrics.get("first_audio_ms", 0) or 0),
+            "first_audio_ms": float(metrics.get("server_audio_payload_ready_ms", metrics.get("first_audio_ms", 0)) or 0),
             "total_ms": float(metrics.get("total_ms", 0) or 0),
             "answer_chars": float(metrics.get("answer_chars", 0) or 0),
         }
@@ -425,26 +427,36 @@ def load_real_chain_metrics() -> dict[str, object]:
     for candidate in candidates:
         summary_path = candidate / "summary.json"
         smoke_path = candidate / "real_chain_smoke.json"
-        if not summary_path.exists() or not smoke_path.exists():
+        if not summary_path.exists():
             continue
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
-        provider_status = smoke["pipeline_result"]["provider_status"]
+        smoke = json.loads(smoke_path.read_text(encoding="utf-8")) if smoke_path.exists() else {}
+        smoke_pipeline = smoke.get("pipeline_result", {}) if isinstance(smoke, dict) else {}
+        first_sample = summary.get("samples", [{}])[0] if summary.get("samples") else {}
+        provider_status = smoke_pipeline.get("provider_status", {}) or first_sample.get("providers", {}) or {
+            "execution_profile": summary.get("execution_profile", ""),
+            "llm": summary.get("llm_provider", ""),
+            "tts": summary.get("tts_provider", ""),
+        }
+        asr_health = smoke.get("asr_health", {}) if isinstance(smoke, dict) else {}
+        tts_health = smoke.get("tts_health", {}) if isinstance(smoke, dict) else {}
+        avg_audio_ready_ms = summary.get("avg_server_audio_payload_ready_ms", summary.get("avg_first_audio_ms", 0))
+        avg_tts_complete_ms = summary.get("avg_tts_complete_ms", summary.get("avg_tts_first_audio_ms", 0))
         return {
             "status": "verified",
             "artifact_dir": str(candidate.relative_to(ROOT)),
             "num_samples": str(summary["num_samples"]),
-            "avg_first_audio_ms": f"{float(summary['avg_first_audio_ms']):.0f}",
+            "avg_first_audio_ms": f"{float(avg_audio_ready_ms):.0f}",
             "avg_total_ms": f"{float(summary['avg_total_ms']):.0f}",
             "avg_asr_ms": f"{float(summary['avg_asr_ms']):.0f}",
             "avg_retrieval_ms": f"{float(summary['avg_retrieval_ms']):.0f}",
-            "avg_tts_first_audio_ms": f"{float(summary['avg_tts_first_audio_ms']):.0f}",
-            "asr_service": str(smoke["asr_health"]["service"]),
-            "asr_model": str(smoke["asr_health"]["model"]),
-            "tts_service": str(smoke["tts_health"]["service"]),
-            "execution_profile": str(provider_status["execution_profile"]),
-            "llm_provider": str(provider_status["llm"]),
-            "tts_provider": str(provider_status["tts"]),
+            "avg_tts_first_audio_ms": f"{float(avg_tts_complete_ms):.0f}",
+            "asr_service": str(asr_health.get("service", summary.get("asr_provider", ""))),
+            "asr_model": str(asr_health.get("model", "")),
+            "tts_service": str(tts_health.get("service", summary.get("tts_provider", ""))),
+            "execution_profile": str(provider_status.get("execution_profile", summary.get("execution_profile", ""))),
+            "llm_provider": str(provider_status.get("llm", summary.get("llm_provider", ""))),
+            "tts_provider": str(provider_status.get("tts", summary.get("tts_provider", ""))),
             "samples": summary["samples"],
         }
     return {
@@ -585,7 +597,7 @@ def add_exec_summary(
             ["训练数据", f"{remote['train_examples']} 条扩展 SFT train，{remote['holdout_examples']} 条 holdout，{counts['safety_gate_records']} 条安全门控 seed"],
             ["安全评测", f"{safety['total']} 条安全/离题/prompt-injection/domain-safe/boundary 样例，危险请求误放行 {safety['false_allow_count']}"],
             ["语音评测", f"{asr['manifest_rows']} 条真实录音已完成评测，当前 ASR 状态为 {asr['status']}"],
-            ["真实语音链路", f"远端已验证 {real_chain['num_samples']} 条真实样本，ASR={real_chain['asr_service']}，TTS={real_chain['tts_service']}，平均首音 {real_chain['avg_first_audio_ms']} ms"],
+            ["真实语音链路", f"远端已验证 {real_chain['num_samples']} 条真实样本，ASR={real_chain['asr_service']}，TTS={real_chain['tts_service']}，平均音频载荷就绪 {real_chain['avg_first_audio_ms']} ms"],
             ["远端微调", "RTX 4090 上完成 Qwen2.5-7B-Instruct 4-bit LoRA/QLoRA 训练"],
             ["评测闭环", f"Base eval {remote['base_rows']} 条，LoRA eval {remote['lora_rows']} 条，adapter 约 {remote['adapter_mb']} MB"],
             ["评测看板", "deliverables/ShipVoice_Evaluation_Dashboard.html 汇总 RAG、延迟、安全门控与 LoRA 对照"],
@@ -768,8 +780,8 @@ def add_real_chain_validation(doc: Document, real_chain: dict[str, object]) -> N
             ["执行形态", str(real_chain["execution_profile"]), f"LLM provider={real_chain['llm_provider']}"],
             ["平均 ASR 耗时", f"{real_chain['avg_asr_ms']} ms", "真实语音转写阶段"],
             ["平均检索耗时", f"{real_chain['avg_retrieval_ms']} ms", "RAG 证据检索阶段"],
-            ["平均 TTS 首音", f"{real_chain['avg_tts_first_audio_ms']} ms", "当前主要性能瓶颈"],
-            ["平均端到端首音", f"{real_chain['avg_first_audio_ms']} ms", "远端真实语音链路观察值"],
+            ["平均 TTS 完成", f"{real_chain['avg_tts_first_audio_ms']} ms", "当前主要性能瓶颈"],
+            ["平均音频载荷就绪", f"{real_chain['avg_first_audio_ms']} ms", "服务端观测值，非浏览器播放开始时间"],
         ],
         [1.55, 1.35, 3.3],
     )
@@ -779,13 +791,13 @@ def add_real_chain_validation(doc: Document, real_chain: dict[str, object]) -> N
             [
                 str(row["sample_id"]),
                 str(row["transcript"]),
-                f"{row['asr_ms']} / {row['retrieval_ms']} / {row['tts_first_audio_ms']}",
+                f"{row['asr_ms']} / {row['retrieval_ms']} / {row.get('tts_complete_ms', row['tts_first_audio_ms'])}",
                 str(row["total_ms"]),
             ]
         )
     add_table(
         doc,
-        ["样本", "转写结果", "ASR/检索/TTS首音(ms)", "总耗时(ms)"],
+        ["样本", "转写结果", "ASR/检索/TTS完成(ms)", "总耗时(ms)"],
         sample_rows,
         [0.8, 3.2, 1.3, 1.2],
     )
@@ -819,7 +831,7 @@ def add_latency(doc: Document, latency: dict[str, dict[str, float]]) -> None:
             ])
     add_table(
         doc,
-        ["模式", "样本数", "执行形态", "计时来源", "首段音频均值(ms)", "总耗时均值(ms)", "平均回答长度"],
+        ["模式", "样本数", "执行形态", "计时来源", "音频载荷就绪均值(ms)", "总耗时均值(ms)", "平均回答长度"],
         rows,
         [0.9, 0.7, 1.0, 1.0, 1.35, 1.3, 1.35],
     )
@@ -901,7 +913,7 @@ def add_limitations(doc: Document) -> None:
     add_bullet(doc, "LoRA 在 off-domain 问题上出现轻微领域模板化，因此正式系统必须保留安全门控。")
     add_bullet(doc, "50 条真实中文语音已经完成录制与 ASR 评测，但当前样本规模仍偏小，下一阶段应扩展到 100+ 条、多说话人和更强噪声条件。")
     add_bullet(doc, "多轮 benchmark 已建立，但仍以结构化追问为主，下一阶段应加入更自由的口语化省略问句和 ASR 错字变体。")
-    add_bullet(doc, "远端真实 ChatTTS 链路已经打通，但当前平均 TTS 首音延迟仍在十秒级，后续应优先做流式返回、模型替换或推理缓存优化。")
+    add_bullet(doc, "远端真实 ChatTTS 链路已经打通，但当前平均 TTS 完整合成耗时仍在十秒级，后续应优先做流式返回、模型替换或推理缓存优化。")
     add_bullet(doc, "安全门控已扩展到 55 条 benchmark，但下一阶段仍应加入 100+ 对抗改写、真实语音 ASR 错字变体和轻量分类器。")
 
 

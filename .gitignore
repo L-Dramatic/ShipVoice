@@ -5,6 +5,9 @@ venv/
 outputs/
 results/*.tmp
 results/*.log
+results/**/*.err
+results/**/process.pid
+results/browser_onplaying_*.html
 results/demo_server*.log
 results/runtime/
 results/runtime_test/

@@ -1,0 +1,189 @@
+{
+  "generated_at": "2026-06-22T17:46:12.840667+00:00",
+  "total_manifest_rows": 50,
+  "evaluated_rows": 50,
+  "missing_audio_rows": 0,
+  "missing_asr_rows": 0,
+  "avg_cer": 0.01579281537176274,
+  "avg_wer": 0.01579281537176274,
+  "term_expected_count": 28,
+  "term_hit_count": 24,
+  "term_recall": 0.8571428571428571,
+  "status": "ready",
+  "hypothesis_column": "online_postprocess_transcript",
+  "by_noise": {
+    "quiet": {
+      "total": 28,
+      "evaluated": 28,
+      "avg_cer": 0.010477085571070533,
+      "avg_wer": 0.010477085571070533
+    },
+    "classroom": {
+      "total": 10,
+      "evaluated": 10,
+      "avg_cer": 0.011513157894736841,
+      "avg_wer": 0.011513157894736841
+    },
+    "workshop_like": {
+      "total": 12,
+      "evaluated": 12,
+      "avg_cer": 0.03176256613756614,
+      "avg_wer": 0.03176256613756614
+    }
+  },
+  "by_scenario": {
+    "confined_space": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "pressure_test": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.06666666666666667,
+      "avg_wer": 0.06666666666666667
+    },
+    "lifting": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "hot_work": {
+      "total": 2,
+      "evaluated": 2,
+      "avg_cer": 0.03571428571428571,
+      "avg_wer": 0.03571428571428571
+    },
+    "ballast_tank": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.10526315789473684,
+      "avg_wer": 0.10526315789473684
+    },
+    "ppe": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "scaffold": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "signal": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "welding": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "electric": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "forklift": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "fire": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "gas_record": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "watcher": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "pressure_abnormal": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "emergency": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "authority": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0625,
+      "avg_wer": 0.0625
+    },
+    "pressure": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "refusal": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.05263157894736842,
+      "avg_wer": 0.05263157894736842
+    },
+    "reporting": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "off_domain": {
+      "total": 5,
+      "evaluated": 5,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    },
+    "unsafe": {
+      "total": 15,
+      "evaluated": 15,
+      "avg_cer": 0.025410052910052907,
+      "avg_wer": 0.025410052910052907
+    },
+    "prompt_injection": {
+      "total": 8,
+      "evaluated": 8,
+      "avg_cer": 0.00625,
+      "avg_wer": 0.00625
+    },
+    "grinding_ppe": {
+      "total": 1,
+      "evaluated": 1,
+      "avg_cer": 0.0,
+      "avg_wer": 0.0
+    }
+  },
+  "endpoint": "http://127.0.0.1:18001/asr",
+  "manifest": "D:\\ShipVoice\\data\\audio\\audio_manifest.csv",
+  "output_dir": "results\\asr_online_20260623",
+  "mode": "online_asr_no_reference_hint",
+  "num_requested": 50,
+  "num_ok": 50,
+  "num_failed_requests": 0,
+  "avg_asr_latency_ms": 283.96,
+  "raw_outputs_path": "results\\asr_online_20260623\\asr_outputs.jsonl"
+}

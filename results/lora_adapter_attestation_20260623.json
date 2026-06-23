@@ -1,0 +1,41 @@
+{
+  "generated_at": "2026-06-22T17:45:38.757098+00:00",
+  "llm_base_url": "http://127.0.0.1:18034/v1",
+  "models_url": "http://127.0.0.1:18034/v1/models",
+  "health_url": "http://127.0.0.1:18034/health",
+  "models": {
+    "object": "list",
+    "data": [
+      {
+        "id": "shipvoice-qwen2.5-7b-lora",
+        "object": "model",
+        "created": 1782150271,
+        "owned_by": "shipvoice"
+      }
+    ]
+  },
+  "health": {
+    "ok": true,
+    "service": "transformers_openai",
+    "served_model": "shipvoice-qwen2.5-7b-lora",
+    "base_model": "Qwen/Qwen2.5-7B-Instruct",
+    "adapter_loaded": true,
+    "adapter_path": "/root/autodl-tmp/shipvoice/outputs/qwen_lora_shipvoice_expanded",
+    "require_adapter": true,
+    "adapter_hash_algorithm": "sha256-tree-v1",
+    "adapter_sha256": "3462dbff405f71ed3d0b0a0d8484498a2be98ffe84ab5b2f56a2d69e7130d1cf",
+    "adapter_file_count": 10,
+    "adapter_bytes": 177423363,
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "quantization": "4bit",
+    "loaded_at": 1782150271
+  },
+  "adapter_loaded": true,
+  "adapter_sha256": "3462dbff405f71ed3d0b0a0d8484498a2be98ffe84ab5b2f56a2d69e7130d1cf",
+  "expected_adapter_sha256": "3462dbff405f71ed3d0b0a0d8484498a2be98ffe84ab5b2f56a2d69e7130d1cf",
+  "sha_match": true,
+  "adapter_hash_algorithm": "sha256-tree-v1",
+  "adapter_file_count": 10,
+  "adapter_bytes": 177423363
+}

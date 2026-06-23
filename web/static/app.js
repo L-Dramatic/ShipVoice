@@ -55,6 +55,8 @@ const stageNames = {
   done: "完成"
 };
 
+const REQUEST_TIMEOUT_MS = 300000;
+
 let currentScenario = scenarios[0];
 let currentMode = "full";
 let runToken = 0;
@@ -73,6 +75,11 @@ let micVisualizer = null;
 let ttsVisualizer = null;
 let radarVisualizer = null;
 let ttsAudioObjectUrl = null;
+let currentClientTiming = null;
+let streamingAudioQueue = [];
+let streamingAudioUrls = [];
+let streamingAudioPlaying = false;
+let streamingAudioRunId = "";
 
 class AudioVisualizer {
   constructor(canvasId, type = "mic") {
@@ -366,11 +373,16 @@ function init() {
   ttsPlayer.addEventListener("play", () => {
     ttsVisualizer.start(ttsPlayer);
   });
+  ttsPlayer.addEventListener("playing", () => {
+    void recordAudioOnPlaying();
+  });
   ttsPlayer.addEventListener("pause", () => {
     ttsVisualizer.stop();
   });
   ttsPlayer.addEventListener("ended", () => {
     ttsVisualizer.stop();
+    streamingAudioPlaying = false;
+    playNextStreamingAudioChunk();
   });
   ttsPlayer.addEventListener("error", () => {
     const error = ttsPlayer.error;
@@ -464,6 +476,7 @@ function renderScenario(scenario) {
 function resetMetrics() {
   liveEvents = [];
   $("firstAudioMetric").textContent = "--";
+  $("clientPlaybackMetric").textContent = "--";
   $("totalMetric").textContent = "--";
   $("gateMetric").textContent = "--";
   $("evidenceMetric").textContent = "--";
@@ -511,26 +524,37 @@ async function runDemo() {
   const audioSource = currentAudioSource();
   renderScenario({ ...currentScenario, question });
   resetMetrics();
+  resetStreamingAudioQueue();
   clearError();
   $("statusBadge").textContent = "运行中";
   $("statusBadge").className = "status-badge is-running";
   $("asrState").textContent = "处理中";
-  $("timelineState").textContent = "实时流式链路中";
+  $("timelineState").textContent = "实时执行链路中";
   setStageState("input", "done");
   setStageState("asr", "active");
   $("runButton").disabled = true;
   $("runButton").textContent = "分析中...";
 
   try {
+    const clientRequestId = buildClientRequestId();
+    currentClientTiming = {
+      runId: clientRequestId,
+      sessionId: clientSessionId,
+      requestStartedAt: performance.now(),
+      audioPayloadReceivedMs: null,
+      audioOnPlayingMs: null,
+      playingReported: false
+    };
     const audioPayload = await buildAudioPayload(audioSource);
     const requestPayload = {
       session_id: clientSessionId,
+      client_request_id: clientRequestId,
       question,
       mode: currentMode,
       history: buildHistory(),
       ...audioPayload
     };
-    const payload = await runViaWebSocket(requestPayload, token);
+    const payload = await runViaWebSocket(requestPayload, token, currentClientTiming);
     if (token !== runToken) {
       return;
     }
@@ -538,6 +562,7 @@ async function runDemo() {
       ...payload,
       mode: currentMode,
       audio_file: audioSource?.name || "",
+      client_request_id: clientRequestId,
       client_timestamp: new Date().toISOString()
     };
     localRuns.unshift(lastResult);
@@ -546,37 +571,26 @@ async function runDemo() {
     scrollPrimaryResultIntoView();
     await refreshAuditPanel();
   } catch (error) {
-    try {
-      const httpRetryPayload = await runViaHttp(question, audioSource, token);
-      if (token !== runToken) {
-        return;
-      }
-      lastResult = {
-        ...httpRetryPayload,
-        mode: currentMode,
-        audio_file: audioSource?.name || "",
-        client_timestamp: new Date().toISOString()
-      };
-      localRuns.unshift(lastResult);
-      renderResult(lastResult);
-      renderRuntimeMeta({ ...lastResult, transport: "http-retry" });
-      scrollPrimaryResultIntoView();
-      await refreshAuditPanel();
-      showError(`WebSocket 失败，已改用 HTTP 重试：${error.message}`);
-    } catch (httpRetryError) {
-      $("statusBadge").textContent = "失败";
-      $("statusBadge").className = "status-badge is-blocked";
-      $("answerText").textContent = `接口调用失败：${httpRetryError.message}`;
-      $("answerState").textContent = "执行失败";
-      $("timelineState").textContent = "异常终止";
-      scrollPrimaryResultIntoView();
-      showError(httpRetryError.message);
-      await refreshAuditPanel();
-    }
+    $("statusBadge").textContent = "失败";
+    $("statusBadge").className = "status-badge is-blocked";
+    $("answerText").textContent = `接口调用失败：${error.message}`;
+    $("answerState").textContent = "执行失败";
+    $("timelineState").textContent = "异常终止";
+    scrollPrimaryResultIntoView();
+    showError(`WebSocket 执行失败：${error.message}。系统不会自动重复提交同一请求。`);
+    await refreshAuditPanel();
   } finally {
     $("runButton").disabled = false;
     $("runButton").textContent = "获取安全建议";
   }
+}
+
+function buildClientRequestId() {
+  const suffix =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID().replaceAll("-", "").slice(0, 18)
+      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  return `${clientSessionId}:${suffix}`.slice(0, 96);
 }
 
 function scrollPrimaryResultIntoView() {
@@ -587,18 +601,47 @@ function scrollPrimaryResultIntoView() {
   target.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-async function runViaWebSocket(requestPayload, token) {
+async function runViaWebSocket(requestPayload, token, clientTiming) {
   return await new Promise((resolve, reject) => {
     const socket = new WebSocket(buildWebSocketUrl("/ws/run"));
     let settled = false;
+    let accepted = null;
+    const timeoutId = window.setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        try { socket.close(); } catch (error) {}
+        reject(new Error("websocket run timed out"));
+      }
+    }, REQUEST_TIMEOUT_MS);
+
+    function settle(callback) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timeoutId);
+      callback();
+    }
 
     socket.addEventListener("open", () => {
       socket.send(JSON.stringify(requestPayload));
     });
 
     socket.addEventListener("message", (event) => {
-      const payload = JSON.parse(String(event.data || "{}"));
+      let payload = {};
+      try {
+        payload = JSON.parse(String(event.data || "{}"));
+      } catch (error) {
+        settle(() => {
+          try { socket.close(); } catch (closeError) {}
+          reject(new Error("websocket returned invalid json"));
+        });
+        return;
+      }
       if (payload.type === "accepted") {
+        accepted = payload;
+        clientTiming.runId = payload.run_id || clientTiming.runId;
+        clientTiming.sessionId = payload.session_id || clientTiming.sessionId;
         renderRuntimeMeta({ ...payload, transport: "websocket" });
         return;
       }
@@ -606,63 +649,161 @@ async function runViaWebSocket(requestPayload, token) {
         if (token !== runToken) {
           return;
         }
-        liveEvents.push(payload.event);
+        if (!["llm_delta", "tts_chunk", "tts_queue"].includes(payload.event?.stage)) {
+          liveEvents.push(payload.event);
+        }
         renderLiveEvent(payload.event);
         renderTimeline(liveEvents);
         return;
       }
+      if (payload.type === "audio_chunk") {
+        if (token !== runToken) {
+          return;
+        }
+        handleAudioChunk(payload.chunk || {}, clientTiming, payload);
+        return;
+      }
       if (payload.type === "result") {
-        settled = true;
-        socket.close();
-        resolve(payload.result);
+        settle(() => {
+          mergeClientTimingIntoResult(payload.result, clientTiming);
+          markAudioPayloadReceived(payload.result, clientTiming);
+          if (clientTiming.playingReported) {
+            void submitClientTiming(payload.result, clientTiming);
+          }
+          socket.close();
+          resolve(payload.result);
+        });
         return;
       }
       if (payload.type === "error") {
-        settled = true;
-        socket.close();
-        reject(new Error(payload.error || "websocket run failed"));
+        settle(() => {
+          socket.close();
+          reject(new Error(payload.error || "websocket run failed"));
+        });
       }
     });
 
     socket.addEventListener("error", () => {
       if (!settled) {
-        settled = true;
-        reject(new Error("websocket connection failed"));
+        settle(() => reject(new Error("websocket connection failed")));
       }
     });
 
     socket.addEventListener("close", () => {
       if (!settled) {
+        window.clearTimeout(timeoutId);
         settled = true;
-        reject(new Error("websocket closed before result"));
+        if (!accepted?.run_id || !accepted?.session_id) {
+          reject(new Error("websocket closed before result"));
+          return;
+        }
+        fetchRunStatus(accepted.run_id, accepted.session_id)
+          .then((payload) => {
+            if (payload.result) {
+              markAudioPayloadReceived(payload.result, clientTiming);
+              resolve(payload.result);
+              return;
+            }
+            reject(new Error(`websocket closed; run ${accepted.run_id} is ${payload.status || "unknown"}`));
+          })
+          .catch((error) => reject(error));
       }
     });
   });
 }
 
 async function runViaHttp(question, audioSource, token) {
+  const clientRequestId = buildClientRequestId();
+  currentClientTiming = {
+    runId: clientRequestId,
+    sessionId: clientSessionId,
+    requestStartedAt: performance.now(),
+    audioPayloadReceivedMs: null,
+    audioOnPlayingMs: null,
+    playingReported: false
+  };
   const audioPayload = await buildAudioPayload(audioSource);
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const response = await fetch("/api/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal: controller.signal,
     body: JSON.stringify({
       session_id: clientSessionId,
+      client_request_id: clientRequestId,
       question,
       mode: currentMode,
       history: buildHistory(),
       ...audioPayload
     })
-  });
-  const payload = await response.json();
+  }).finally(() => window.clearTimeout(timeoutId));
+  const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(payload.error || "后端执行失败");
   }
   if (token !== runToken) {
     return payload;
   }
+  markAudioPayloadReceived(payload, currentClientTiming);
   liveEvents = Array.isArray(payload.events) ? payload.events : [];
   renderTimeline(liveEvents);
   return payload;
+}
+
+async function fetchRunStatus(runId, sessionId) {
+  const response = await fetch(`/api/runs/${encodeURIComponent(runId)}?session_id=${encodeURIComponent(sessionId)}`);
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || payload.detail?.error || "run status fetch failed");
+  }
+  return payload;
+}
+
+function markAudioPayloadReceived(result, clientTiming) {
+  if (!clientTiming || !result) {
+    return;
+  }
+  const elapsedMs = clientTiming.audioPayloadReceivedMs ?? Math.max(0, Math.round(performance.now() - clientTiming.requestStartedAt));
+  clientTiming.audioPayloadReceivedMs = elapsedMs;
+  result.metrics = {
+    ...(result.metrics || {}),
+    client_audio_payload_received_ms: elapsedMs
+  };
+}
+
+function mergeClientTimingIntoResult(result, clientTiming) {
+  if (!result || !clientTiming) {
+    return;
+  }
+  result.metrics = {
+    ...(result.metrics || {})
+  };
+  if (clientTiming.audioPayloadReceivedMs !== null && clientTiming.audioPayloadReceivedMs !== undefined) {
+    result.metrics.client_audio_payload_received_ms = clientTiming.audioPayloadReceivedMs;
+  }
+  if (clientTiming.audioOnPlayingMs !== null && clientTiming.audioOnPlayingMs !== undefined) {
+    result.metrics.client_audio_onplaying_ms = clientTiming.audioOnPlayingMs;
+    result.metrics.client_request_to_playing_ms = clientTiming.audioOnPlayingMs;
+  }
+}
+
+function audioPayloadReadyMs(metrics) {
+  return metrics.server_first_audio_chunk_ready_ms
+    ?? metrics.server_audio_payload_ready_ms
+    ?? metrics.first_audio_ms
+    ?? "--";
+}
+
+function formatModeLabel(mode) {
+  const labels = {
+    full: "安全 RAG",
+    rag: "安全 RAG",
+    baseline: "基线直答",
+    guarded: "门控直答",
+    streaming: "流式低延迟"
+  };
+  return labels[mode] || mode || currentMode;
 }
 
 function renderLiveEvent(event) {
@@ -703,14 +844,40 @@ function renderLiveEvent(event) {
     }
     setStageState("llm", "active");
   }
+  if (stage === "llm_stream_start") {
+    setStageState("llm", "active");
+    $("answerState").textContent = "流式生成中";
+    $("answerText").textContent = "";
+  }
+  if (stage === "llm_first_delta") {
+    $("answerState").textContent = "已收到首个 LLM 片段";
+  }
+  if (stage === "llm_delta") {
+    $("answerText").textContent += payload.delta || "";
+    $("answerState").textContent = "流式生成中";
+    return;
+  }
+  if (stage === "tts_queue") {
+    setStageState("tts", "active");
+    $("answerState").textContent = "句子已进入语音队列";
+    return;
+  }
+  if (stage === "tts_chunk") {
+    setStageState("tts", "active");
+    $("answerState").textContent = payload.first_chunk ? "首段语音已就绪" : "语音分段输出中";
+    if (payload.first_chunk && payload.server_audio_chunk_ready_ms !== undefined) {
+      $("firstAudioMetric").textContent = `${payload.server_audio_chunk_ready_ms} ms`;
+    }
+    return;
+  }
   if (stage === "llm") {
     setStageState("llm", "done");
-    $("answerState").textContent = "生成中";
+    $("answerState").textContent = payload.llm_first_delta_ms !== undefined ? "流式生成完成" : "生成中";
     setStageState("tts", "active");
   }
   if (stage === "tts") {
     setStageState("tts", "done");
-    $("firstAudioMetric").textContent = `${payload.first_audio_ms ?? "--"} ms`;
+    $("firstAudioMetric").textContent = `${audioPayloadReadyMs(payload)} ms`;
     $("answerState").textContent = "语音输出中";
   }
   if (stage === "done") {
@@ -731,7 +898,10 @@ function renderResult(result) {
 
   $("questionText").textContent = result.transcript || result.question || "";
   $("answerText").textContent = result.answer || "";
-  $("firstAudioMetric").textContent = `${metrics.first_audio_ms ?? "--"} ms`;
+  $("firstAudioMetric").textContent = `${audioPayloadReadyMs(metrics)} ms`;
+  $("clientPlaybackMetric").textContent = metrics.client_audio_onplaying_ms
+    ? `${metrics.client_audio_onplaying_ms} ms`
+    : "--";
   $("totalMetric").textContent = `${metrics.total_ms ?? "--"} ms`;
   $("gateMetric").textContent = blocked ? "拦截" : gate.label === "not_checked" ? "未启用" : "通过";
   $("evidenceMetric").textContent = String(evidence.length);
@@ -754,11 +924,64 @@ function renderResult(result) {
   finalizeStageRail(blocked, evidence.length);
 }
 
+async function recordAudioOnPlaying() {
+  if (!currentClientTiming || currentClientTiming.playingReported) {
+    return;
+  }
+  const runId = lastResult?.run_id || currentClientTiming.runId;
+  const sessionId = lastResult?.session_id || currentClientTiming.sessionId || clientSessionId;
+  if (!runId || !sessionId) {
+    return;
+  }
+  const onPlayingMs = Math.max(0, Math.round(performance.now() - currentClientTiming.requestStartedAt));
+  currentClientTiming.playingReported = true;
+  currentClientTiming.audioOnPlayingMs = onPlayingMs;
+  currentClientTiming.audioPayloadReceivedMs = currentClientTiming.audioPayloadReceivedMs ?? onPlayingMs;
+  if (!lastResult) {
+    $("clientPlaybackMetric").textContent = `${onPlayingMs} ms`;
+    return;
+  }
+  lastResult.metrics = {
+    ...(lastResult.metrics || {}),
+    client_audio_payload_received_ms: currentClientTiming.audioPayloadReceivedMs,
+    client_audio_onplaying_ms: onPlayingMs,
+    client_request_to_playing_ms: onPlayingMs
+  };
+  $("clientPlaybackMetric").textContent = `${onPlayingMs} ms`;
+  await submitClientTiming(lastResult, currentClientTiming);
+}
+
+async function submitClientTiming(result, clientTiming) {
+  const runId = result?.run_id || clientTiming?.runId;
+  const sessionId = result?.session_id || clientTiming?.sessionId || clientSessionId;
+  if (!runId || !sessionId || !clientTiming) {
+    return;
+  }
+  try {
+    await fetch(`/api/runs/${encodeURIComponent(runId)}/client-timing`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: sessionId,
+        client_request_id: clientTiming.runId,
+        metrics: {
+          client_audio_payload_received_ms: clientTiming.audioPayloadReceivedMs,
+          client_audio_onplaying_ms: clientTiming.audioOnPlayingMs,
+          client_request_to_playing_ms: clientTiming.audioOnPlayingMs,
+          client_timing_source: "browser_audio_playing"
+        }
+      })
+    });
+  } catch (error) {
+    console.warn("client timing update failed", error);
+  }
+}
+
 function renderRuntimeMeta(result) {
   $("sessionIdValue").textContent = result.session_id || clientSessionId;
   $("runIdValue").textContent = result.run_id || "--";
   $("runTimeValue").textContent = formatTimestamp(result.created_at || "");
-  $("modeValue").textContent = result.mode || currentMode;
+  $("modeValue").textContent = formatModeLabel(result.mode || currentMode);
 }
 
 function renderSystemHealth(payload) {
@@ -887,14 +1110,100 @@ function renderProviderSummary(providers) {
     `ASR: ${providers.asr || "unknown"}`,
     `LLM: ${providers.llm || "unknown"}`,
     `TTS: ${providers.tts || "unknown"}`,
-    `Profile: ${providers.execution_profile || "unknown"}`
+    `Profile: ${providers.execution_profile || "unknown"}`,
+    `Response: ${providers.response_mode || "complete_payload"}`
   ];
   $("providerSummary").innerHTML = rows.map((item) => `<span class="provider-chip">${escapeHtml(item)}</span>`).join("");
+}
+
+function handleAudioChunk(chunk, clientTiming, envelope = {}) {
+  if (!chunk.audio_base64) {
+    return;
+  }
+  if (clientTiming && (clientTiming.audioPayloadReceivedMs === null || clientTiming.audioPayloadReceivedMs === undefined)) {
+    clientTiming.audioPayloadReceivedMs = Math.max(0, Math.round(performance.now() - clientTiming.requestStartedAt));
+  }
+  if (chunk.first_chunk) {
+    $("firstAudioMetric").textContent = `${chunk.server_first_audio_chunk_ready_ms ?? chunk.server_audio_chunk_ready_ms ?? "--"} ms`;
+  }
+  $("answerState").textContent = chunk.first_chunk ? "首段语音已到达浏览器" : "语音分段接收中";
+  enqueueStreamingAudioChunk({
+    runId: envelope.run_id || clientTiming?.runId || "",
+    seq: Number(chunk.seq ?? streamingAudioQueue.length),
+    audioBase64: chunk.audio_base64,
+    mimeType: chunk.mime_type || "audio/wav"
+  });
+}
+
+function resetStreamingAudioQueue() {
+  const player = $("ttsPlayer");
+  streamingAudioQueue = [];
+  streamingAudioPlaying = false;
+  streamingAudioRunId = "";
+  streamingAudioUrls.forEach((url) => URL.revokeObjectURL(url));
+  streamingAudioUrls = [];
+  if (player) {
+    player.pause();
+    player.hidden = true;
+    player.removeAttribute("src");
+  }
+  revokeTtsAudioObjectUrl();
+}
+
+function enqueueStreamingAudioChunk(chunk) {
+  const runId = chunk.runId || "";
+  if (streamingAudioRunId && runId && streamingAudioRunId !== runId) {
+    resetStreamingAudioQueue();
+  }
+  if (runId) {
+    streamingAudioRunId = runId;
+  }
+  const blob = base64ToBlob(chunk.audioBase64, chunk.mimeType);
+  const url = URL.createObjectURL(blob);
+  streamingAudioUrls.push(url);
+  streamingAudioQueue.push({ ...chunk, url });
+  playNextStreamingAudioChunk();
+}
+
+function playNextStreamingAudioChunk() {
+  const player = $("ttsPlayer");
+  if (!player || streamingAudioPlaying || !streamingAudioQueue.length) {
+    return;
+  }
+  const next = streamingAudioQueue.shift();
+  streamingAudioPlaying = true;
+  player.src = next.url;
+  player.hidden = false;
+  player.load();
+  const playPromise = player.play();
+  if (playPromise && typeof playPromise.catch === "function") {
+    playPromise.catch((error) => {
+      streamingAudioPlaying = false;
+      showError(`浏览器阻止了自动播放：${error.message || "请点击播放器开始播放"}`);
+    });
+  }
 }
 
 function renderAudioOutput(audioOutput) {
   const player = $("ttsPlayer");
   const audioBase64 = audioOutput.audio_base64 || "";
+  const audioSegments = Array.isArray(audioOutput.audio_segments) ? audioOutput.audio_segments : [];
+  if (!audioBase64 && audioSegments.length) {
+    const resultRunId = lastResult?.run_id || currentClientTiming?.runId || "";
+    const streamingChunksAlreadyReceived = Boolean(resultRunId && streamingAudioRunId === resultRunId);
+    if (!streamingChunksAlreadyReceived && !streamingAudioPlaying && !streamingAudioQueue.length) {
+      audioSegments.forEach((segment, index) => {
+        enqueueStreamingAudioChunk({
+          runId: resultRunId,
+          seq: index,
+          audioBase64: segment,
+          mimeType: audioOutput.mime_type || "audio/wav"
+        });
+      });
+    }
+    player.hidden = false;
+    return;
+  }
   if (!audioBase64) {
     player.hidden = true;
     player.removeAttribute("src");

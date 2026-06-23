@@ -29,6 +29,22 @@ class EvidenceCitationTests(unittest.TestCase):
         self.assertIn("密闭舱室", top_hit.matched_terms)
         self.assertIn("ship_safety_corpus.jsonl", top_hit.source)
 
+    def test_retriever_returns_no_evidence_for_no_match(self) -> None:
+        import asyncio
+
+        retriever = HybridRetriever(project_path("data", "knowledge", "ship_safety_index.json"))
+        evidence = asyncio.run(retriever.retrieve("zzzzzz unrelated gibberish with no ship terms"))
+
+        self.assertEqual(evidence, [])
+
+    def test_retriever_respects_min_score_threshold(self) -> None:
+        import asyncio
+
+        retriever = HybridRetriever(project_path("data", "knowledge", "ship_safety_index.json"), min_score=999999)
+        evidence = asyncio.run(retriever.retrieve("密闭舱室动火作业前要检查什么？"))
+
+        self.assertEqual(evidence, [])
+
     def test_pipeline_attaches_auditable_citation_id_to_answer(self) -> None:
         evidence = [
             RetrievalHit(

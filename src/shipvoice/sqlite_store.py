@@ -79,6 +79,10 @@ class SQLiteAppStore:
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
     def _init_db(self) -> None:
@@ -766,6 +770,27 @@ class SQLiteAppStore:
 
     def recent_runs(self, limit: int = 20) -> list[dict[str, Any]]:
         return self.search_runs(limit=limit)
+
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM run_audits WHERE run_id = ?", (run_id,)).fetchone()
+        return self._row_to_audit_dict(row) if row else None
+
+    def merge_run_metrics(self, run_id: str, metrics: dict[str, Any]) -> dict[str, Any] | None:
+        with self._lock:
+            with self._connect() as conn:
+                row = conn.execute("SELECT metrics_json FROM run_audits WHERE run_id = ?", (run_id,)).fetchone()
+                if row is None:
+                    return None
+                current = json.loads(row["metrics_json"] or "{}")
+                current.update(metrics)
+                conn.execute(
+                    "UPDATE run_audits SET metrics_json = ?, case_updated_at = ? WHERE run_id = ?",
+                    (json.dumps(current, ensure_ascii=False), utc_now_iso(), run_id),
+                )
+                conn.commit()
+                self._rewrite_audit_log_locked(conn)
+        return self.get_run(run_id)
 
     def session_runs(self, session_id: str, limit: int = 20) -> list[dict[str, Any]]:
         with self._connect() as conn:

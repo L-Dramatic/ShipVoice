@@ -11,10 +11,15 @@ flowchart LR
   E -->|允许| F["RAG 知识检索"]
   F --> G["ShipVoice LoRA LLM Provider"]
   E -->|拦截| H["安全拒答策略"]
-  G --> I["真实 TTS Provider"]
+  G --> I{"响应模式"}
+  I -->|baseline/rag/full/guarded| J["完整答案 TTS"]
+  I -->|streaming| L["LLM SSE/token delta"]
+  L --> M["句级切分与 TTS worker"]
+  M --> N["WebSocket audio_chunk"]
+  J --> O["前端文字结果与音频播放"]
+  N --> O
   H --> I
-  I --> J["前端文字结果与音频播放"]
-  J --> K["SQLite 审计日志"]
+  O --> K["SQLite 审计日志"]
 ```
 
 ## 运行原则
@@ -43,14 +48,13 @@ ASR 使用 HTTP JSON：
 ```json
 {
   "audio_base64": "...",
-  "audio_name": "sample.wav",
-  "transcript_hint": "可选文本提示"
+  "audio_name": "sample.wav"
 }
 ```
 
 响应读取 `text` 字段。
 
-LLM 使用 OpenAI-compatible `/chat/completions` 接口。系统会把安全系统提示、历史对话和 RAG 证据一起传入模型。
+LLM 使用 OpenAI-compatible `/chat/completions` 接口。系统会把安全系统提示、历史对话和 RAG 证据一起传入模型。`streaming` mode 会设置 `stream=true` 并解析 OpenAI SSE delta；普通模式仍读取完整 response payload。
 
 TTS 使用 HTTP JSON：
 
@@ -63,6 +67,17 @@ TTS 使用 HTTP JSON：
 
 响应读取 `audio_base64` 和 `mime_type` 字段。
 
+## 流式低延迟链路
+
+`streaming` mode 的目标是降低首段可播放延迟，而不是等待完整答案和完整 TTS 后一次返回。当前实现链路为：
+
+1. LLM provider 以 `stream=true` 请求 OpenAI-compatible endpoint，并逐个读取 SSE token delta。
+2. Pipeline 将 delta 累积为句子，句子结束后立即排入 TTS worker。
+3. 每个 TTS 片段合成完成后，服务端通过 WebSocket 发送 `audio_chunk`，其中包含 `seq`、`mime_type`、`audio_base64` 和服务端 chunk ready 时间。
+4. 前端收到首个 `audio_chunk` 后进入播放队列，并以浏览器 `audio.onplaying` 作为首播指标。
+
+当前 TTS provider 仍按句返回完整音频片段，不是字节级连续 TTS；但 pipeline 已不再等待完整 LLM answer 才启动 TTS。
+
 ## 可审计性
 
-每次运行都会记录 `run_id`、`session_id`、输入方式、ASR/LLM/TTS provider、门控结果、证据标题、阶段耗时、回答摘要和错误信息。后台可以查询、导出和复盘这些记录。
+每次运行都会记录 `run_id`、`session_id`、输入方式、ASR/LLM/TTS provider、门控结果、证据标题、阶段耗时、回答摘要和错误信息。流式运行额外记录 `llm_first_delta_ms`、`server_first_audio_chunk_ready_ms`、`server_audio_stream_complete_ms` 和 `streamed_audio_segments`。后台可以查询、导出和复盘这些记录。

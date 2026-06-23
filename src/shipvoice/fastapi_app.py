@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import binascii
 import csv
 import hashlib
 import hmac
 import io
 import json
 import os
+import secrets
+import shutil
 import subprocess
 import sys
 import threading
@@ -34,10 +38,22 @@ WEB_ROOT = project_path("web", "static")
 CONFIG_PATH = project_path("configs", "pipeline.json")
 DEFAULT_ADMIN_PASSWORD = "shipvoice-admin"
 DEFAULT_ADMIN_SESSION_TTL_SECONDS = 8 * 60 * 60
+PUBLIC_RUN_MODES = {"baseline", "streaming", "rag", "guarded", "full"}
+MAX_SESSION_ID_CHARS = 128
+MAX_QUESTION_CHARS = 512
+MAX_AUDIO_BYTES = 8 * 1024 * 1024
+MAX_AUDIO_BASE64_CHARS = 12 * 1024 * 1024
+MAX_AUDIO_NAME_CHARS = 160
+MAX_HISTORY_TURNS = 12
+MAX_HISTORY_CONTENT_CHARS = 2000
+MAX_HISTORY_TOTAL_CHARS = 8000
+MAX_CLIENT_REQUEST_ID_CHARS = 96
+_EPHEMERAL_ADMIN_SESSION_SECRET = secrets.token_urlsafe(32)
 
 
 class RunRequest(BaseModel):
     session_id: str = ""
+    client_request_id: str = ""
     question: str = ""
     mode: str = "full"
     history: list[dict[str, str]] = Field(default_factory=list)
@@ -60,6 +76,12 @@ class KnowledgePayload(BaseModel):
 
 class ConfigPayload(BaseModel):
     raw_text: str
+
+
+class ClientTimingPayload(BaseModel):
+    session_id: str = ""
+    client_request_id: str = ""
+    metrics: dict[str, Any] = Field(default_factory=dict)
 
 
 class RunCleanupPayload(BaseModel):
@@ -87,11 +109,168 @@ class EvaluationRunPayload(BaseModel):
     async_mode: bool = False
 
 
+def truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def int_env(name: str, default: int, *, minimum: int = 1, maximum: int = 3600) -> int:
+    raw_value = os.environ.get(name, "").strip()
+    if not raw_value:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return default
+    return min(max(value, minimum), maximum)
+
+
+def runtime_max_concurrent_runs() -> int:
+    return int_env("SHIPVOICE_MAX_CONCURRENT_RUNS", 2, minimum=1, maximum=32)
+
+
+def runtime_run_timeout_seconds() -> int:
+    return int_env("SHIPVOICE_RUN_TIMEOUT_SECONDS", 240, minimum=5, maximum=3600)
+
+
+def runtime_queue_wait_seconds() -> float:
+    raw_value = os.environ.get("SHIPVOICE_RUN_QUEUE_WAIT_SECONDS", "").strip()
+    if not raw_value:
+        return 0.05
+    try:
+        return min(max(float(raw_value), 0.0), 30.0)
+    except ValueError:
+        return 0.05
+
+
+def sanitize_limited_text(value: str, *, field_name: str, max_chars: int, allow_empty: bool = True) -> str:
+    text = (value or "").strip()
+    if not text and not allow_empty:
+        raise HTTPException(status_code=422, detail={"error": f"{field_name} is required"})
+    if len(text) > max_chars:
+        raise HTTPException(
+            status_code=413,
+            detail={"error": f"{field_name} is too long", "max_chars": max_chars},
+        )
+    return text
+
+
+def normalize_session_id(value: str) -> str:
+    session_id = sanitize_limited_text(
+        value,
+        field_name="session_id",
+        max_chars=MAX_SESSION_ID_CHARS,
+        allow_empty=True,
+    )
+    if session_id and not all(ch.isalnum() or ch in "-_:" for ch in session_id):
+        raise HTTPException(status_code=422, detail={"error": "session_id contains unsupported characters"})
+    return session_id
+
+
+def normalize_client_request_id(value: str) -> str:
+    request_id = sanitize_limited_text(
+        value,
+        field_name="client_request_id",
+        max_chars=MAX_CLIENT_REQUEST_ID_CHARS,
+        allow_empty=True,
+    )
+    if request_id and not all(ch.isalnum() or ch in "-_:" for ch in request_id):
+        raise HTTPException(status_code=422, detail={"error": "client_request_id contains unsupported characters"})
+    return request_id
+
+
+def normalize_run_mode(value: str) -> str:
+    mode = (value or "full").strip().lower()
+    if mode not in PUBLIC_RUN_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": f"unsupported run mode: {mode}", "allowed_modes": sorted(PUBLIC_RUN_MODES)},
+        )
+    return mode
+
+
+def sanitize_history(history: list[dict[str, str]]) -> list[dict[str, str]]:
+    sanitized: list[dict[str, str]] = []
+    total_chars = 0
+    for item in history[-MAX_HISTORY_TURNS:]:
+        role = str(item.get("role", "")).strip()
+        content = str(item.get("content", "")).strip()
+        if not content:
+            continue
+        if role not in {"user", "assistant"}:
+            raise HTTPException(status_code=422, detail={"error": f"unsupported history role: {role}"})
+        if len(content) > MAX_HISTORY_CONTENT_CHARS:
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "history content is too long", "max_chars": MAX_HISTORY_CONTENT_CHARS},
+            )
+        total_chars += len(content)
+        if total_chars > MAX_HISTORY_TOTAL_CHARS:
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "history is too long", "max_chars": MAX_HISTORY_TOTAL_CHARS},
+            )
+        sanitized.append({"role": role, "content": content})
+    return sanitized
+
+
+def decode_audio_base64(value: str) -> bytes | None:
+    audio_base64 = (value or "").strip()
+    if not audio_base64:
+        return None
+    if len(audio_base64) > MAX_AUDIO_BASE64_CHARS:
+        raise HTTPException(
+            status_code=413,
+            detail={"error": "audio_base64 is too large", "max_bytes": MAX_AUDIO_BYTES},
+        )
+    try:
+        audio_bytes = base64.b64decode(audio_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=422, detail={"error": f"invalid audio_base64: {exc}"}) from exc
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={"error": "decoded audio is too large", "max_bytes": MAX_AUDIO_BYTES},
+        )
+    return audio_bytes
+
+
+def prepare_run_request(request: RunRequest) -> dict[str, Any]:
+    session_id = normalize_session_id(request.session_id) or uuid.uuid4().hex[:12]
+    client_request_id = normalize_client_request_id(request.client_request_id)
+    question = sanitize_limited_text(
+        request.question,
+        field_name="question",
+        max_chars=MAX_QUESTION_CHARS,
+        allow_empty=True,
+    )
+    mode = normalize_run_mode(request.mode)
+    audio_name = sanitize_limited_text(
+        request.audio_name,
+        field_name="audio_name",
+        max_chars=MAX_AUDIO_NAME_CHARS,
+        allow_empty=True,
+    )
+    audio_bytes = decode_audio_base64(request.audio_base64)
+    history = sanitize_history(request.history)
+    if not question and not audio_bytes:
+        raise HTTPException(status_code=400, detail={"error": "missing question"})
+    return {
+        "session_id": session_id,
+        "client_request_id": client_request_id,
+        "question": question,
+        "mode": mode,
+        "audio_name": audio_name,
+        "audio_bytes": audio_bytes,
+        "history": history,
+    }
+
+
 def result_to_payload(run_id: str, session_id: str, created_at: str, result) -> dict[str, Any]:
     return {
         "run_id": run_id,
         "session_id": session_id,
         "created_at": created_at,
+        "mode": result.metrics.mode,
         "question": result.question,
         "transcript": result.transcript,
         "answer": result.answer,
@@ -101,6 +280,22 @@ def result_to_payload(run_id: str, session_id: str, created_at: str, result) -> 
         "metrics": result.metrics.to_row(),
         "provider_status": result.provider_status,
         "audio_output": result.audio_output.__dict__,
+    }
+
+
+def cached_or_summary_payload(item: dict[str, Any], cached_result: dict[str, Any] | None = None) -> dict[str, Any]:
+    if cached_result:
+        return {
+            "ok": True,
+            "status": "completed",
+            "cached": True,
+            "result": cached_result,
+        }
+    return {
+        "ok": True,
+        "status": item.get("status", "unknown"),
+        "cached": False,
+        "summary": item,
     }
 
 
@@ -134,6 +329,23 @@ def openai_models_url(base_url: str) -> str:
     if normalized.endswith("/v1"):
         return normalized + "/models"
     return normalized + "/v1/models"
+
+
+def service_health_url(endpoint: str) -> str:
+    normalized = (endpoint or "").rstrip("/")
+    for suffix in ("/asr", "/tts", "/v1/chat/completions", "/chat/completions"):
+        if normalized.endswith(suffix):
+            return normalized[: -len(suffix)] + "/health"
+    return normalized + "/health" if normalized else ""
+
+
+def openai_health_url(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/chat/completions"):
+        normalized = normalized.removesuffix("/chat/completions")
+    if normalized.endswith("/v1"):
+        normalized = normalized.removesuffix("/v1")
+    return normalized + "/health" if normalized else ""
 
 
 def probe_openai_models(base_url: str, model: str, api_key: str = "", timeout_s: int = 5) -> dict[str, Any]:
@@ -177,6 +389,47 @@ def probe_openai_models(base_url: str, model: str, api_key: str = "", timeout_s:
         }
 
 
+def probe_openai_health(base_url: str, api_key: str = "", timeout_s: int = 5) -> dict[str, Any]:
+    url = openai_health_url(base_url)
+    headers: dict[str, str] = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        health = payload if isinstance(payload, dict) else {}
+        return {
+            "health_url": url,
+            "health_reachable": True,
+            "health_http_status": getattr(response, "status", 200),
+            "health": health,
+            "adapter_loaded": health.get("adapter_loaded"),
+            "adapter_sha256": health.get("adapter_sha256", ""),
+            "adapter_hash_algorithm": health.get("adapter_hash_algorithm", ""),
+        }
+    except urllib.error.HTTPError as exc:
+        return {
+            "health_url": url,
+            "health_reachable": True,
+            "health_http_status": exc.code,
+            "health": {},
+            "adapter_loaded": None,
+            "adapter_sha256": "",
+            "adapter_hash_algorithm": "",
+        }
+    except (OSError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return {
+            "health_url": url,
+            "health_reachable": False,
+            "health_http_status": None,
+            "health": {"error": str(exc)},
+            "adapter_loaded": None,
+            "adapter_sha256": "",
+            "adapter_hash_algorithm": "",
+        }
+
+
 def provider_health_snapshot(pipeline: VoiceQAPipeline) -> dict[str, Any]:
     asr = pipeline.asr
     llm = pipeline.llm
@@ -211,20 +464,101 @@ def provider_health_snapshot(pipeline: VoiceQAPipeline) -> dict[str, Any]:
     llm_probe = None
     if llm_endpoint:
         llm_probe = probe_openai_models(getattr(llm, "base_url", llm_endpoint), llm_model, api_key=llm_api_key, timeout_s=5)
+        llm_probe.update(probe_openai_health(getattr(llm, "base_url", llm_endpoint), api_key=llm_api_key, timeout_s=5))
+    asr_probe = probe_http_url(service_health_url(asr_endpoint), timeout_s=5) if asr_endpoint else None
+    tts_probe = probe_http_url(service_health_url(tts_endpoint), timeout_s=5) if tts_endpoint else None
     return {
-        "asr": item("ASR", asr, asr_endpoint),
+        "asr": item("ASR", asr, asr_endpoint, probe=asr_probe),
         "llm": item("LLM", llm, llm_endpoint, extra={"model": llm_model}, probe=llm_probe),
-        "tts": item("TTS", tts, tts_endpoint),
+        "tts": item("TTS", tts, tts_endpoint, probe=tts_probe),
         "updated_at": utc_now_iso(),
     }
 
 
+def provider_ready_report(snapshot: dict[str, Any]) -> dict[str, Any]:
+    components: dict[str, Any] = {}
+    require_lora = truthy_env("SHIPVOICE_REQUIRE_LORA")
+    expected_adapter_sha = os.environ.get("SHIPVOICE_LORA_ADAPTER_SHA256", "").strip().lower()
+    for key in ("asr", "llm", "tts"):
+        item = dict(snapshot.get(key, {}))
+        reachable = item.get("reachable")
+        status = item.get("http_status")
+        ready = bool(reachable is True and isinstance(status, int) and 200 <= status < 300)
+        if key == "llm" and item.get("model"):
+            ready = ready and bool(item.get("model_available"))
+            if require_lora:
+                ready = ready and item.get("health_reachable") is True and item.get("adapter_loaded") is True
+            if expected_adapter_sha:
+                actual_adapter_sha = str(item.get("adapter_sha256", "")).strip().lower()
+                ready = ready and actual_adapter_sha == expected_adapter_sha
+        if not item.get("endpoint"):
+            ready = item.get("reachable") is None
+        item["ready"] = ready
+        if not ready:
+            if key == "llm" and item.get("reachable") and not item.get("model_available"):
+                item["ready_reason"] = "configured model is not listed by the provider"
+            elif key == "llm" and require_lora and item.get("adapter_loaded") is not True:
+                item["ready_reason"] = "required LoRA adapter is not confirmed by provider health"
+            elif key == "llm" and expected_adapter_sha and str(item.get("adapter_sha256", "")).strip().lower() != expected_adapter_sha:
+                item["ready_reason"] = "LoRA adapter SHA does not match SHIPVOICE_LORA_ADAPTER_SHA256"
+            elif item.get("reachable") is False:
+                item["ready_reason"] = "provider endpoint is not reachable"
+            elif isinstance(status, int) and not (200 <= status < 300):
+                item["ready_reason"] = f"provider health probe returned HTTP {status}"
+            else:
+                item["ready_reason"] = "provider readiness could not be confirmed"
+        components[key] = item
+    ready = all(item.get("ready") for item in components.values())
+    return {
+        "ready": ready,
+        "components": components,
+        "updated_at": snapshot.get("updated_at", utc_now_iso()),
+    }
+
+
+def write_config_atomically(raw_text: str) -> tuple[dict[str, Any], VoiceQAPipeline, str]:
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail={"error": f"invalid json: {exc}"}) from exc
+    formatted = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    temp_path = CONFIG_PATH.with_name(f"{CONFIG_PATH.name}.{uuid.uuid4().hex}.tmp")
+    backup_path = CONFIG_PATH.with_name(f"{CONFIG_PATH.name}.{time.strftime('%Y%m%d%H%M%S')}.bak")
+    try:
+        with temp_path.open("w", encoding="utf-8") as handle:
+            handle.write(formatted)
+            handle.flush()
+            os.fsync(handle.fileno())
+        candidate_config = load_config(temp_path)
+        candidate_pipeline = VoiceQAPipeline(candidate_config)
+        if CONFIG_PATH.exists():
+            shutil.copy2(CONFIG_PATH, backup_path)
+        os.replace(temp_path, CONFIG_PATH)
+        return data, candidate_pipeline, str(backup_path) if backup_path.exists() else ""
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail={"error": f"config validation failed: {exc}"}) from exc
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
 def admin_password() -> str:
-    return os.environ.get("SHIPVOICE_ADMIN_PASSWORD", "").strip() or DEFAULT_ADMIN_PASSWORD
+    configured = os.environ.get("SHIPVOICE_ADMIN_PASSWORD", "").strip()
+    if configured:
+        return configured
+    if truthy_env("SHIPVOICE_ALLOW_DEFAULT_ADMIN_PASSWORD"):
+        return DEFAULT_ADMIN_PASSWORD
+    raise RuntimeError("SHIPVOICE_ADMIN_PASSWORD must be set before admin login is enabled.")
 
 
 def admin_auth_mode() -> str:
-    return "configured_password" if os.environ.get("SHIPVOICE_ADMIN_PASSWORD", "").strip() else "default_password"
+    if os.environ.get("SHIPVOICE_ADMIN_PASSWORD", "").strip():
+        return "configured_password"
+    if truthy_env("SHIPVOICE_ALLOW_DEFAULT_ADMIN_PASSWORD"):
+        return "default_password_explicitly_allowed"
+    return "missing_password"
 
 
 def admin_session_ttl_seconds() -> int:
@@ -238,7 +572,9 @@ def admin_session_secret() -> str:
     configured = os.environ.get("SHIPVOICE_ADMIN_SESSION_SECRET", "").strip()
     if configured:
         return configured
-    return f"shipvoice-admin-secret:{CONFIG_PATH}:{WEB_ROOT}"
+    if truthy_env("SHIPVOICE_ALLOW_PATH_DERIVED_ADMIN_SECRET"):
+        return f"shipvoice-admin-secret:{CONFIG_PATH}:{WEB_ROOT}"
+    return _EPHEMERAL_ADMIN_SESSION_SECRET
 
 
 def _b64url_encode(raw: bytes) -> str:
@@ -306,14 +642,128 @@ def create_app() -> FastAPI:
     app = FastAPI(title="ShipVoice API", version="0.2.0")
     runtime: dict[str, VoiceQAPipeline] = {"pipeline": VoiceQAPipeline()}
     store = SQLiteAppStore()
+    run_semaphore = asyncio.Semaphore(runtime_max_concurrent_runs())
+    session_locks: dict[str, asyncio.Lock] = {}
+    session_locks_guard = threading.Lock()
+    run_cache_lock = threading.Lock()
+    run_results: dict[str, dict[str, Any]] = {}
+    run_statuses: dict[str, dict[str, Any]] = {}
 
     def current_pipeline() -> VoiceQAPipeline:
         return runtime["pipeline"]
+
+    def session_lock_for(session_id: str) -> asyncio.Lock:
+        with session_locks_guard:
+            lock = session_locks.get(session_id)
+            if lock is None:
+                lock = asyncio.Lock()
+                session_locks[session_id] = lock
+            return lock
 
     def reload_pipeline_from_disk() -> VoiceQAPipeline:
         load_config(CONFIG_PATH)
         runtime["pipeline"] = VoiceQAPipeline()
         return runtime["pipeline"]
+
+    def public_knowledge_summary() -> dict[str, Any]:
+        summary = store.knowledge_summary()
+        return {
+            "record_count": summary.get("record_count", 0),
+            "approved_count": summary.get("approved_count", 0),
+            "pending_review_count": summary.get("pending_review_count", 0),
+            "status_counts": summary.get("status_counts", {}),
+            "top_tags": summary.get("top_tags", []),
+        }
+
+    def reserve_run(run_id: str, session_id: str, created_at: str, mode: str) -> dict[str, Any] | None:
+        with run_cache_lock:
+            if run_id in run_results:
+                if run_results[run_id].get("session_id") != session_id:
+                    return {"state": "forbidden"}
+                return {"state": "completed", "result": run_results[run_id]}
+            existing = run_statuses.get(run_id)
+            if existing and existing.get("session_id") != session_id:
+                return {"state": "forbidden"}
+            if existing and existing.get("status") == "running":
+                return {"state": "running", **existing}
+            run_statuses[run_id] = {
+                "status": "running",
+                "session_id": session_id,
+                "created_at": created_at,
+                "mode": mode,
+            }
+        return None
+
+    def complete_run(run_id: str, payload: dict[str, Any]) -> None:
+        with run_cache_lock:
+            run_results[run_id] = payload
+            run_statuses[run_id] = {
+                "status": "completed",
+                "session_id": payload.get("session_id", ""),
+                "created_at": payload.get("created_at", ""),
+                "mode": payload.get("mode", ""),
+            }
+
+    def fail_run(run_id: str, session_id: str, created_at: str, mode: str, error: str) -> None:
+        with run_cache_lock:
+            run_statuses[run_id] = {
+                "status": "error",
+                "session_id": session_id,
+                "created_at": created_at,
+                "mode": mode,
+                "error": error,
+            }
+
+    async def run_pipeline_with_limits(
+        pipeline: VoiceQAPipeline,
+        *args: Any,
+        session_id: str = "",
+        **kwargs: Any,
+    ) -> Any:
+        session_lock = session_lock_for(session_id) if session_id else None
+        session_acquired = False
+        if session_lock is not None:
+            try:
+                await asyncio.wait_for(session_lock.acquire(), timeout=runtime_queue_wait_seconds())
+                session_acquired = True
+            except asyncio.TimeoutError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "session already has a run in progress",
+                        "session_id": session_id,
+                    },
+                ) from exc
+        global_acquired = False
+        try:
+            try:
+                await asyncio.wait_for(run_semaphore.acquire(), timeout=runtime_queue_wait_seconds())
+                global_acquired = True
+            except asyncio.TimeoutError as exc:
+                raise HTTPException(
+                    status_code=429,
+                    detail={
+                        "error": "server is busy",
+                        "max_concurrent_runs": runtime_max_concurrent_runs(),
+                    },
+                ) from exc
+            return await asyncio.wait_for(
+                pipeline.run_once(*args, **kwargs),
+                timeout=runtime_run_timeout_seconds(),
+            )
+        except asyncio.TimeoutError as exc:
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    "error": "run timed out",
+                    "timeout_seconds": runtime_run_timeout_seconds(),
+                },
+            ) from exc
+        finally:
+            if global_acquired:
+                run_semaphore.release()
+            if session_acquired and session_lock is not None:
+                session_lock.release()
 
     def run_evaluation_scripts(
         targets: list[str],
@@ -466,22 +916,52 @@ def create_app() -> FastAPI:
                 "tts": getattr(pipeline.tts, "name", pipeline.tts.__class__.__name__),
             },
             "audit": {
-                "db_path": str(store.db_path),
                 "recent_runs": store.audit_stats()["total_runs"],
             },
             "runtime": {
                 "env_file": os.environ.get("SHIPVOICE_ENV_FILE", ""),
+                "max_concurrent_runs": runtime_max_concurrent_runs(),
+                "run_timeout_seconds": runtime_run_timeout_seconds(),
             },
-            "knowledge": store.knowledge_summary(),
+            "knowledge": public_knowledge_summary(),
         }
 
-    @app.get("/api/sessions")
-    def sessions(session_id: str = "") -> dict[str, Any]:
-        runs = store.session_runs(session_id, limit=12) if session_id else store.recent_runs(limit=12)
+    @app.get("/api/live")
+    def live() -> dict[str, Any]:
         return {
             "ok": True,
-            "current_session_id": session_id,
-            "sessions": store.session_summaries(limit=12),
+            "service": "shipvoice-fastapi",
+            "status": "live",
+            "updated_at": utc_now_iso(),
+        }
+
+    @app.get("/api/ready")
+    def ready() -> JSONResponse:
+        snapshot = provider_health_snapshot(current_pipeline())
+        report = provider_ready_report(snapshot)
+        return JSONResponse(
+            status_code=200 if report["ready"] else 503,
+            content={
+                "ok": bool(report["ready"]),
+                "service": "shipvoice-fastapi",
+                **report,
+            },
+        )
+
+    @app.get("/api/sessions")
+    def sessions(request: Request, session_id: str = "") -> dict[str, Any]:
+        normalized_session_id = normalize_session_id(session_id)
+        if normalized_session_id:
+            runs = store.session_runs(normalized_session_id, limit=12)
+            session_summaries: list[dict[str, Any]] = []
+        else:
+            require_admin(request)
+            runs = store.recent_runs(limit=12)
+            session_summaries = store.session_summaries(limit=12)
+        return {
+            "ok": True,
+            "current_session_id": normalized_session_id,
+            "sessions": session_summaries,
             "runs": runs,
         }
 
@@ -492,36 +972,44 @@ def create_app() -> FastAPI:
         created_at = utc_now_iso()
         session_id = request.session_id.strip() or uuid.uuid4().hex[:12]
         question = request.question.strip()
+        mode = request.mode
         audio_name = request.audio_name.strip()
         transcript = ""
+        reserved = False
         try:
-            audio_bytes = base64.b64decode(request.audio_base64) if request.audio_base64 else None
-            if not question and not audio_bytes:
-                record = AuditRecord(
-                    run_id=run_id,
-                    session_id=session_id,
-                    status="error",
-                    created_at=created_at,
-                    mode=request.mode,
-                    question="",
-                    transcript="",
-                    gate_label="bad_request",
-                    answer_preview="",
-                    providers={},
-                    metrics={},
-                    error="missing question",
-                    evidence_titles=[],
-                    audio_name=audio_name,
+            prepared = prepare_run_request(request)
+            session_id = prepared["session_id"]
+            run_id = prepared["client_request_id"] or run_id
+            question = prepared["question"]
+            mode = prepared["mode"]
+            audio_name = prepared["audio_name"]
+            existing = reserve_run(run_id, session_id, created_at, mode)
+            if existing:
+                if existing["state"] == "forbidden":
+                    raise HTTPException(status_code=404, detail={"error": "run not found"})
+                if existing["state"] == "completed":
+                    payload = dict(existing["result"])
+                    payload["idempotent_replay"] = True
+                    return payload
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "request is already running",
+                        "run_id": run_id,
+                        "session_id": session_id,
+                        "created_at": existing.get("created_at", created_at),
+                    },
                 )
-                store.insert_audit(record)
-                raise HTTPException(status_code=400, detail={"error": "missing question", "run_id": run_id, "session_id": session_id})
+            reserved = True
 
-            result = await pipeline.run_once(
+            result = await run_pipeline_with_limits(
+                pipeline,
                 question,
-                audio_bytes=audio_bytes,
+                session_id=session_id,
+                audio_bytes=prepared["audio_bytes"],
                 audio_name=audio_name,
-                history=request.history,
-                mode=request.mode,
+                history=prepared["history"],
+                mode=mode,
             )
             transcript = result.transcript
             store.insert_audit(
@@ -530,7 +1018,7 @@ def create_app() -> FastAPI:
                     session_id=session_id,
                     status="ok",
                     created_at=created_at,
-                    mode=request.mode,
+                    mode=mode,
                     question=result.question,
                     transcript=result.transcript,
                     gate_label=result.gate.label,
@@ -542,17 +1030,44 @@ def create_app() -> FastAPI:
                     audio_name=audio_name,
                 )
             )
-            return result_to_payload(run_id, session_id, created_at, result)
-        except HTTPException:
+            payload = result_to_payload(run_id, session_id, created_at, result)
+            complete_run(run_id, payload)
+            return payload
+        except HTTPException as exc:
+            if reserved and session_id:
+                detail = exc.detail if isinstance(exc.detail, dict) else {"error": str(exc.detail)}
+                fail_run(run_id, session_id, created_at, mode, str(detail.get("error", exc.detail)))
+            if isinstance(exc.detail, dict) and exc.detail.get("error") == "missing question":
+                store.insert_audit(
+                    AuditRecord(
+                        run_id=run_id,
+                        session_id=session_id,
+                        status="error",
+                        created_at=created_at,
+                        mode=mode,
+                        question="",
+                        transcript="",
+                        gate_label="bad_request",
+                        answer_preview="",
+                        providers={},
+                        metrics={},
+                        error="missing question",
+                        evidence_titles=[],
+                        audio_name=audio_name,
+                    )
+                )
+                exc.detail = {"error": "missing question", "run_id": run_id, "session_id": session_id}
             raise
         except Exception as exc:
+            if reserved:
+                fail_run(run_id, session_id, created_at, mode, str(exc))
             store.insert_audit(
                 AuditRecord(
                     run_id=run_id,
                     session_id=session_id,
                     status="error",
                     created_at=created_at,
-                    mode=request.mode,
+                    mode=mode,
                     question=question,
                     transcript=transcript,
                     gate_label="error",
@@ -574,6 +1089,67 @@ def create_app() -> FastAPI:
                 },
             ) from exc
 
+    @app.get("/api/runs/{run_id}")
+    def run_status(run_id: str, session_id: str = "") -> dict[str, Any]:
+        normalized_run_id = normalize_client_request_id(run_id)
+        normalized_session_id = normalize_session_id(session_id)
+        if not normalized_session_id:
+            raise HTTPException(status_code=422, detail={"error": "session_id is required"})
+        with run_cache_lock:
+            cached = run_results.get(normalized_run_id)
+            status = dict(run_statuses.get(normalized_run_id, {}))
+        if cached:
+            if cached.get("session_id") != normalized_session_id:
+                raise HTTPException(status_code=404, detail={"error": "run not found"})
+            return cached_or_summary_payload({}, cached_result=cached)
+        if status:
+            if status.get("session_id") != normalized_session_id:
+                raise HTTPException(status_code=404, detail={"error": "run not found"})
+            return {"ok": True, "status": status.get("status", "unknown"), "run": status}
+        item = store.get_run(normalized_run_id)
+        if item and item.get("session_id") == normalized_session_id:
+            return cached_or_summary_payload(item)
+        raise HTTPException(status_code=404, detail={"error": "run not found"})
+
+    @app.post("/api/runs/{run_id}/client-timing")
+    def update_client_timing(run_id: str, payload: ClientTimingPayload) -> dict[str, Any]:
+        normalized_run_id = normalize_client_request_id(run_id)
+        normalized_session_id = normalize_session_id(payload.session_id)
+        if not normalized_session_id:
+            raise HTTPException(status_code=422, detail={"error": "session_id is required"})
+        run = store.get_run(normalized_run_id)
+        with run_cache_lock:
+            cached = run_results.get(normalized_run_id)
+        cached_session_id = str(cached.get("session_id", "")) if cached else ""
+        if run is None and not cached:
+            raise HTTPException(status_code=404, detail={"error": "run not found"})
+        if run is not None and run.get("session_id") != normalized_session_id:
+            raise HTTPException(status_code=404, detail={"error": "run not found"})
+        if cached and cached_session_id != normalized_session_id:
+            raise HTTPException(status_code=404, detail={"error": "run not found"})
+        sanitized: dict[str, Any] = {}
+        numeric_fields = {
+            "client_audio_payload_received_ms",
+            "client_audio_onplaying_ms",
+            "client_request_to_playing_ms",
+        }
+        for key in numeric_fields:
+            value = payload.metrics.get(key)
+            if value is None:
+                continue
+            if not isinstance(value, (int, float)) or value < 0 or value > 3_600_000:
+                raise HTTPException(status_code=422, detail={"error": f"invalid client timing field: {key}"})
+            sanitized[key] = int(round(value))
+        if payload.metrics.get("client_timing_source"):
+            sanitized["client_timing_source"] = str(payload.metrics["client_timing_source"])[:80]
+        if not sanitized:
+            raise HTTPException(status_code=422, detail={"error": "no valid client timing metrics supplied"})
+        updated = store.merge_run_metrics(normalized_run_id, sanitized) if run is not None else None
+        with run_cache_lock:
+            if normalized_run_id in run_results:
+                run_results[normalized_run_id].setdefault("metrics", {}).update(sanitized)
+        return {"ok": True, "run_id": normalized_run_id, "metrics": sanitized, "run": updated}
+
     @app.get("/api/admin/auth/status")
     def admin_auth_status() -> dict[str, Any]:
         return {
@@ -581,12 +1157,19 @@ def create_app() -> FastAPI:
             "auth": {
                 "mode": admin_auth_mode(),
                 "token_ttl_seconds": admin_session_ttl_seconds(),
+                "session_secret": "configured"
+                if os.environ.get("SHIPVOICE_ADMIN_SESSION_SECRET", "").strip()
+                else "ephemeral_process",
             },
         }
 
     @app.post("/api/admin/auth/login")
     def admin_auth_login(payload: AdminLoginPayload) -> dict[str, Any]:
-        if payload.password != admin_password():
+        try:
+            expected_password = admin_password()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail={"error": str(exc)}) from exc
+        if not hmac.compare_digest(payload.password, expected_password):
             raise HTTPException(status_code=401, detail={"error": "invalid admin password"})
         session = issue_admin_token()
         return {
@@ -895,15 +1478,12 @@ def create_app() -> FastAPI:
 
     @app.post("/api/admin/config")
     def admin_config_save(payload: ConfigPayload, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
-        try:
-            data = json.loads(payload.raw_text)
-        except json.JSONDecodeError as exc:
-            raise HTTPException(status_code=400, detail={"error": f"invalid json: {exc}"}) from exc
-        CONFIG_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        pipeline = reload_pipeline_from_disk()
+        data, pipeline, backup_path = write_config_atomically(payload.raw_text)
+        runtime["pipeline"] = pipeline
         return {
             "ok": True,
             "config": data,
+            "backup_path": backup_path,
             "providers": {
                 "asr": getattr(pipeline.asr, "name", pipeline.asr.__class__.__name__),
                 "llm": getattr(pipeline.llm, "name", pipeline.llm.__class__.__name__),
@@ -929,6 +1509,7 @@ def create_app() -> FastAPI:
     async def ws_run(websocket: WebSocket) -> None:
         await websocket.accept()
         pipeline = current_pipeline()
+        send_lock = asyncio.Lock()
         run_id = uuid.uuid4().hex[:12]
         created_at = utc_now_iso()
         session_id = ""
@@ -936,14 +1517,56 @@ def create_app() -> FastAPI:
         transcript = ""
         audio_name = ""
         mode = "full"
+        reserved = False
         try:
             raw_payload = await websocket.receive_json()
             request = RunRequest(**raw_payload)
-            session_id = request.session_id.strip() or uuid.uuid4().hex[:12]
-            question = request.question.strip()
-            audio_name = request.audio_name.strip()
-            mode = request.mode
-            audio_bytes = base64.b64decode(request.audio_base64) if request.audio_base64 else None
+            prepared = prepare_run_request(request)
+            session_id = prepared["session_id"]
+            run_id = prepared["client_request_id"] or run_id
+            question = prepared["question"]
+            audio_name = prepared["audio_name"]
+            mode = prepared["mode"]
+            existing = reserve_run(run_id, session_id, created_at, mode)
+            if existing:
+                if existing["state"] == "forbidden":
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "error": "run not found",
+                            "run_id": run_id,
+                            "session_id": session_id,
+                            "created_at": created_at,
+                        }
+                    )
+                    await websocket.close(code=1008)
+                    return
+                if existing["state"] == "completed":
+                    await websocket.send_json(
+                        {
+                            "type": "accepted",
+                            "run_id": run_id,
+                            "session_id": session_id,
+                            "created_at": existing["result"].get("created_at", created_at),
+                            "mode": existing["result"].get("mode", mode),
+                            "idempotent_replay": True,
+                        }
+                    )
+                    await websocket.send_json({"type": "result", "result": existing["result"]})
+                    await websocket.close(code=1000)
+                    return
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "error": "request is already running",
+                        "run_id": run_id,
+                        "session_id": session_id,
+                        "created_at": existing.get("created_at", created_at),
+                    }
+                )
+                await websocket.close(code=1013)
+                return
+            reserved = True
             await websocket.send_json(
                 {
                     "type": "accepted",
@@ -953,38 +1576,41 @@ def create_app() -> FastAPI:
                     "mode": mode,
                 }
             )
-            if not question and not audio_bytes:
-                record = AuditRecord(
-                    run_id=run_id,
-                    session_id=session_id,
-                    status="error",
-                    created_at=created_at,
-                    mode=mode,
-                    question="",
-                    transcript="",
-                    gate_label="bad_request",
-                    answer_preview="",
-                    providers={},
-                    metrics={},
-                    error="missing question",
-                    evidence_titles=[],
-                    audio_name=audio_name,
-                )
-                store.insert_audit(record)
-                await websocket.send_json({"type": "error", "error": "missing question", "run_id": run_id, "session_id": session_id})
-                await websocket.close(code=1000)
-                return
+
+            async def send_ws_payload(payload: dict[str, Any]) -> None:
+                async with send_lock:
+                    await websocket.send_json(payload)
 
             async def forward_event(event) -> None:
-                await websocket.send_json({"type": "event", "event": event.to_dict()})
+                try:
+                    await send_ws_payload({"type": "event", "event": event.to_dict()})
+                except (RuntimeError, WebSocketDisconnect):
+                    return
 
-            result = await pipeline.run_once(
+            async def forward_audio_chunk(chunk: dict[str, object]) -> None:
+                try:
+                    await send_ws_payload(
+                        {
+                            "type": "audio_chunk",
+                            "run_id": run_id,
+                            "session_id": session_id,
+                            "created_at": created_at,
+                            "chunk": chunk,
+                        }
+                    )
+                except (RuntimeError, WebSocketDisconnect):
+                    return
+
+            result = await run_pipeline_with_limits(
+                pipeline,
                 question,
-                audio_bytes=audio_bytes,
+                session_id=session_id,
+                audio_bytes=prepared["audio_bytes"],
                 audio_name=audio_name,
-                history=request.history,
+                history=prepared["history"],
                 mode=mode,
                 on_event=forward_event,
+                on_audio_chunk=forward_audio_chunk,
             )
             transcript = result.transcript
             store.insert_audit(
@@ -1005,11 +1631,55 @@ def create_app() -> FastAPI:
                     audio_name=audio_name,
                 )
             )
-            await websocket.send_json({"type": "result", "result": result_to_payload(run_id, session_id, created_at, result)})
-            await websocket.close(code=1000)
+            payload = result_to_payload(run_id, session_id, created_at, result)
+            complete_run(run_id, payload)
+            try:
+                await websocket.send_json({"type": "result", "result": payload})
+                await websocket.close(code=1000)
+            except (RuntimeError, WebSocketDisconnect):
+                return
         except WebSocketDisconnect:
             return
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {"error": str(exc.detail)}
+            message = str(detail.get("error", "request rejected"))
+            if reserved and session_id:
+                fail_run(run_id, session_id, created_at, mode, message)
+            if session_id:
+                store.insert_audit(
+                    AuditRecord(
+                        run_id=run_id,
+                        session_id=session_id,
+                        status="error",
+                        created_at=created_at,
+                        mode=mode,
+                        question=question,
+                        transcript=transcript,
+                        gate_label="bad_request",
+                        answer_preview="",
+                        providers={},
+                        metrics={},
+                        error=message,
+                        evidence_titles=[],
+                        audio_name=audio_name,
+                    )
+                )
+            try:
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "error": message,
+                        "run_id": run_id,
+                        "session_id": session_id,
+                        "created_at": created_at,
+                    }
+                )
+                await websocket.close(code=1008)
+            except RuntimeError:
+                pass
         except Exception as exc:
+            if reserved and session_id:
+                fail_run(run_id, session_id, created_at, mode, str(exc))
             if session_id:
                 store.insert_audit(
                     AuditRecord(
