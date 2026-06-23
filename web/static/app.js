@@ -76,6 +76,7 @@ let ttsVisualizer = null;
 let radarVisualizer = null;
 let ttsAudioObjectUrl = null;
 let currentClientTiming = null;
+let lastRecordingStoppedAt = null;
 let streamingAudioQueue = [];
 let streamingAudioUrls = [];
 let streamingAudioPlaying = false;
@@ -544,14 +545,7 @@ async function runDemo() {
 
   try {
     const clientRequestId = buildClientRequestId();
-    currentClientTiming = {
-      runId: clientRequestId,
-      sessionId: clientSessionId,
-      requestStartedAt: performance.now(),
-      audioPayloadReceivedMs: null,
-      audioOnPlayingMs: null,
-      playingReported: false
-    };
+    currentClientTiming = buildClientTiming(clientRequestId, audioSource);
     const audioPayload = await buildAudioPayload(audioSource);
     const requestPayload = {
       session_id: clientSessionId,
@@ -598,6 +592,27 @@ function buildClientRequestId() {
       ? crypto.randomUUID().replaceAll("-", "").slice(0, 18)
       : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   return `${clientSessionId}:${suffix}`.slice(0, 96);
+}
+
+function buildClientTiming(clientRequestId, audioSource) {
+  const requestStartedAt = performance.now();
+  const recordingStoppedAt =
+    audioSource?.kind === "recording" && lastRecordingStoppedAt
+      ? lastRecordingStoppedAt
+      : null;
+  return {
+    runId: clientRequestId,
+    sessionId: clientSessionId,
+    requestStartedAt,
+    recordingStoppedAt,
+    recordingStopToRequestMs: recordingStoppedAt
+      ? Math.max(0, Math.round(requestStartedAt - recordingStoppedAt))
+      : null,
+    recordingStopToPlayingMs: null,
+    audioPayloadReceivedMs: null,
+    audioOnPlayingMs: null,
+    playingReported: false
+  };
 }
 
 function scrollPrimaryResultIntoView() {
@@ -721,14 +736,7 @@ async function runViaWebSocket(requestPayload, token, clientTiming) {
 
 async function runViaHttp(question, audioSource, token) {
   const clientRequestId = buildClientRequestId();
-  currentClientTiming = {
-    runId: clientRequestId,
-    sessionId: clientSessionId,
-    requestStartedAt: performance.now(),
-    audioPayloadReceivedMs: null,
-    audioOnPlayingMs: null,
-    playingReported: false
-  };
+  currentClientTiming = buildClientTiming(clientRequestId, audioSource);
   const audioPayload = await buildAudioPayload(audioSource);
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -792,6 +800,12 @@ function mergeClientTimingIntoResult(result, clientTiming) {
   if (clientTiming.audioOnPlayingMs !== null && clientTiming.audioOnPlayingMs !== undefined) {
     result.metrics.client_audio_onplaying_ms = clientTiming.audioOnPlayingMs;
     result.metrics.client_request_to_playing_ms = clientTiming.audioOnPlayingMs;
+  }
+  if (clientTiming.recordingStopToRequestMs !== null && clientTiming.recordingStopToRequestMs !== undefined) {
+    result.metrics.client_recording_stop_to_request_ms = clientTiming.recordingStopToRequestMs;
+  }
+  if (clientTiming.recordingStopToPlayingMs !== null && clientTiming.recordingStopToPlayingMs !== undefined) {
+    result.metrics.client_recording_stop_to_playing_ms = clientTiming.recordingStopToPlayingMs;
   }
 }
 
@@ -941,8 +955,12 @@ async function recordAudioOnPlaying() {
     return;
   }
   const onPlayingMs = Math.max(0, Math.round(performance.now() - currentClientTiming.requestStartedAt));
+  const recordingStopToPlayingMs = currentClientTiming.recordingStoppedAt
+    ? Math.max(0, Math.round(performance.now() - currentClientTiming.recordingStoppedAt))
+    : null;
   currentClientTiming.playingReported = true;
   currentClientTiming.audioOnPlayingMs = onPlayingMs;
+  currentClientTiming.recordingStopToPlayingMs = recordingStopToPlayingMs;
   currentClientTiming.audioPayloadReceivedMs = currentClientTiming.audioPayloadReceivedMs ?? onPlayingMs;
   if (!lastResult) {
     $("clientPlaybackMetric").textContent = `${onPlayingMs} ms`;
@@ -954,6 +972,12 @@ async function recordAudioOnPlaying() {
     client_audio_onplaying_ms: onPlayingMs,
     client_request_to_playing_ms: onPlayingMs
   };
+  if (currentClientTiming.recordingStopToRequestMs !== null && currentClientTiming.recordingStopToRequestMs !== undefined) {
+    lastResult.metrics.client_recording_stop_to_request_ms = currentClientTiming.recordingStopToRequestMs;
+  }
+  if (recordingStopToPlayingMs !== null && recordingStopToPlayingMs !== undefined) {
+    lastResult.metrics.client_recording_stop_to_playing_ms = recordingStopToPlayingMs;
+  }
   $("clientPlaybackMetric").textContent = `${onPlayingMs} ms`;
   await submitClientTiming(lastResult, currentClientTiming);
 }
@@ -975,7 +999,11 @@ async function submitClientTiming(result, clientTiming) {
           client_audio_payload_received_ms: clientTiming.audioPayloadReceivedMs,
           client_audio_onplaying_ms: clientTiming.audioOnPlayingMs,
           client_request_to_playing_ms: clientTiming.audioOnPlayingMs,
-          client_timing_source: "browser_audio_playing"
+          client_recording_stop_to_request_ms: clientTiming.recordingStopToRequestMs,
+          client_recording_stop_to_playing_ms: clientTiming.recordingStopToPlayingMs,
+          client_timing_source: clientTiming.recordingStoppedAt
+            ? "browser_recording_stop_to_audio_playing"
+            : "browser_audio_playing"
         }
       })
     });
@@ -1362,6 +1390,7 @@ function stopRecording() {
     return;
   }
   $("recordingStatus").textContent = "正在整理录音...";
+  lastRecordingStoppedAt = performance.now();
   mediaRecorder.stop();
 }
 
@@ -1371,6 +1400,7 @@ function finalizeRecording(mimeType) {
     discardRecording = false;
     recordingChunks = [];
     mediaRecorder = null;
+    lastRecordingStoppedAt = null;
     stopRecordingTracks();
     return;
   }
@@ -1382,6 +1412,7 @@ function finalizeRecording(mimeType) {
   $("recordButton").classList.remove("is-recording");
   if (!blob.size) {
     recordedAudio = null;
+    lastRecordingStoppedAt = null;
     $("clearRecordingButton").disabled = true;
     $("recordingStatus").textContent = "录音为空，请重新录制。";
     return;
@@ -1414,6 +1445,7 @@ function clearRecording(options = {}) {
   }
   recordedAudio = null;
   recordingChunks = [];
+  lastRecordingStoppedAt = null;
   $("recordButton").textContent = "开始录音";
   $("recordButton").classList.remove("is-recording");
   $("clearRecordingButton").disabled = true;

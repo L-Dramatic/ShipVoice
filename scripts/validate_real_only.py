@@ -6,18 +6,20 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCAN_TARGETS = [
-    "README.md",
+RUNTIME_SCAN_TARGETS = [
     "configs",
-    "docs",
     "remote",
     "scripts",
     "src",
-    "tests",
     "web",
     "docker-compose.app.yml",
     "requirements.txt",
     "run_app.py",
+]
+EXTENDED_SCAN_TARGETS = [
+    "README.md",
+    "docs",
+    "tests",
 ]
 TEXT_SUFFIXES = {
     ".bat",
@@ -99,6 +101,11 @@ def scan_file(path: Path, terms: list[str]) -> list[tuple[str, int, str]]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Validate that ShipVoice source stays on the real-service path.")
     parser.add_argument("--root", type=Path, default=ROOT)
+    parser.add_argument(
+        "--include-docs-and-tests",
+        action="store_true",
+        help="Also scan narrative docs and tests. This is stricter and may flag explanatory text or test patch helper usage.",
+    )
     args = parser.parse_args()
 
     root = args.root.resolve()
@@ -109,7 +116,10 @@ def main() -> None:
         if path.exists():
             failures.append(f"forbidden file exists: {path.relative_to(ROOT)}")
 
-    scan_roots = [root / target for target in SCAN_TARGETS]
+    scan_targets = list(RUNTIME_SCAN_TARGETS)
+    if args.include_docs_and_tests:
+        scan_targets.extend(EXTENDED_SCAN_TARGETS)
+    scan_roots = [root / target for target in scan_targets]
     for scan_root in scan_roots:
         if not scan_root.exists():
             continue

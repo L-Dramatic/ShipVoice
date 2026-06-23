@@ -20,7 +20,7 @@
 | 成员 | 建议角色 | 主要工作 | 可在答辩中讲的内容 |
 |---|---|---|---|
 | 组员 A | 组长、系统架构与后端链路 | 负责项目总体设计、FastAPI 服务、pipeline 主链路、provider 抽象、WebSocket 事件流、运行审计和最终集成。 | 讲系统为什么不是静态网页，解释 ASR -> 安全门控 -> RAG -> LLM -> TTS 的真实 provider 链路，以及 fail-closed 策略。 |
-| 组员 B | 数据、实验与安全评测 | 负责船厂安全知识库、录音清单、ASR 术语后处理、安全门控评测、多轮评测、citation 质量评测和实验结果整理。 | 讲数据集怎么构建，为什么 false allow 很重要，展示 55 条安全样本、50 条 ASR 清单和多轮问答结果。 |
+| 组员 B | 数据、实验与安全评测 | 负责船厂安全知识库、录音清单、ASR 术语后处理、安全门控评测、多轮评测、citation 质量评测、固定音频集分层和等待体验量化。 | 讲数据集怎么构建，为什么 false allow 很重要，展示 56 条安全样本、50 条 ASR 清单、100 个低延迟配对样本和浏览器首播结果。 |
 | 组员 C | 前端、后台与答辩材料 | 负责用户端交互、浏览器录音、管理后台展示、演示脚本、PPT、项目报告、运行手册和提交材料整理。 | 讲用户如何使用系统，后台如何维护知识库和复盘运行记录，展示答辩演示流程。 |
 
 如果老师要求写“每个人的工作内容”，可以直接把上表扩展为每人一段文字。示例：
@@ -36,11 +36,11 @@
 | 类别 | 必交文件或目录 | 当前建议 |
 |---|---|---|
 | 源代码 | `src/`, `web/`, `scripts/`, `configs/`, `run_app.py`, `requirements.txt` | 必须放入压缩包。 |
-| 数据 | `data/knowledge/`, `data/tests/`, `data/audio/audio_manifest.csv`, `data/training/` | 建议放入压缩包；真实音频如太大可按老师要求处理。 |
-| 说明文档 | `report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.docx` | 必交，作为主评分文档。 |
+| 数据 | `data/knowledge/`, `data/tests/`, `data/audio/audio_manifest.csv`, `data/audio/audio_manifest_a2_eval.csv`, `data/training/` | 建议放入压缩包；真实音频如太大可按老师要求处理。 |
+| 说明文档 | `report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.docx`、`report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.pdf` | 必交，作为主评分文档；PDF 便于老师跨设备直接打开。 |
 | 运行手册 | `manuals/ShipVoice_可复现实验与运行手册.md` | 建议提交，帮助老师复现。 |
 | PPT | `deliverables/ShipVoice_Final_Defense_Deck_Draft.pptx` 或最终改名版本 | 必交，提交前改成正式文件名。 |
-| 实验证据 | `results/*summary.json`, `results/*report.md`, `deliverables/ShipVoice_Evaluation_Dashboard.html` | 建议提交，支撑报告中的指标。 |
+| 实验证据 | `results/*summary.json`, `results/*report.md`, `results/waiting_experience_20260623/`, `docs/A2_REQUIREMENT_COMPLETION_AUDIT_20260623.md`, `docs/FIXED_AUDIO_COMMAND_SET_20260623.md`, `deliverables/ShipVoice_Evaluation_Dashboard.html` | 建议提交，支撑报告中的指标。 |
 | 提交说明 | `README_最终提交说明.md` | 建议提交，说明压缩包结构和验收方式。 |
 
 ## 4. 不建议提交的内容
@@ -93,7 +93,7 @@ http://127.0.0.1:8026/admin.html
 6. 运行单元测试：
 
 ```powershell
-python -m unittest discover -s tests
+python -m pytest tests -q
 ```
 
 7. 生成验收报告：
@@ -113,9 +113,9 @@ python scripts\build_acceptance_report.py
 | 0:00-0:40 | 项目定位：船厂安全实时语音问答助手，不是普通聊天机器人。 | 组员 A |
 | 0:40-1:40 | 系统架构：ASR、术语后处理、安全门控、RAG、LLM、TTS、审计后台。 | 组员 A |
 | 1:40-2:50 | 安全增强：危险请求、越界问题、提示注入拦截，解释 false allow 为 0。 | 组员 B |
-| 2:50-4:00 | 实验结果：ASR 后处理、门控、多轮、citation、真实链路 smoke test。 | 组员 B |
+| 2:50-4:00 | 实验结果：ASR 后处理、门控、多轮、citation、真实链路 300 次重复实验、浏览器首播和等待体验评分。 | 组员 B |
 | 4:00-6:20 | 现场演示：正常问题、危险问题、录音或上传、后台知识库和运行记录。 | 组员 C |
-| 6:20-7:20 | 局限与展望：TTS 延迟、真实样本扩展、PostgreSQL/RBAC/流式 TTS。 | 组员 C |
+| 6:20-7:20 | 局限与展望：首播仍需进一步压缩、真实场景样本扩展、PostgreSQL/RBAC/流式 TTS。 | 组员 C |
 | 7:20-8:00 | 总结：课程目标已覆盖，额外实现安全可解释和工程治理。 | 全组 |
 
 ## 7. 现场备选说法
@@ -135,5 +135,5 @@ python scripts\build_acceptance_report.py
 如果老师问“真实链路性能怎么样”，建议回答：
 
 ```text
-我们在远程 GPU 环境跑通过 3 条真实录音，ASR 平均 158 ms，检索平均 165.67 ms，说明语音识别和知识检索不是主要瓶颈。当前真实 ChatTTS 首音约 15 秒，这是我们主动记录的局限，后续会通过流式 TTS、句级切分和更快中文 TTS provider 优化。
+我们在远程 GPU 环境完成了 30 条固定录音、baseline 和 streaming 两种模式、每种模式 5 次重复的真实链路实验，共 300 次运行且全部成功。对 gate-allowed 的 100 个配对样本，串行基线首段可播放延迟均值为 7967.04 ms，流式改进为 3819.65 ms，平均节省 4147.39 ms；浏览器 audio.onplaying 实测 20/20 播放成功。这个结果说明改进目标不是只压缩总耗时，而是让用户更早听到首段语音反馈。
 ```

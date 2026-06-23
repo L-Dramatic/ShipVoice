@@ -36,7 +36,7 @@ python -m pip install -r requirements.txt
 安装完成后，先运行测试确认基础环境可用：
 
 ```powershell
-python -m unittest discover -s tests
+python -m pytest tests -q
 ```
 
 正常情况下应看到所有测试通过。测试中如出现第三方库的 deprecation warning，不代表项目失败，关键是最终结果为 OK。
@@ -161,7 +161,7 @@ results/safety_gate_eval_report.md
 重点指标：
 
 ```text
-total = 55
+total = 56
 decision_accuracy = 1.0
 false_allow_count = 0
 false_block_count = 0
@@ -244,7 +244,39 @@ answer_citation_id_rate = 1.0
 blocked_no_citation_rate = 1.0
 ```
 
-### 6.5 一键验收报告
+### 6.5 固定音频指令集难度梯度
+
+```powershell
+python scripts\build_a2_audio_eval_manifest.py
+```
+
+结果文件：
+
+```text
+data/audio/audio_manifest_a2_eval.csv
+docs/FIXED_AUDIO_COMMAND_SET_20260623.md
+```
+
+该脚本不会覆盖原始 `data/audio/audio_manifest.csv`，而是在原始 50 条录音基础上补充 A2 评测字段，包括难度层、评测重点、推荐运行模式和命中的船厂术语。当前分层为：L1 基础安全问答 1 条，L2 船厂专有名词与专业作业 9 条，L3 噪声/应急与复杂处置 11 条，L4 安全边界与对抗输入 29 条。
+
+### 6.6 主观等待体验代理评分
+
+```powershell
+python scripts\evaluate_waiting_experience.py
+```
+
+结果文件：
+
+```text
+results/waiting_experience_20260623/proxy_wait_pairs.csv
+results/waiting_experience_20260623/browser_streaming_wait_scores.csv
+results/waiting_experience_20260623/summary.json
+results/waiting_experience_20260623/report.md
+```
+
+该评分不是伪造真人问卷，而是把真实链路和浏览器播放观测中的首段可播放延迟映射为 1-5 分等待体验等级。当前结果：100 个 gate-allowed 配对样本中，串行基线平均 2.02/5，流式改进平均 3.71/5；20 条浏览器 `audio.onplaying` 样本平均 3.6/5。
+
+### 6.7 一键验收报告
 
 ```powershell
 python scripts\build_acceptance_report.py
@@ -349,22 +381,28 @@ shutdown -h now
 
 ### 7.5 真实链路证据
 
-当前已归档的真实链路结果位于：
+当前已归档的真实链路主证据位于：
 
 ```text
-results/remote_real_chain_20260612_chattts_48359/summary.json
+results/server_real_repeated_20260623/summary.json
+results/server_real_batch_comparison_20260623.json
+results/browser_onplaying_streamable_20260623.json
+results/waiting_experience_20260623/summary.json
 ```
 
-其中 3 条真实录音的平均结果为：
+其中 `results/server_real_repeated_20260623/summary.json` 覆盖 30 条固定录音、baseline 与 streaming 两种模式、每种模式 5 次重复，共 300 次 real-only 运行：
 
 ```text
-avg_asr_ms = 158.0
-avg_retrieval_ms = 165.67
-avg_tts_first_audio_ms = 14794.0
-avg_first_audio_ms = 15238.67
+num_runs = 300
+num_ok = 300
+num_failed = 0
+baseline_gate_allowed_first_audio_avg_ms = 7967.04
+streaming_gate_allowed_first_audio_avg_ms = 3819.65
+avg_saved_ms = 4147.39
+streaming_faster_pairs = 100 / 100
 ```
 
-解释时要注意：该历史结果证明真实 ASR 和 TTS 已接通，但当前系统已经升级为 ASR、LLM、TTS 全真实 provider 策略，最终答辩前应重新运行 `scripts/check_real_service_chain.py` 生成最新全链路证据。
+解释时要注意：真实链路主证据已经不是历史 3 条连通性验证，而是 300 次重复实验、30 条批量基线对比和 20 条浏览器首播观测。最终答辩前仍建议重新运行 `scripts/check_real_service_chain.py` 或 `scripts/run_lora_final_validation.ps1`，确认当时的 ASR、LLM、TTS provider 在线。
 
 ## 8. 常见问题
 

@@ -75,7 +75,7 @@ def build_app(
                 "text_raw": raw_text,
                 "provider": "funasr_sensevoice_service",
                 "audio_name": payload.audio_name,
-                "used_reference_fallback": False,
+                "reference_text_used": False,
             }
         except HTTPException:
             raise

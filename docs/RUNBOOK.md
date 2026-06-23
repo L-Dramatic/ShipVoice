@@ -77,10 +77,11 @@ powershell -ExecutionPolicy Bypass -File scripts\run_lora_final_validation.ps1 -
 输出：
 
 ```text
-results\real_chain_smoke_streaming.json
 results\server_real_batch_comparison_20260623.md
+results\server_real_batch_comparison_20260623.json
 results\server_real_repeated_20260623\summary.json
 results\browser_onplaying_streamable_20260623.json
+results\waiting_experience_20260623\summary.json
 results\asr_online_20260623\summary.json
 results\lora_adapter_attestation_20260623.json
 ```
@@ -114,7 +115,39 @@ python scripts\run_browser_onplaying_harness.py --url http://127.0.0.1:8026 --ht
 
 WebSocket 页面复验时，确认运行详情中出现 `llm_first_delta_ms`、`server_first_audio_chunk_ready_ms`、`streamed_audio_segments`，并且前端首段音频由 `audio_chunk` 队列触发播放。2026-06-23 最终低延迟证据见 `results/server_real_repeated_20260623/summary.md` 和 `results/browser_onplaying_streamable_20260623.json`；最终低延迟结论应使用浏览器 `audio.onplaying` 指标，不使用完整 TTS 返回时间替代首播时间。
 
-## 8. 全项目 quick validation
+## 8. A2 固定音频集与等待体验评分
+
+生成 50 条固定音频指令集的难度梯度说明：
+
+```powershell
+python scripts\build_a2_audio_eval_manifest.py
+```
+
+输出：
+
+```text
+data\audio\audio_manifest_a2_eval.csv
+docs\FIXED_AUDIO_COMMAND_SET_20260623.md
+```
+
+生成主观等待体验代理评分：
+
+```powershell
+python scripts\evaluate_waiting_experience.py
+```
+
+输出：
+
+```text
+results\waiting_experience_20260623\proxy_wait_pairs.csv
+results\waiting_experience_20260623\browser_streaming_wait_scores.csv
+results\waiting_experience_20260623\summary.json
+results\waiting_experience_20260623\report.md
+```
+
+该评分使用真实链路延迟日志和浏览器 `audio.onplaying` 结果，不伪造真人问卷。浏览器录音路径还会在运行审计中记录 `client_recording_stop_to_playing_ms`，用于对齐“用户端停止说话到首段音频开始播放”的测量点。
+
+## 9. 全项目 quick validation
 
 ```powershell
 python scripts\validate_project.py --quick
@@ -122,7 +155,7 @@ python scripts\validate_project.py --quick
 
 这一步只做结构、数据、评测脚本和编译检查，不调用真实 ASR/LLM/TTS。
 
-## 9. 全项目 full validation
+## 10. 全项目 full validation
 
 ```powershell
 python scripts\validate_project.py --full
@@ -134,13 +167,13 @@ python scripts\validate_project.py --full
 python scripts\validate_project.py --quick --with-services
 ```
 
-## 10. 容器方式启动
+## 11. 容器方式启动
 
 ```powershell
 docker compose -f docker-compose.app.yml up --build
 ```
 
-## 11. 远程 GPU 服务
+## 12. 远程 GPU 服务
 
 ASR / TTS：
 

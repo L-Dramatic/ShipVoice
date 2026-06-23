@@ -13,13 +13,16 @@ RESULTS_DIR = ROOT / "results"
 REPORT_JSON = RESULTS_DIR / "project_acceptance_report.json"
 REPORT_MD = RESULTS_DIR / "project_acceptance_report.md"
 REAL_CHAIN_JSON = RESULTS_DIR / "real_chain_smoke.json"
+REAL_REPEATED_JSON = RESULTS_DIR / "server_real_repeated_20260623" / "summary.json"
+REAL_BATCH_COMPARISON_JSON = RESULTS_DIR / "server_real_batch_comparison_20260623.json"
+BROWSER_ONPLAYING_JSON = RESULTS_DIR / "browser_onplaying_streamable_20260623.json"
+WAITING_EXPERIENCE_JSON = RESULTS_DIR / "waiting_experience_20260623" / "summary.json"
 LORA_SUMMARY_JSON = RESULTS_DIR / "remote_autodl_20260621_expanded" / "summary.json"
 DIRTY_STATUS_IGNORE_PREFIXES = ("logs/",)
 DIRTY_STATUS_IGNORE_PATHS = {
     "configs/runtime.real.env",
     "results/project_acceptance_report.json",
     "results/project_acceptance_report.md",
-    "results/real_chain_smoke.json",
 }
 
 
@@ -101,6 +104,21 @@ def current_lora_chain_status(real_chain: dict[str, Any]) -> tuple[bool, str]:
     return False, "当前 real_chain_smoke 不是 ShipVoice LoRA adapter 在线链路证据，需要重新验收。"
 
 
+def repeated_chain_status(repeated: dict[str, Any]) -> tuple[bool, str]:
+    if not repeated:
+        return False, "尚未生成 results/server_real_repeated_20260623/summary.json。"
+    num_runs = int(repeated.get("num_runs") or 0)
+    num_ok = int(repeated.get("num_ok") or 0)
+    num_failed = int(repeated.get("num_failed") or 0)
+    llm_health = repeated.get("llm_health", {})
+    health = llm_health.get("health", {}) if isinstance(llm_health, dict) else {}
+    adapter_ok = isinstance(health, dict) and health.get("adapter_loaded") is True
+    model_name = str(health.get("served_model", ""))
+    if num_runs > 0 and num_ok == num_runs and num_failed == 0 and adapter_ok and "shipvoice" in model_name.lower():
+        return True, f"真实链路重复实验 {num_runs} 次全部成功，ShipVoice LoRA adapter 在线加载。"
+    return False, "真实链路重复实验缺失、失败或未确认 ShipVoice LoRA adapter。"
+
+
 def file_status(path: str) -> dict[str, Any]:
     target = ROOT / path
     return {
@@ -130,11 +148,22 @@ def build_report() -> dict[str, Any]:
     citation = read_json(RESULTS_DIR / "citation_quality_summary.json", {})
     asr = read_json(RESULTS_DIR / "asr_eval_summary.json", {})
     real_chain = read_json(REAL_CHAIN_JSON, {})
+    repeated = read_json(REAL_REPEATED_JSON, {})
+    batch_comparison = read_json(REAL_BATCH_COMPARISON_JSON, {})
+    browser_onplaying = read_json(BROWSER_ONPLAYING_JSON, {})
+    waiting_experience = read_json(WAITING_EXPERIENCE_JSON, {})
     lora_summary = read_json(LORA_SUMMARY_JSON, {})
     lora_chain_verified, lora_chain_reason = current_lora_chain_status(real_chain)
+    repeated_verified, repeated_reason = repeated_chain_status(repeated)
     knowledge_count = count_jsonl(ROOT / "data" / "knowledge" / "ship_safety_corpus.jsonl")
     training_sft_count = count_jsonl(ROOT / "data" / "training" / "sft_seed.jsonl")
     safety_seed_count = count_jsonl(ROOT / "data" / "training" / "safety_gate_seed.jsonl")
+    baseline_gate = repeated.get("modes", {}).get("baseline", {}).get("gate_allowed", {})
+    streaming_gate = repeated.get("modes", {}).get("streaming", {}).get("gate_allowed", {})
+    paired_gate = repeated.get("paired_deltas", {}).get("gate_allowed", {})
+    browser_playing = browser_onplaying.get("client_audio_onplaying_ms", {})
+    waiting_real = waiting_experience.get("real_chain_repeated", {})
+    waiting_browser = waiting_experience.get("browser_streaming_onplaying", {})
 
     capabilities = [
         {
@@ -186,7 +215,7 @@ def build_report() -> dict[str, Any]:
             "notes": (
                 "前端证据卡片展示 citation ID、source、risk、confidence、tags 和 matched terms；"
                 "当前结构测试已覆盖证据字段。"
-                if not lora_chain_verified
+                if not repeated_verified
                 else (
                     f"当前 LoRA 链路 citation title hit@3 {pct(citation.get('citation_title_hit_at_3'))}，"
                     f"Top-1 schema 完整率 {pct(citation.get('top1_schema_completeness'))}。"
@@ -195,9 +224,25 @@ def build_report() -> dict[str, Any]:
         },
         {
             "name": "当前真实语音链路验收",
-            "status": "verified_lora_chain" if lora_chain_verified else "pending_lora_chain_validation",
-            "evidence": ["scripts/check_real_service_chain.py", "results/real_chain_smoke.json"],
-            "notes": lora_chain_reason,
+            "status": "verified_real_repeated" if repeated_verified else "pending_real_repeated_validation",
+            "evidence": [
+                "scripts/run_real_chain_repeated.py",
+                "results/server_real_repeated_20260623/summary.json",
+                "results/server_real_batch_comparison_20260623.json",
+                "results/browser_onplaying_streamable_20260623.json",
+            ],
+            "notes": repeated_reason,
+        },
+        {
+            "name": "固定音频集与等待体验量化",
+            "status": "implemented",
+            "evidence": [
+                "data/audio/audio_manifest_a2_eval.csv",
+                "docs/FIXED_AUDIO_COMMAND_SET_20260623.md",
+                "scripts/evaluate_waiting_experience.py",
+                "results/waiting_experience_20260623/summary.json",
+            ],
+            "notes": "50 条录音已按 A2 难度梯度分层；等待体验采用真实延迟日志生成代理评分，不伪造真人问卷。",
         },
         {
             "name": "微调与安全数据资产",
@@ -247,15 +292,35 @@ def build_report() -> dict[str, Any]:
             "term_recall": asr.get("term_recall"),
             "status": asr.get("status", "unknown"),
         },
-        "real_chain_smoke": {
-            "verified_lora_chain": lora_chain_verified,
-            "reason": lora_chain_reason,
-            "sample_id": real_chain.get("sample_id", ""),
-            "asr_ms": real_chain_metrics.get("asr_ms"),
-            "retrieval_ms": real_chain_metrics.get("retrieval_ms"),
-            "llm_first_token_ms": real_chain_metrics.get("llm_complete_ms", real_chain_metrics.get("llm_first_token_ms")),
-            "tts_first_audio_ms": real_chain_metrics.get("tts_complete_ms", real_chain_metrics.get("tts_first_audio_ms")),
-            "first_audio_ms": real_chain_metrics.get("server_audio_payload_ready_ms", real_chain_metrics.get("first_audio_ms")),
+        "real_chain_repeated": {
+            "verified": repeated_verified,
+            "reason": repeated_reason,
+            "num_runs": repeated.get("num_runs", 0),
+            "num_ok": repeated.get("num_ok", 0),
+            "num_failed": repeated.get("num_failed", 0),
+            "selected_samples": repeated.get("selected_samples", 0),
+            "baseline_first_audio_avg_ms": baseline_gate.get("first_audio_ready_ms", {}).get("avg"),
+            "baseline_first_audio_p50_ms": baseline_gate.get("first_audio_ready_ms", {}).get("p50"),
+            "baseline_first_audio_p90_ms": baseline_gate.get("first_audio_ready_ms", {}).get("p90"),
+            "streaming_first_audio_avg_ms": streaming_gate.get("first_audio_ready_ms", {}).get("avg"),
+            "streaming_first_audio_p50_ms": streaming_gate.get("first_audio_ready_ms", {}).get("p50"),
+            "streaming_first_audio_p90_ms": streaming_gate.get("first_audio_ready_ms", {}).get("p90"),
+            "paired_count": paired_gate.get("matched_count", 0),
+            "streaming_faster_count": paired_gate.get("streaming_first_audio_faster_count", 0),
+            "avg_saved_ms": paired_gate.get("first_audio_ready_ms_saved", {}).get("avg"),
+        },
+        "browser_onplaying": {
+            "num_samples": browser_onplaying.get("num_samples", 0),
+            "num_ok": browser_onplaying.get("num_ok", 0),
+            "num_failed": browser_onplaying.get("num_failed", 0),
+            "avg_ms": browser_playing.get("avg"),
+            "p50_ms": browser_playing.get("p50"),
+            "p90_ms": browser_playing.get("p90"),
+        },
+        "waiting_experience": {
+            "baseline_score_avg": waiting_real.get("baseline_wait_score_1_5_avg"),
+            "streaming_score_avg": waiting_real.get("streaming_wait_score_1_5_avg"),
+            "browser_streaming_score_avg": waiting_browser.get("wait_score_1_5_avg"),
         },
         "lora_experiment": {
             "train_examples": lora_summary.get("train_examples", 0),
@@ -274,29 +339,39 @@ def build_report() -> dict[str, Any]:
         file_status("docs/PHASE1_SCORECARD.md"),
         file_status("docs/OPERATIONS_RUNBOOK.md"),
         file_status("docs/ARCHITECTURE.md"),
+        file_status("docs/A2_REQUIREMENT_COMPLETION_AUDIT_20260623.md"),
+        file_status("docs/FIXED_AUDIO_COMMAND_SET_20260623.md"),
+        file_status("data/audio/audio_manifest_a2_eval.csv"),
         file_status("results/citation_quality_report.md"),
         file_status("results/citation_quality_summary.json"),
         file_status("results/citation_quality_eval.csv"),
+        file_status("results/server_real_repeated_20260623/summary.json"),
+        file_status("results/server_real_batch_comparison_20260623.json"),
+        file_status("results/browser_onplaying_streamable_20260623.json"),
+        file_status("results/waiting_experience_20260623/summary.json"),
+        file_status("results/waiting_experience_20260623/report.md"),
         file_status("deliverables/ShipVoice_Evaluation_Dashboard.html"),
         file_status("deliverables/ShipVoice_Final_Defense_Deck_Draft.pptx"),
-        file_status("deliverables/ShipVoice_船厂安全实时语音问答助手_项目报告_比赛增强版.docx"),
+        file_status("deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.docx"),
+        file_status("deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.pdf"),
+        file_status("deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.md"),
         file_status("web/static/index.html"),
         file_status("web/static/admin.html"),
         file_status("Dockerfile"),
     ]
 
     limitations = [
-        "当前本地证据必须重新跑 ShipVoice LoRA 在线链路验收，不能再使用旧基座模型结果代表最终系统。",
-        "真实端到端语音链路尚未扩展到 30+ 条真实端到端压测。",
-        "TTS 完整合成耗时仍需优化，答辩时应如实说明瓶颈在 TTS 服务。",
+        "真实端到端语音链路已经完成 300 次课程规模固定音频集重复实验，但还不是长期生产压测。",
+        "浏览器首播平均约 4 秒，已明显优于串行基线，但距离企业级自然接话体验仍有优化空间。",
+        "主观等待体验采用真实延迟日志的自动化代理评分，不是真人 Likert 问卷。",
         "当前 real-only 版本依赖远程 ASR/TTS/LLM 服务；服务不可用时请求失败并记录错误。",
         "课程版使用 SQLite 与单管理员口令；企业级阶段应升级 PostgreSQL、RBAC 与监控告警。",
     ]
 
     next_steps = [
-        "启动 remote/start_lora_llm.sh，并运行 check_real_service_chain.py --require-lora 生成当前 LoRA 全链路证据。",
-        "扩展真实端到端评测到至少 30 条录音，并按 ASR、LLM、TTS 阶段拆分指标。",
-        "替换或优化 TTS，让音频载荷就绪时间从 15 秒级降到 3 秒以内。",
+        "答辩前重新做 provider health 和一条 check_real_service_chain.py 探针，确认现场 ASR/LLM/TTS 在线。",
+        "把真实端到端评测扩展到更多说话人、更多噪声条件和更长多轮任务。",
+        "替换或优化 TTS，让浏览器首播进一步接近 2 秒内自然接话体验。",
         "把 citation 质量评测扩展到更多真实规程来源，并增加来源可信度评分。",
         "把管理后台的评测任务结果接入本验收报告，形成网页内一键验收。",
     ]
@@ -313,11 +388,11 @@ def build_report() -> dict[str, Any]:
             "project": "ShipVoice 船厂安全实时语音问答助手",
             "assessment": (
                 "当前项目主体工程、RAG、安全门控、后台审计和 LoRA 实验已具备课程高分基础；"
-                "若完成 ShipVoice LoRA 在线链路验收，可进入 95+ 档。"
-                if not lora_chain_verified
-                else "当前项目已具备课程 95+ 主要工程与实验证据；比赛级仍需扩展真实端到端压测、真实规程来源和 TTS 延迟优化。"
+                "若完成真实链路重复实验和浏览器首播验收，可进入 95+ 档。"
+                if not repeated_verified
+                else "当前项目已具备课程 95+ 主要工程与实验证据；比赛级仍需扩展真实生产场景压测、真实规程来源和 TTS 延迟优化。"
             ),
-            "recommended_course_score": 94 if not lora_chain_verified else 97,
+            "recommended_course_score": 94 if not repeated_verified else 97,
             "knowledge_records": knowledge_count,
         },
         "capabilities": capabilities,
@@ -329,8 +404,8 @@ def build_report() -> dict[str, Any]:
 
 
 def render_markdown(report: dict[str, Any]) -> str:
-    current_lora_verified = bool(report["metrics"]["real_chain_smoke"]["verified_lora_chain"])
-    if current_lora_verified:
+    repeated_verified = bool(report["metrics"]["real_chain_repeated"]["verified"])
+    if repeated_verified:
         multiturn_result = (
             f"对话 {report['metrics']['multiturn']['dialogs']}，轮次 {report['metrics']['multiturn']['turns']}，"
             f"follow-up grounding {pct(report['metrics']['multiturn']['followup_grounding_accuracy'])}，"
@@ -381,7 +456,9 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"| 多轮问答 | {multiturn_result} |",
             f"| Citation 质量 | {citation_result} |",
             f"| ASR 清单 | 已评测 {metrics['asr_manifest']['evaluated_rows']} 条，缺失音频 {metrics['asr_manifest']['missing_audio_rows']}，术语召回 {pct(metrics['asr_manifest']['term_recall'])}，状态 `{metrics['asr_manifest']['status']}` |",
-            f"| 当前真实链路 | LoRA 在线验收 `{metrics['real_chain_smoke']['verified_lora_chain']}`，样本 `{metrics['real_chain_smoke']['sample_id'] or 'n/a'}`，ASR {ms(metrics['real_chain_smoke']['asr_ms'])}，检索 {ms(metrics['real_chain_smoke']['retrieval_ms'])}，LLM 完成 {ms(metrics['real_chain_smoke']['llm_first_token_ms'])}，TTS 完成 {ms(metrics['real_chain_smoke']['tts_first_audio_ms'])}，音频载荷就绪 {ms(metrics['real_chain_smoke']['first_audio_ms'])} |",
+            f"| 真实链路重复实验 | 运行 {metrics['real_chain_repeated']['num_runs']} 次，成功 {metrics['real_chain_repeated']['num_ok']} 次，失败 {metrics['real_chain_repeated']['num_failed']} 次；baseline 首播均值 {ms(metrics['real_chain_repeated']['baseline_first_audio_avg_ms'])}，streaming 首播均值 {ms(metrics['real_chain_repeated']['streaming_first_audio_avg_ms'])}，平均节省 {ms(metrics['real_chain_repeated']['avg_saved_ms'])}，更快配对 {metrics['real_chain_repeated']['streaming_faster_count']} / {metrics['real_chain_repeated']['paired_count']} |",
+            f"| 浏览器首播观测 | 样本 {metrics['browser_onplaying']['num_samples']}，成功 {metrics['browser_onplaying']['num_ok']}，失败 {metrics['browser_onplaying']['num_failed']}，audio.onplaying 均值 {ms(metrics['browser_onplaying']['avg_ms'])}，P50 {ms(metrics['browser_onplaying']['p50_ms'])}，P90 {ms(metrics['browser_onplaying']['p90_ms'])} |",
+            f"| 等待体验代理评分 | baseline {metrics['waiting_experience']['baseline_score_avg']} / 5，streaming {metrics['waiting_experience']['streaming_score_avg']} / 5，浏览器 streaming {metrics['waiting_experience']['browser_streaming_score_avg']} / 5 |",
             f"| LoRA 实验 | 训练 {metrics['lora_experiment']['train_examples']} 条，holdout {metrics['lora_experiment']['holdout_examples']} 条，base/lora 评测 {metrics['lora_experiment']['base_rows']}/{metrics['lora_experiment']['lora_rows']}，train loss {metrics['lora_experiment']['train_loss']}，adapter {metrics['lora_experiment']['adapter_mb']} MB，off-domain 拒答 {metrics['lora_experiment']['base_off_domain_refusal_count']} -> {metrics['lora_experiment']['lora_off_domain_refusal_count']} |",
             "",
             "## 交付物检查",

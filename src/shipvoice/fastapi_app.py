@@ -1132,6 +1132,8 @@ def create_app() -> FastAPI:
             "client_audio_payload_received_ms",
             "client_audio_onplaying_ms",
             "client_request_to_playing_ms",
+            "client_recording_stop_to_request_ms",
+            "client_recording_stop_to_playing_ms",
         }
         for key in numeric_fields:
             value = payload.metrics.get(key)

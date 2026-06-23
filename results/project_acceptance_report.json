@@ -1,20 +1,19 @@
 {
-  "generated_at": "2026-06-22T09:47:46.914274+00:00",
+  "generated_at": "2026-06-23T08:21:47.812241+00:00",
   "git": {
-    "branch": "codex/phase1-enterprise-backend",
-    "commit": "99c7df1",
+    "branch": "main",
+    "commit": "41c922b",
     "source_tree_dirty": true,
     "dirty_ignored_paths": [
       "configs/runtime.real.env",
       "logs/",
       "results/project_acceptance_report.json",
-      "results/project_acceptance_report.md",
-      "results/real_chain_smoke.json"
+      "results/project_acceptance_report.md"
     ]
   },
   "summary": {
     "project": "ShipVoice 船厂安全实时语音问答助手",
-    "assessment": "当前项目已具备课程 95+ 主要工程与实验证据；比赛级仍需扩展真实端到端压测、真实规程来源和 TTS 延迟优化。",
+    "assessment": "当前项目已具备课程 95+ 主要工程与实验证据；比赛级仍需扩展真实生产场景压测、真实规程来源和 TTS 延迟优化。",
     "recommended_course_score": 97,
     "knowledge_records": 20
   },
@@ -89,12 +88,25 @@
     },
     {
       "name": "当前真实语音链路验收",
-      "status": "verified_lora_chain",
+      "status": "verified_real_repeated",
       "evidence": [
-        "scripts/check_real_service_chain.py",
-        "results/real_chain_smoke.json"
+        "scripts/run_real_chain_repeated.py",
+        "results/server_real_repeated_20260623/summary.json",
+        "results/server_real_batch_comparison_20260623.json",
+        "results/browser_onplaying_streamable_20260623.json"
       ],
-      "notes": "当前 real_chain_smoke 已确认 ShipVoice LoRA adapter 在线加载。"
+      "notes": "真实链路重复实验 300 次全部成功，ShipVoice LoRA adapter 在线加载。"
+    },
+    {
+      "name": "固定音频集与等待体验量化",
+      "status": "implemented",
+      "evidence": [
+        "data/audio/audio_manifest_a2_eval.csv",
+        "docs/FIXED_AUDIO_COMMAND_SET_20260623.md",
+        "scripts/evaluate_waiting_experience.py",
+        "results/waiting_experience_20260623/summary.json"
+      ],
+      "notes": "50 条录音已按 A2 难度梯度分层；等待体验采用真实延迟日志生成代理评分，不伪造真人问卷。"
     },
     {
       "name": "微调与安全数据资产",
@@ -147,15 +159,35 @@
       "term_recall": 1.0,
       "status": "ready"
     },
-    "real_chain_smoke": {
-      "verified_lora_chain": true,
-      "reason": "当前 real_chain_smoke 已确认 ShipVoice LoRA adapter 在线加载。",
-      "sample_id": "A001",
-      "asr_ms": 337,
-      "retrieval_ms": 3,
-      "llm_first_token_ms": 7578,
-      "tts_first_audio_ms": 4651,
-      "first_audio_ms": 12570
+    "real_chain_repeated": {
+      "verified": true,
+      "reason": "真实链路重复实验 300 次全部成功，ShipVoice LoRA adapter 在线加载。",
+      "num_runs": 300,
+      "num_ok": 300,
+      "num_failed": 0,
+      "selected_samples": 30,
+      "baseline_first_audio_avg_ms": 7967.04,
+      "baseline_first_audio_p50_ms": 7373.5,
+      "baseline_first_audio_p90_ms": 11987.5,
+      "streaming_first_audio_avg_ms": 3819.65,
+      "streaming_first_audio_p50_ms": 3869.0,
+      "streaming_first_audio_p90_ms": 5110.7,
+      "paired_count": 100,
+      "streaming_faster_count": 100,
+      "avg_saved_ms": 4147.39
+    },
+    "browser_onplaying": {
+      "num_samples": 20,
+      "num_ok": 20,
+      "num_failed": 0,
+      "avg_ms": 4093.5,
+      "p50_ms": 4072,
+      "p90_ms": 5600.1
+    },
+    "waiting_experience": {
+      "baseline_score_avg": 2.02,
+      "streaming_score_avg": 3.71,
+      "browser_streaming_score_avg": 3.6
     },
     "lora_experiment": {
       "train_examples": 1000,
@@ -172,22 +204,37 @@
     {
       "path": "README.md",
       "exists": true,
-      "bytes": 8502
+      "bytes": 9706
     },
     {
       "path": "docs/PHASE1_SCORECARD.md",
       "exists": true,
-      "bytes": 1237
+      "bytes": 2264
     },
     {
       "path": "docs/OPERATIONS_RUNBOOK.md",
       "exists": true,
-      "bytes": 2532
+      "bytes": 3912
     },
     {
       "path": "docs/ARCHITECTURE.md",
       "exists": true,
-      "bytes": 2609
+      "bytes": 5135
+    },
+    {
+      "path": "docs/A2_REQUIREMENT_COMPLETION_AUDIT_20260623.md",
+      "exists": true,
+      "bytes": 8569
+    },
+    {
+      "path": "docs/FIXED_AUDIO_COMMAND_SET_20260623.md",
+      "exists": true,
+      "bytes": 11048
+    },
+    {
+      "path": "data/audio/audio_manifest_a2_eval.csv",
+      "exists": true,
+      "bytes": 26824
     },
     {
       "path": "results/citation_quality_report.md",
@@ -205,9 +252,34 @@
       "bytes": 5283
     },
     {
+      "path": "results/server_real_repeated_20260623/summary.json",
+      "exists": true,
+      "bytes": 14363
+    },
+    {
+      "path": "results/server_real_batch_comparison_20260623.json",
+      "exists": true,
+      "bytes": 7980
+    },
+    {
+      "path": "results/browser_onplaying_streamable_20260623.json",
+      "exists": true,
+      "bytes": 13097
+    },
+    {
+      "path": "results/waiting_experience_20260623/summary.json",
+      "exists": true,
+      "bytes": 4184
+    },
+    {
+      "path": "results/waiting_experience_20260623/report.md",
+      "exists": true,
+      "bytes": 2957
+    },
+    {
       "path": "deliverables/ShipVoice_Evaluation_Dashboard.html",
       "exists": true,
-      "bytes": 71163
+      "bytes": 71162
     },
     {
       "path": "deliverables/ShipVoice_Final_Defense_Deck_Draft.pptx",
@@ -215,37 +287,47 @@
       "bytes": 236491
     },
     {
-      "path": "deliverables/ShipVoice_船厂安全实时语音问答助手_项目报告_比赛增强版.docx",
+      "path": "deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.docx",
       "exists": true,
-      "bytes": 232634
+      "bytes": 55785
+    },
+    {
+      "path": "deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.pdf",
+      "exists": true,
+      "bytes": 744794
+    },
+    {
+      "path": "deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.md",
+      "exists": true,
+      "bytes": 30885
     },
     {
       "path": "web/static/index.html",
       "exists": true,
-      "bytes": 9775
+      "bytes": 10208
     },
     {
       "path": "web/static/admin.html",
       "exists": true,
-      "bytes": 14688
+      "bytes": 15073
     },
     {
       "path": "Dockerfile",
       "exists": true,
-      "bytes": 286
+      "bytes": 520
     }
   ],
   "limitations": [
-    "当前本地证据必须重新跑 ShipVoice LoRA 在线链路验收，不能再使用旧基座模型结果代表最终系统。",
-    "真实端到端语音链路尚未扩展到 30+ 条真实端到端压测。",
-    "TTS 首音延迟仍需优化，答辩时应如实说明瓶颈在 TTS 服务。",
+    "真实端到端语音链路已经完成 300 次课程规模固定音频集重复实验，但还不是长期生产压测。",
+    "浏览器首播平均约 4 秒，已明显优于串行基线，但距离企业级自然接话体验仍有优化空间。",
+    "主观等待体验采用真实延迟日志的自动化代理评分，不是真人 Likert 问卷。",
     "当前 real-only 版本依赖远程 ASR/TTS/LLM 服务；服务不可用时请求失败并记录错误。",
     "课程版使用 SQLite 与单管理员口令；企业级阶段应升级 PostgreSQL、RBAC 与监控告警。"
   ],
   "next_steps": [
-    "启动 remote/start_lora_llm.sh，并运行 check_real_service_chain.py --require-lora 生成当前 LoRA 全链路证据。",
-    "扩展真实端到端评测到至少 30 条录音，并按 ASR、LLM、TTS 阶段拆分指标。",
-    "替换或优化 TTS，让首音延迟从 15 秒级降到 3 秒以内。",
+    "答辩前重新做 provider health 和一条 check_real_service_chain.py 探针，确认现场 ASR/LLM/TTS 在线。",
+    "把真实端到端评测扩展到更多说话人、更多噪声条件和更长多轮任务。",
+    "替换或优化 TTS，让浏览器首播进一步接近 2 秒内自然接话体验。",
     "把 citation 质量评测扩展到更多真实规程来源，并增加来源可信度评分。",
     "把管理后台的评测任务结果接入本验收报告，形成网页内一键验收。"
   ]

@@ -26,7 +26,7 @@ flowchart LR
 
 ShipVoice 当前采用 real-only 策略。ASR、LLM、TTS 都必须连接真实 provider；任一服务不可用时，请求直接失败并写入审计日志。文本输入是独立 typed input，不被伪装成语音识别结果。音频上传和浏览器录音必须经过真实 ASR 服务转写。
 
-安全门控位于 RAG 和 LLM 之前。危险、越界或提示注入请求被拦截后，不调用 LLM；系统只生成规则化安全拒答，并交给真实 TTS 播报。
+安全门控位于 RAG 和 LLM 之前。危险、越界或提示注入请求被拦截后，不调用 LLM，也不为了演示效果继续调用 TTS 合成正文音频；系统返回规则化安全拒答文本并写入审计，体现 fail-closed 策略。
 
 ## 代码分层
 
@@ -78,6 +78,20 @@ TTS 使用 HTTP JSON：
 
 当前 TTS provider 仍按句返回完整音频片段，不是字节级连续 TTS；但 pipeline 已不再等待完整 LLM answer 才启动 TTS。
 
+## 延迟测量点
+
+当前系统同时保留服务端和浏览器端两类指标，避免用单一数字混淆不同测量点：
+
+| 指标 | 测量点 | 使用场景 |
+|---|---|---|
+| `server_first_audio_chunk_ready_ms` | 服务端收到请求到首个流式音频片段 ready | baseline vs streaming 的同条件服务端对比 |
+| `server_audio_stream_complete_ms` | 服务端收到请求到音频流全部完成 | 衡量完整回答完成时间 |
+| `client_audio_onplaying_ms` | 浏览器提交请求到音频元素触发 `playing` | 答辩现场用户听到声音的时间 |
+| `client_recording_stop_to_request_ms` | 浏览器停止录音到请求开始 | 识别录音整理和提交前等待 |
+| `client_recording_stop_to_playing_ms` | 浏览器停止录音到首段音频真正播放 | 对齐题目建议的“用户端停止说话到首段音频开始播放” |
+
+文本输入和文件上传路径不会伪造录音停止指标；只有浏览器直接录音产生的请求才会填充 `client_recording_stop_to_*` 字段。
+
 ## 可审计性
 
-每次运行都会记录 `run_id`、`session_id`、输入方式、ASR/LLM/TTS provider、门控结果、证据标题、阶段耗时、回答摘要和错误信息。流式运行额外记录 `llm_first_delta_ms`、`server_first_audio_chunk_ready_ms`、`server_audio_stream_complete_ms` 和 `streamed_audio_segments`。后台可以查询、导出和复盘这些记录。
+每次运行都会记录 `run_id`、`session_id`、输入方式、ASR/LLM/TTS provider、门控结果、证据标题、阶段耗时、回答摘要和错误信息。流式运行额外记录 `llm_first_delta_ms`、`server_first_audio_chunk_ready_ms`、`server_audio_stream_complete_ms` 和 `streamed_audio_segments`；浏览器端在音频真正播放时回写 `client_audio_onplaying_ms`，录音路径还会回写 `client_recording_stop_to_playing_ms`。后台可以查询、导出和复盘这些记录。

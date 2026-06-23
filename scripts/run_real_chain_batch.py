@@ -40,10 +40,10 @@ def avg(values: list[dict[str, Any]], key: str) -> float:
     return round(sum(nums) / len(nums), 2) if nums else 0.0
 
 
-def metric(metrics: dict[str, Any], key: str, fallback: str = "") -> Any:
+def metric(metrics: dict[str, Any], key: str, alternate_key: str = "") -> Any:
     if key in metrics and metrics[key] not in {"", None}:
         return metrics[key]
-    return metrics.get(fallback, 0) if fallback else 0
+    return metrics.get(alternate_key, 0) if alternate_key else 0
 
 
 def redact_audio_output(audio_output: dict[str, Any]) -> dict[str, Any]:

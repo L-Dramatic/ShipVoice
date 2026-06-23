@@ -1,14 +1,14 @@
 # ShipVoice 项目验收报告
 
-- 生成时间：`2026-06-22T09:47:46.914274+00:00`
-- Git 分支：`codex/phase1-enterprise-backend`
-- Git 提交：`99c7df1`
+- 生成时间：`2026-06-23T08:21:47.812241+00:00`
+- Git 分支：`main`
+- Git 提交：`41c922b`
 - 源代码工作区是否有未提交改动：`True`
 - 建议课程目标分：`97 / 100`
 
 ## 总体结论
 
-当前项目已具备课程 95+ 主要工程与实验证据；比赛级仍需扩展真实端到端压测、真实规程来源和 TTS 延迟优化。
+当前项目已具备课程 95+ 主要工程与实验证据；比赛级仍需扩展真实生产场景压测、真实规程来源和 TTS 延迟优化。
 
 ## 能力验收
 
@@ -21,7 +21,8 @@
 | 领域知识库与 RAG | `implemented` | `data/knowledge/ship_safety_corpus.jsonl`<br>`data/knowledge/ship_safety_index.json` | 当前知识条目 20 条；回答侧返回知识 ID、来源、风险级别、匹配词和置信度。 |
 | 安全评测闭环 | `implemented` | `data/tests/safety_eval.csv`<br>`results/safety_gate_eval_summary.json` | 56 条安全样本，决策准确率 100.0%。 |
 | 可解释证据引用 | `implemented` | `src/shipvoice/providers.py`<br>`web/static/app.js`<br>`scripts/evaluate_citation_quality.py`<br>`results/citation_quality_summary.json`<br>`tests/test_evidence_citations.py` | 当前 LoRA 链路 citation title hit@3 100.0%，Top-1 schema 完整率 100.0%。 |
-| 当前真实语音链路验收 | `verified_lora_chain` | `scripts/check_real_service_chain.py`<br>`results/real_chain_smoke.json` | 当前 real_chain_smoke 已确认 ShipVoice LoRA adapter 在线加载。 |
+| 当前真实语音链路验收 | `verified_real_repeated` | `scripts/run_real_chain_repeated.py`<br>`results/server_real_repeated_20260623/summary.json`<br>`results/server_real_batch_comparison_20260623.json`<br>`results/browser_onplaying_streamable_20260623.json` | 真实链路重复实验 300 次全部成功，ShipVoice LoRA adapter 在线加载。 |
+| 固定音频集与等待体验量化 | `implemented` | `data/audio/audio_manifest_a2_eval.csv`<br>`docs/FIXED_AUDIO_COMMAND_SET_20260623.md`<br>`scripts/evaluate_waiting_experience.py`<br>`results/waiting_experience_20260623/summary.json` | 50 条录音已按 A2 难度梯度分层；等待体验采用真实延迟日志生成代理评分，不伪造真人问卷。 |
 | 微调与安全数据资产 | `completed_experiment` | `data/training/shipvoice_sft_train_expanded.jsonl`<br>`remote/train_qwen_lora.py`<br>`results/remote_autodl_20260621_expanded/summary.json` | 扩展 SFT 1000 条，holdout 150 条；LoRA train loss 0.1676858789101243，adapter 约 154.1 MB。 |
 | 容器化与远程部署 | `implemented` | `Dockerfile`<br>`docker-compose.app.yml`<br>`remote/start_shipvoice_real_services.sh` | 支持本地 FastAPI 应用、Docker 运行、AutoDL 真实模型服务脚本。 |
 
@@ -33,39 +34,51 @@
 | 多轮问答 | 对话 6，轮次 18，follow-up grounding 100.0%，关键词召回 73.6% |
 | Citation 质量 | 样本 8，允许引用样本 5，title hit@1 100.0%，title hit@3 100.0%，ID hit@3 100.0%，Top-1 schema 100.0%，答案引用 ID 100.0% |
 | ASR 清单 | 已评测 50 条，缺失音频 0，术语召回 100.0%，状态 `ready` |
-| 当前真实链路 | LoRA 在线验收 `True`，样本 `A001`，ASR 337 ms，检索 3 ms，LLM 首 token 7578 ms，TTS 首音 4651 ms，端到端首音 12570 ms |
+| 真实链路重复实验 | 运行 300 次，成功 300 次，失败 0 次；baseline 首播均值 7967 ms，streaming 首播均值 3820 ms，平均节省 4147 ms，更快配对 100 / 100 |
+| 浏览器首播观测 | 样本 20，成功 20，失败 0，audio.onplaying 均值 4094 ms，P50 4072 ms，P90 5600 ms |
+| 等待体验代理评分 | baseline 2.02 / 5，streaming 3.71 / 5，浏览器 streaming 3.6 / 5 |
 | LoRA 实验 | 训练 1000 条，holdout 150 条，base/lora 评测 150/150，train loss 0.1676858789101243，adapter 154.1 MB，off-domain 拒答 1 -> 10 |
 
 ## 交付物检查
 
 | 文件 | 状态 | 大小 |
 |---|---|---:|
-| `README.md` | 存在 | 8502 |
-| `docs/PHASE1_SCORECARD.md` | 存在 | 1237 |
-| `docs/OPERATIONS_RUNBOOK.md` | 存在 | 2532 |
-| `docs/ARCHITECTURE.md` | 存在 | 2609 |
+| `README.md` | 存在 | 9706 |
+| `docs/PHASE1_SCORECARD.md` | 存在 | 2264 |
+| `docs/OPERATIONS_RUNBOOK.md` | 存在 | 3912 |
+| `docs/ARCHITECTURE.md` | 存在 | 5135 |
+| `docs/A2_REQUIREMENT_COMPLETION_AUDIT_20260623.md` | 存在 | 8569 |
+| `docs/FIXED_AUDIO_COMMAND_SET_20260623.md` | 存在 | 11048 |
+| `data/audio/audio_manifest_a2_eval.csv` | 存在 | 26824 |
 | `results/citation_quality_report.md` | 存在 | 1272 |
 | `results/citation_quality_summary.json` | 存在 | 510 |
 | `results/citation_quality_eval.csv` | 存在 | 5283 |
-| `deliverables/ShipVoice_Evaluation_Dashboard.html` | 存在 | 71163 |
+| `results/server_real_repeated_20260623/summary.json` | 存在 | 14363 |
+| `results/server_real_batch_comparison_20260623.json` | 存在 | 7980 |
+| `results/browser_onplaying_streamable_20260623.json` | 存在 | 13097 |
+| `results/waiting_experience_20260623/summary.json` | 存在 | 4184 |
+| `results/waiting_experience_20260623/report.md` | 存在 | 2957 |
+| `deliverables/ShipVoice_Evaluation_Dashboard.html` | 存在 | 71162 |
 | `deliverables/ShipVoice_Final_Defense_Deck_Draft.pptx` | 存在 | 236491 |
-| `deliverables/ShipVoice_船厂安全实时语音问答助手_项目报告_比赛增强版.docx` | 存在 | 232634 |
-| `web/static/index.html` | 存在 | 9775 |
-| `web/static/admin.html` | 存在 | 14688 |
-| `Dockerfile` | 存在 | 286 |
+| `deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.docx` | 存在 | 55785 |
+| `deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.pdf` | 存在 | 744794 |
+| `deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.md` | 存在 | 30885 |
+| `web/static/index.html` | 存在 | 10208 |
+| `web/static/admin.html` | 存在 | 15073 |
+| `Dockerfile` | 存在 | 520 |
 
 ## 当前边界
 
-- 当前本地证据必须重新跑 ShipVoice LoRA 在线链路验收，不能再使用旧基座模型结果代表最终系统。
-- 真实端到端语音链路尚未扩展到 30+ 条真实端到端压测。
-- TTS 首音延迟仍需优化，答辩时应如实说明瓶颈在 TTS 服务。
+- 真实端到端语音链路已经完成 300 次课程规模固定音频集重复实验，但还不是长期生产压测。
+- 浏览器首播平均约 4 秒，已明显优于串行基线，但距离企业级自然接话体验仍有优化空间。
+- 主观等待体验采用真实延迟日志的自动化代理评分，不是真人 Likert 问卷。
 - 当前 real-only 版本依赖远程 ASR/TTS/LLM 服务；服务不可用时请求失败并记录错误。
 - 课程版使用 SQLite 与单管理员口令；企业级阶段应升级 PostgreSQL、RBAC 与监控告警。
 
 ## 下一步
 
-- 启动 remote/start_lora_llm.sh，并运行 check_real_service_chain.py --require-lora 生成当前 LoRA 全链路证据。
-- 扩展真实端到端评测到至少 30 条录音，并按 ASR、LLM、TTS 阶段拆分指标。
-- 替换或优化 TTS，让首音延迟从 15 秒级降到 3 秒以内。
+- 答辩前重新做 provider health 和一条 check_real_service_chain.py 探针，确认现场 ASR/LLM/TTS 在线。
+- 把真实端到端评测扩展到更多说话人、更多噪声条件和更长多轮任务。
+- 替换或优化 TTS，让浏览器首播进一步接近 2 秒内自然接话体验。
 - 把 citation 质量评测扩展到更多真实规程来源，并增加来源可信度评分。
 - 把管理后台的评测任务结果接入本验收报告，形成网页内一键验收。
