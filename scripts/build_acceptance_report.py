@@ -18,6 +18,7 @@ REAL_BATCH_COMPARISON_JSON = RESULTS_DIR / "server_real_batch_comparison_2026062
 BROWSER_ONPLAYING_JSON = RESULTS_DIR / "browser_onplaying_streamable_20260623.json"
 WAITING_EXPERIENCE_JSON = RESULTS_DIR / "waiting_experience_20260623" / "summary.json"
 LORA_SUMMARY_JSON = RESULTS_DIR / "remote_autodl_20260621_expanded" / "summary.json"
+LORA_FALLBACK_SUMMARY_JSON = RESULTS_DIR / "remote_lora_expanded_summary_20260621.json"
 DIRTY_STATUS_IGNORE_PREFIXES = ("logs/",)
 DIRTY_STATUS_IGNORE_PATHS = {
     "configs/runtime.real.env",
@@ -37,6 +38,18 @@ def count_jsonl(path: Path) -> int:
         return 0
     with path.open("r", encoding="utf-8") as handle:
         return sum(1 for line in handle if line.strip())
+
+
+def load_lora_summary() -> dict[str, Any]:
+    summary = read_json(LORA_SUMMARY_JSON, {})
+    if not summary:
+        summary = read_json(LORA_FALLBACK_SUMMARY_JSON, {})
+    if not summary:
+        summary = {}
+    summary = dict(summary)
+    summary.setdefault("train_examples", count_jsonl(ROOT / "data" / "training" / "shipvoice_sft_train_expanded.jsonl"))
+    summary.setdefault("holdout_examples", count_jsonl(ROOT / "data" / "training" / "shipvoice_sft_eval_holdout.jsonl"))
+    return summary
 
 
 def git_value(args: list[str]) -> str:
@@ -152,7 +165,7 @@ def build_report() -> dict[str, Any]:
     batch_comparison = read_json(REAL_BATCH_COMPARISON_JSON, {})
     browser_onplaying = read_json(BROWSER_ONPLAYING_JSON, {})
     waiting_experience = read_json(WAITING_EXPERIENCE_JSON, {})
-    lora_summary = read_json(LORA_SUMMARY_JSON, {})
+    lora_summary = load_lora_summary()
     lora_chain_verified, lora_chain_reason = current_lora_chain_status(real_chain)
     repeated_verified, repeated_reason = repeated_chain_status(repeated)
     knowledge_count = count_jsonl(ROOT / "data" / "knowledge" / "ship_safety_corpus.jsonl")
@@ -247,7 +260,12 @@ def build_report() -> dict[str, Any]:
         {
             "name": "微调与安全数据资产",
             "status": "completed_experiment",
-            "evidence": ["data/training/shipvoice_sft_train_expanded.jsonl", "remote/train_qwen_lora.py", "results/remote_autodl_20260621_expanded/summary.json"],
+            "evidence": [
+                "data/training/shipvoice_sft_train_expanded.jsonl",
+                "remote/train_qwen_lora.py",
+                "results/remote_autodl_20260621_expanded/summary.json",
+                "results/remote_lora_expanded_summary_20260621.json",
+            ],
             "notes": (
                 f"扩展 SFT {lora_summary.get('train_examples', 0)} 条，holdout {lora_summary.get('holdout_examples', 0)} 条；"
                 f"LoRA train loss {lora_summary.get('train_loss', 'n/a')}，adapter 约 {lora_summary.get('adapter_mb', 0)} MB。"

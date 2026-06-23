@@ -18,6 +18,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -30,7 +31,7 @@ from pydantic import BaseModel, Field
 
 from .config import load_config, project_path
 from .models import AuditRecord
-from .pipeline import VoiceQAPipeline
+from .pipeline import PipelineCancelled, VoiceQAPipeline
 from .sqlite_store import SQLiteAppStore, utc_now_iso
 
 
@@ -639,8 +640,16 @@ def require_admin(request: Request) -> dict[str, Any]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="ShipVoice API", version="0.2.0")
     runtime: dict[str, VoiceQAPipeline] = {"pipeline": VoiceQAPipeline()}
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        try:
+            yield
+        finally:
+            runtime["pipeline"].close()
+
+    app = FastAPI(title="ShipVoice API", version="0.2.0", lifespan=lifespan)
     store = SQLiteAppStore()
     run_semaphore = asyncio.Semaphore(runtime_max_concurrent_runs())
     session_locks: dict[str, asyncio.Lock] = {}
@@ -648,9 +657,17 @@ def create_app() -> FastAPI:
     run_cache_lock = threading.Lock()
     run_results: dict[str, dict[str, Any]] = {}
     run_statuses: dict[str, dict[str, Any]] = {}
+    run_cancellations: dict[str, threading.Event] = {}
 
     def current_pipeline() -> VoiceQAPipeline:
         return runtime["pipeline"]
+
+    def replace_pipeline(pipeline: VoiceQAPipeline) -> VoiceQAPipeline:
+        previous = runtime.get("pipeline")
+        runtime["pipeline"] = pipeline
+        if previous is not None and previous is not pipeline:
+            previous.close()
+        return pipeline
 
     def session_lock_for(session_id: str) -> asyncio.Lock:
         with session_locks_guard:
@@ -662,8 +679,7 @@ def create_app() -> FastAPI:
 
     def reload_pipeline_from_disk() -> VoiceQAPipeline:
         load_config(CONFIG_PATH)
-        runtime["pipeline"] = VoiceQAPipeline()
-        return runtime["pipeline"]
+        return replace_pipeline(VoiceQAPipeline())
 
     def public_knowledge_summary() -> dict[str, Any]:
         summary = store.knowledge_summary()
@@ -714,10 +730,48 @@ def create_app() -> FastAPI:
                 "error": error,
             }
 
+    def cancel_run(run_id: str, session_id: str, created_at: str, mode: str) -> None:
+        with run_cache_lock:
+            run_statuses[run_id] = {
+                "status": "cancelled",
+                "session_id": session_id,
+                "created_at": created_at,
+                "mode": mode,
+                "error": "run cancelled",
+            }
+
+    def register_cancellation(run_id: str, cancel_event: threading.Event) -> None:
+        with run_cache_lock:
+            run_cancellations[run_id] = cancel_event
+
+    def unregister_cancellation(run_id: str) -> None:
+        with run_cache_lock:
+            run_cancellations.pop(run_id, None)
+
+    def request_cancellation(run_id: str, session_id: str = "") -> bool:
+        normalized_run_id = normalize_client_request_id(run_id)
+        normalized_session_id = normalize_session_id(session_id) if session_id else ""
+        with run_cache_lock:
+            status = run_statuses.get(normalized_run_id, {})
+            cached = run_results.get(normalized_run_id)
+            if cached:
+                return False
+            if normalized_session_id and status and status.get("session_id") != normalized_session_id:
+                raise HTTPException(status_code=404, detail={"error": "run not found"})
+            event = run_cancellations.get(normalized_run_id)
+            if event is None:
+                return False
+            event.set()
+            if status:
+                status["status"] = "cancelling"
+                status["error"] = "cancel requested"
+            return True
+
     async def run_pipeline_with_limits(
         pipeline: VoiceQAPipeline,
         *args: Any,
         session_id: str = "",
+        cancel_event: threading.Event | None = None,
         **kwargs: Any,
     ) -> Any:
         session_lock = session_lock_for(session_id) if session_id else None
@@ -748,9 +802,11 @@ def create_app() -> FastAPI:
                     },
                 ) from exc
             return await asyncio.wait_for(
-                pipeline.run_once(*args, **kwargs),
+                pipeline.run_once(*args, cancel_event=cancel_event, **kwargs),
                 timeout=runtime_run_timeout_seconds(),
             )
+        except PipelineCancelled as exc:
+            raise HTTPException(status_code=499, detail={"error": str(exc) or "run cancelled"}) from exc
         except asyncio.TimeoutError as exc:
             raise HTTPException(
                 status_code=504,
@@ -976,6 +1032,7 @@ def create_app() -> FastAPI:
         audio_name = request.audio_name.strip()
         transcript = ""
         reserved = False
+        cancel_event = threading.Event()
         try:
             prepared = prepare_run_request(request)
             session_id = prepared["session_id"]
@@ -1001,11 +1058,13 @@ def create_app() -> FastAPI:
                     },
                 )
             reserved = True
+            register_cancellation(run_id, cancel_event)
 
             result = await run_pipeline_with_limits(
                 pipeline,
                 question,
                 session_id=session_id,
+                cancel_event=cancel_event,
                 audio_bytes=prepared["audio_bytes"],
                 audio_name=audio_name,
                 history=prepared["history"],
@@ -1036,7 +1095,11 @@ def create_app() -> FastAPI:
         except HTTPException as exc:
             if reserved and session_id:
                 detail = exc.detail if isinstance(exc.detail, dict) else {"error": str(exc.detail)}
-                fail_run(run_id, session_id, created_at, mode, str(detail.get("error", exc.detail)))
+                message = str(detail.get("error", exc.detail))
+                if exc.status_code == 499:
+                    cancel_run(run_id, session_id, created_at, mode)
+                else:
+                    fail_run(run_id, session_id, created_at, mode, message)
             if isinstance(exc.detail, dict) and exc.detail.get("error") == "missing question":
                 store.insert_audit(
                     AuditRecord(
@@ -1088,6 +1151,9 @@ def create_app() -> FastAPI:
                     "created_at": created_at,
                 },
             ) from exc
+        finally:
+            if reserved:
+                unregister_cancellation(run_id)
 
     @app.get("/api/runs/{run_id}")
     def run_status(run_id: str, session_id: str = "") -> dict[str, Any]:
@@ -1110,6 +1176,21 @@ def create_app() -> FastAPI:
         if item and item.get("session_id") == normalized_session_id:
             return cached_or_summary_payload(item)
         raise HTTPException(status_code=404, detail={"error": "run not found"})
+
+    @app.post("/api/runs/{run_id}/cancel")
+    def cancel_running_run(run_id: str, payload: ClientTimingPayload) -> dict[str, Any]:
+        normalized_run_id = normalize_client_request_id(run_id)
+        normalized_session_id = normalize_session_id(payload.session_id)
+        if not normalized_session_id:
+            raise HTTPException(status_code=422, detail={"error": "session_id is required"})
+        requested = request_cancellation(normalized_run_id, normalized_session_id)
+        return {
+            "ok": True,
+            "run_id": normalized_run_id,
+            "session_id": normalized_session_id,
+            "cancel_requested": requested,
+            "status": "cancelling" if requested else "not_running",
+        }
 
     @app.post("/api/runs/{run_id}/client-timing")
     def update_client_timing(run_id: str, payload: ClientTimingPayload) -> dict[str, Any]:
@@ -1481,7 +1562,7 @@ def create_app() -> FastAPI:
     @app.post("/api/admin/config")
     def admin_config_save(payload: ConfigPayload, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         data, pipeline, backup_path = write_config_atomically(payload.raw_text)
-        runtime["pipeline"] = pipeline
+        replace_pipeline(pipeline)
         return {
             "ok": True,
             "config": data,
@@ -1520,6 +1601,8 @@ def create_app() -> FastAPI:
         audio_name = ""
         mode = "full"
         reserved = False
+        cancel_event = threading.Event()
+        cancel_listener: asyncio.Task | None = None
         try:
             raw_payload = await websocket.receive_json()
             request = RunRequest(**raw_payload)
@@ -1569,6 +1652,7 @@ def create_app() -> FastAPI:
                 await websocket.close(code=1013)
                 return
             reserved = True
+            register_cancellation(run_id, cancel_event)
             await websocket.send_json(
                 {
                     "type": "accepted",
@@ -1578,6 +1662,20 @@ def create_app() -> FastAPI:
                     "mode": mode,
                 }
             )
+
+            async def listen_for_cancel() -> None:
+                try:
+                    while True:
+                        payload = await websocket.receive_json()
+                        if payload.get("type") == "cancel":
+                            request_cancellation(run_id, session_id)
+                            return
+                except WebSocketDisconnect:
+                    cancel_event.set()
+                except RuntimeError:
+                    cancel_event.set()
+
+            cancel_listener = asyncio.create_task(listen_for_cancel())
 
             async def send_ws_payload(payload: dict[str, Any]) -> None:
                 async with send_lock:
@@ -1607,6 +1705,7 @@ def create_app() -> FastAPI:
                 pipeline,
                 question,
                 session_id=session_id,
+                cancel_event=cancel_event,
                 audio_bytes=prepared["audio_bytes"],
                 audio_name=audio_name,
                 history=prepared["history"],
@@ -1641,12 +1740,17 @@ def create_app() -> FastAPI:
             except (RuntimeError, WebSocketDisconnect):
                 return
         except WebSocketDisconnect:
+            if reserved:
+                cancel_event.set()
             return
         except HTTPException as exc:
             detail = exc.detail if isinstance(exc.detail, dict) else {"error": str(exc.detail)}
             message = str(detail.get("error", "request rejected"))
             if reserved and session_id:
-                fail_run(run_id, session_id, created_at, mode, message)
+                if exc.status_code == 499:
+                    cancel_run(run_id, session_id, created_at, mode)
+                else:
+                    fail_run(run_id, session_id, created_at, mode, message)
             if session_id:
                 store.insert_audit(
                     AuditRecord(
@@ -1714,6 +1818,11 @@ def create_app() -> FastAPI:
                 await websocket.close(code=1011)
             except RuntimeError:
                 pass
+        finally:
+            if cancel_listener is not None:
+                cancel_listener.cancel()
+            if reserved:
+                unregister_cancellation(run_id)
 
     @app.get("/")
     def root() -> FileResponse:

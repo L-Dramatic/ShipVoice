@@ -81,6 +81,7 @@ let streamingAudioQueue = [];
 let streamingAudioUrls = [];
 let streamingAudioPlaying = false;
 let streamingAudioRunId = "";
+let activeRunControl = null;
 
 class AudioVisualizer {
   constructor(canvasId, type = "mic") {
@@ -355,6 +356,7 @@ function init() {
   renderScenarios();
   bindModes();
   $("runButton").addEventListener("click", () => runDemo());
+  $("cancelRunButton").addEventListener("click", () => cancelActiveRun());
   $("exportButton").addEventListener("click", () => exportLog());
   $("audioFile").addEventListener("change", updateAudioHint);
   $("recordButton").addEventListener("click", () => toggleRecording());
@@ -542,10 +544,17 @@ async function runDemo() {
   setStageState("asr", "active");
   $("runButton").disabled = true;
   $("runButton").textContent = "分析中...";
+  $("cancelRunButton").disabled = false;
 
   try {
     const clientRequestId = buildClientRequestId();
     currentClientTiming = buildClientTiming(clientRequestId, audioSource);
+    activeRunControl = {
+      runId: clientRequestId,
+      sessionId: clientSessionId,
+      socket: null,
+      cancelRequested: false
+    };
     const audioPayload = await buildAudioPayload(audioSource);
     const requestPayload = {
       session_id: clientSessionId,
@@ -555,7 +564,7 @@ async function runDemo() {
       history: buildHistory(),
       ...audioPayload
     };
-    const payload = await runViaWebSocket(requestPayload, token, currentClientTiming);
+    const payload = await runViaWebSocket(requestPayload, token, currentClientTiming, activeRunControl);
     if (token !== runToken) {
       return;
     }
@@ -572,17 +581,20 @@ async function runDemo() {
     scrollPrimaryResultIntoView();
     await refreshAuditPanel();
   } catch (error) {
-    $("statusBadge").textContent = "失败";
+    const cancelled = activeRunControl?.cancelRequested || String(error.message || "").includes("cancel");
+    $("statusBadge").textContent = cancelled ? "已取消" : "失败";
     $("statusBadge").className = "status-badge is-blocked";
-    $("answerText").textContent = `接口调用失败：${error.message}`;
-    $("answerState").textContent = "执行失败";
-    $("timelineState").textContent = "异常终止";
+    $("answerText").textContent = cancelled ? "本次请求已取消，系统已停止后续生成和播报。" : `接口调用失败：${error.message}`;
+    $("answerState").textContent = cancelled ? "已取消" : "执行失败";
+    $("timelineState").textContent = cancelled ? "用户取消" : "异常终止";
     scrollPrimaryResultIntoView();
-    showError(`WebSocket 执行失败：${error.message}。系统不会自动重复提交同一请求。`);
+    showError(cancelled ? "已向后端发送取消请求。" : `WebSocket 执行失败：${error.message}。系统不会自动重复提交同一请求。`);
     await refreshAuditPanel();
   } finally {
     $("runButton").disabled = false;
     $("runButton").textContent = "获取安全建议";
+    $("cancelRunButton").disabled = true;
+    activeRunControl = null;
   }
 }
 
@@ -623,14 +635,20 @@ function scrollPrimaryResultIntoView() {
   target.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-async function runViaWebSocket(requestPayload, token, clientTiming) {
+async function runViaWebSocket(requestPayload, token, clientTiming, runControl = null) {
   return await new Promise((resolve, reject) => {
     const socket = new WebSocket(buildWebSocketUrl("/ws/run"));
+    if (runControl) {
+      runControl.socket = socket;
+    }
     let settled = false;
     let accepted = null;
     const timeoutId = window.setTimeout(() => {
       if (!settled) {
         settled = true;
+        if (accepted?.run_id && accepted?.session_id) {
+          void requestServerCancel(accepted.run_id, accepted.session_id);
+        }
         try { socket.close(); } catch (error) {}
         reject(new Error("websocket run timed out"));
       }
@@ -664,6 +682,10 @@ async function runViaWebSocket(requestPayload, token, clientTiming) {
         accepted = payload;
         clientTiming.runId = payload.run_id || clientTiming.runId;
         clientTiming.sessionId = payload.session_id || clientTiming.sessionId;
+        if (runControl) {
+          runControl.runId = clientTiming.runId;
+          runControl.sessionId = clientTiming.sessionId;
+        }
         renderRuntimeMeta({ ...payload, transport: "websocket" });
         return;
       }
@@ -726,6 +748,10 @@ async function runViaWebSocket(requestPayload, token, clientTiming) {
               resolve(payload.result);
               return;
             }
+            if (payload.status === "cancelled" || payload.status === "cancelling") {
+              reject(new Error("run cancelled"));
+              return;
+            }
             reject(new Error(`websocket closed; run ${accepted.run_id} is ${payload.status || "unknown"}`));
           })
           .catch((error) => reject(error));
@@ -764,6 +790,40 @@ async function runViaHttp(question, audioSource, token) {
   liveEvents = Array.isArray(payload.events) ? payload.events : [];
   renderTimeline(liveEvents);
   return payload;
+}
+
+async function cancelActiveRun() {
+  if (!activeRunControl || activeRunControl.cancelRequested) {
+    return;
+  }
+  activeRunControl.cancelRequested = true;
+  $("cancelRunButton").disabled = true;
+  $("statusBadge").textContent = "取消中";
+  $("answerState").textContent = "取消中";
+  $("timelineState").textContent = "正在通知后端取消";
+  try {
+    if (activeRunControl.socket && activeRunControl.socket.readyState === WebSocket.OPEN) {
+      activeRunControl.socket.send(JSON.stringify({ type: "cancel" }));
+    }
+  } catch (error) {
+    console.warn("websocket cancel failed", error);
+  }
+  await requestServerCancel(activeRunControl.runId, activeRunControl.sessionId);
+}
+
+async function requestServerCancel(runId, sessionId) {
+  if (!runId || !sessionId) {
+    return;
+  }
+  try {
+    await fetch(`/api/runs/${encodeURIComponent(runId)}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, metrics: {} })
+    });
+  } catch (error) {
+    console.warn("server cancel failed", error);
+  }
 }
 
 async function fetchRunStatus(runId, sessionId) {

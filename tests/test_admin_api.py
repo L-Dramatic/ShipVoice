@@ -18,6 +18,7 @@ from shipvoice.config import load_env_file  # noqa: E402
 import shipvoice.fastapi_app as fastapi_app_module  # noqa: E402
 from shipvoice.fastapi_app import create_app  # noqa: E402
 from shipvoice.models import GateResult, PipelineResult, RunMetrics, TTSResult  # noqa: E402
+from shipvoice.pipeline import PipelineCancelled  # noqa: E402
 
 
 @contextmanager
@@ -114,6 +115,16 @@ class SlowPipeline:
             provider_status={},
             audio_output=TTSResult(provider="fake_tts", audio_base64="UklGRg==", mime_type="audio/wav"),
         )
+
+
+class CancellablePipeline(SlowPipeline):
+    async def run_once(self, question: str, **kwargs: object) -> PipelineResult:
+        cancel_event = kwargs.get("cancel_event")
+        for _ in range(40):
+            if getattr(cancel_event, "is_set", lambda: False)():
+                raise PipelineCancelled("run cancelled during test")
+            await asyncio.sleep(0.01)
+        return await super().run_once(question, **kwargs)
 
 
 class AdminApiTests(unittest.IsolatedAsyncioTestCase):
@@ -244,6 +255,40 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
         second_payload = second.json()
         second_error = second_payload.get("error") or second_payload.get("detail", {}).get("error")
         self.assertEqual(second_error, "session already has a run in progress")
+
+    async def test_cancel_running_run_sets_cancel_event(self) -> None:
+        with (
+            patched_env(SHIPVOICE_RUN_QUEUE_WAIT_SECONDS="0.05", SHIPVOICE_RUN_TIMEOUT_SECONDS="5"),
+            replace_attr(fastapi_app_module, "VoiceQAPipeline", CancellablePipeline),
+            replace_attr(fastapi_app_module, "SQLiteAppStore", MinimalStore),
+        ):
+            app = create_app()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+            run_id = "session-cancel-test:req"
+            running = asyncio.create_task(
+                client.post(
+                    "/api/run",
+                    json={
+                        "session_id": "session-cancel-test",
+                        "client_request_id": run_id,
+                        "question": "ship safety work",
+                        "mode": "full",
+                    },
+                )
+            )
+            await asyncio.sleep(0.05)
+            cancel_response = await client.post(
+                f"/api/runs/{run_id}/cancel",
+                json={"session_id": "session-cancel-test", "metrics": {}},
+            )
+            run_response = await running
+            status_response = await client.get(f"/api/runs/{run_id}?session_id=session-cancel-test")
+
+        self.assertEqual(cancel_response.status_code, 200, cancel_response.text)
+        self.assertTrue(cancel_response.json()["cancel_requested"])
+        self.assertEqual(run_response.status_code, 499, run_response.text)
+        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(status_response.json()["status"], "cancelled")
 
     async def test_admin_export_formats(self) -> None:
         sample_run = {

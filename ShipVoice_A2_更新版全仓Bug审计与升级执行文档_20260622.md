@@ -33,7 +33,7 @@
 
 ### 0.2 一句话结论
 
-**本文档已按 2026-06-23 当前工作区进展更新：已落地的安全门控 always-on、ASR hint 移除、空 ASR fail-closed、指标口径修正、WebSocket 自动重跑移除、后台默认口令禁用、输入边界、RAG no-evidence、举报例外加固、`/live`/`/ready`、浏览器 `audio.onplaying` 打点、配置原子保存、运行时并发/超时/同会话互斥保护、SQLite WAL/busy timeout/外键、前端 HTTP/WS 超时与坏 JSON 保护、容器非 root/readiness、生产固定端口、LoRA adapter SHA attestation、LLM token/SSE 流、句级 TTS 队列、WebSocket audio chunk 与前端分段播放、30×2×5 真实重复实验、真实浏览器 `audio.onplaying` 批量取证、在线 ASR raw/corrected 评测和 draft final manifest。除用户暂缓的最终报告/PPT/Dashboard 生成外，A2 服务器侧与证据侧关键升级已完成；剩余风险主要是长期工程化项，例如取消传播、持久队列、依赖锁、远程服务认证和生产化治理。**
+**本文档已按 2026-06-24 当前工作区进展更新：已落地的安全门控 always-on、ASR hint 移除、空 ASR fail-closed、指标口径修正、WebSocket 自动重跑移除、后台默认口令禁用、输入边界、RAG no-evidence、举报例外加固、`/live`/`/ready`、浏览器 `audio.onplaying` 打点、配置原子保存、运行时并发/超时/同会话互斥保护、SQLite WAL/busy timeout/外键、前端 HTTP/WS 超时与坏 JSON 保护、前端取消按钮、WebSocket cancel frame、后端 `cancel_event` 传播、容器非 root/readiness、生产固定端口、LoRA adapter SHA attestation、LLM token/SSE 流、安全闭合句段 TTS 队列、流式片段与非流式完整回答输出 guard、WebSocket audio chunk 与前端分段播放、provider HTTP 连接池复用与可观测计数、30×2×5 真实重复实验、真实浏览器 `audio.onplaying` 批量取证、在线 ASR raw/corrected 评测和 draft final manifest。除用户暂缓的最终报告/PPT/Dashboard 生成外，A2 服务器侧与证据侧关键升级已完成；剩余风险主要是长期工程化项，例如持久队列、依赖锁、远程服务认证和生产化治理。**
 
 ### 0.3 当前能力的可信状态
 
@@ -105,7 +105,7 @@
 
 | 编号 | 等级 | 问题 | 主要文件 | 根因/触发 | 影响 | 修复方向 | 验收标准 |
 |---|---|---|---|---|---|---|---|
-| P0-06 | P0 | 取消、provider 队列和速率限制仍不完整 | src/shipvoice/fastapi_app.py; web/static/app.js; providers | 请求体、history、base64、全局 pipeline 信号量、同 session 锁、排队等待上限、总 deadline、前端 HTTP/WS 超时已加；但取消传播、速率限制、持久队列、provider 分级 worker 状态仍不完整 | 真实服务在线和高并发演示时仍可能出现用户取消后 provider 继续跑、后台评测抢占模型资源 | 加取消 token、速率限制、持久队列和 ASR/LLM/TTS worker 状态 | 超大输入 413/422；并发压测不超过配置上限；取消后 provider 不继续执行或明确记录继续完成 |
+| P0-06 | P0 | provider 队列和速率限制仍不完整 | src/shipvoice/fastapi_app.py; web/static/app.js; providers | 请求体、history、base64、全局 pipeline 信号量、同 session 锁、排队等待上限、总 deadline、前端 HTTP/WS 超时、cancel frame 与后端 provider 取消传播已加；但速率限制、持久队列、provider 分级 worker 状态仍不完整 | 真实服务在线和高并发演示时仍可能出现后台评测抢占模型资源或不同 provider 之间缺少独立背压 | 加速率限制、持久队列和 ASR/LLM/TTS worker 状态 | 超大输入 413/422；并发压测不超过配置上限；provider 队列与后台任务不会抢占前台演示 |
 | P0-07 | P0 | 报告、PPT、结果与提交 SHA 仍未最终统一 | results/project_acceptance_report.*; deliverables/final_submission/**; scripts/build_acceptance_report.py; scripts/build_final_manifest.py | 已新增 `results/final_manifest_draft.json`，真实服务重复实验、ASR、browser 和 adapter SHA 证据已完成；但报告/PPT/Dashboard 按用户要求暂不生成 | 答辩数字仍可能互相冲突，除非后续只读 manifest 生成 | 基于最终证据生成冻结 final manifest；所有报告/PPT/Dashboard 只读该 manifest；dirty/stale 时失败 | 报告、PPT、Dashboard 的每个数字与 final manifest 一致 |
 | P0-08 | P0 | ASR 0% CER/WER 不能证明真实识别质量 | scripts/evaluate_asr_online.py; data/audio/audio_manifest.csv; results/asr_online_20260623 | 历史 0% 指标已降级；当前已执行 50 条在线 ASR raw/corrected 评测，不发送真值 hint | 已有可提交 ASR 质量证据；长期仍需更大外部 holdout | 保留 raw JSONL、corrected 文本、CER/WER、术语召回和噪声分层；报告不得再引用历史 0% 作为主结论 | `results/asr_online_20260623/summary.json` 显示 50/50 evaluated、平均 CER/WER 1.58%、term recall 85.71% |
 | P0-09 | P0 | LoRA adapter hash attestation 已闭环 | src/shipvoice/fastapi_app.py; remote/serve_transformers_openai.py; scripts/attest_lora_adapter.py | 远端 `/health` 已返回 adapter SHA、文件数和字节数；本地 `/api/ready` 已按 `SHIPVOICE_LORA_ADAPTER_SHA256` 强校验 | 错误 adapter/base-only 服务会 readiness fail | 保留 attestation JSON；最终报告引用 SHA 与 health 摘要 | `results/lora_adapter_attestation_20260623.json` 中 `sha_match=true` |
@@ -130,7 +130,6 @@
 | P1-22 | P1 | 异常详情和本地绝对路径进入 API/结果 | fastapi_app.py; results/*.json; remote health | 客户端/报告可见路径、stdout/stderr、adapter 本机位置 | 信息泄露且跨机器不可复现 | 错误码与内部 trace 分离；路径改相对 artifact URI；日志脱敏 | 提交包 secret/PII/path 扫描无高危命中 |
 | P2-01 | P2 | VAD 事件为固定 0ms | src/shipvoice/pipeline.py | 未进行真实端点检测却展示 VAD 完成 | 时间线误导 | 无 VAD 就删除节点；或实现客户端/ASR endpoint 事件 | UI 仅展示真实发生的阶段 |
 | P2-02 | P2 | 阻断请求 UI 把 TTS 标为 blocked，但后端仍播拒答 | web/static/app.js; src/shipvoice/pipeline.py | 前后端状态语义冲突 | 演示时难解释 | 显示“LLM skipped / safety TTS played” | 阻断运行时间线与实际 provider 调用一致 |
-| P2-03 | P2 | 前端取消语义仍未和后端任务闭环 | web/static/app.js; src/shipvoice/fastapi_app.py | HTTP/WS 超时、AbortController、坏 JSON 保护已加；但 cancel frame 与后端 task/provider 取消还未闭环 | 用户关闭页面后，后端可能继续完成昂贵模型调用 | cancel frame、后端 task cancellation、审计状态、重连状态 | 网络故障后 UI 在有限时间内恢复，取消后后端记录 cancelled 或明确继续完成 |
 | P2-04 | P2 | 整个音频/回答以 base64 常驻内存并导出 | web/static/app.js; API schema | 大音频复制多份，导出包含 TTS 和会话敏感内容 | 内存高、日志包膨胀、隐私风险 | multipart/二进制 WS；对象 URL；导出默认剔除 audio 和敏感文本 | 30–60 秒音频内存稳定，导出不含原始音频 |
 | P2-05 | P2 | 可视化在无真实 analyser 时模拟波形 | web/static/app.js | 视觉上像真实输入但可能是模拟 | 答辩可被质疑 | 标识“visual fallback”，评测界面禁用模拟 | 无音频时画布不显示伪波形 |
 
@@ -140,7 +139,7 @@
 - **P1：提交前尽量修复或至少在报告中明确。** 会影响可复现性、质量、稳定性和答辩可信度。
 - **P2：工程质量和用户体验问题。** 不一定阻断演示，但不应再包装成已完成能力。
 
-建议后续优先处理仍在表中的 P0-03、P0-06 剩余队列/取消部分、P0-07、P0-08、P0-09、P0-10，再处理 P1-02、P1-03、P1-05、P1-07、P1-10、P1-17、P1-19、P1-21。不要先花时间美化 UI、加更多图表或扩大自评分。
+建议后续优先处理仍在表中的 P0-06 剩余 provider 队列/速率限制部分、P0-07，再处理 P1-02、P1-03、P1-05、P1-07、P1-10、P1-17、P1-19、P1-21。不要先花时间美化 UI、加更多图表或扩大自评分。
 
 ---
 
@@ -160,12 +159,12 @@
 | P1-04 RAG 无命中返回默认文档 | 已修复：无匹配返回空 evidence，`rag.min_score=2.0` | `tests.test_evidence_citations`；`python scripts\evaluate_retrieval.py` |
 | P1-08 健康检查假阳性 | 已修复应用层：新增 `/api/live` 与 `/api/ready`，provider 未开时 `/api/ready=503`，当前真实服务在线时 `/api/ready=200` | `test_live_and_ready_endpoints_are_separate`；2026-06-23 本地隧道 ASR/LLM/TTS 三项 ready |
 | P1-09 配置保存非原子 | 已修复：临时文件验证、pipeline 构造成功后原子替换，并保留 `.bak` | `python -m unittest discover -s tests` |
-| P0-06 基础并发/总超时边界 | 已部分修复：HTTP/WS 主链通过全局信号量、同 session 锁、排队等待上限和总 deadline 控制；超限返回 409/429/504；`/api/health` 暴露运行时限额 | `test_runtime_limits_are_bounded_by_environment`、`test_same_session_concurrent_run_is_rejected`；`python -m unittest discover -s tests` |
+| P0-06 基础并发/总超时/取消边界 | 已部分修复：HTTP/WS 主链通过全局信号量、同 session 锁、排队等待上限、总 deadline 和运行级 `cancel_event` 控制；超限返回 409/429/504，取消返回 499 并记录 `cancelled`；`/api/health` 暴露运行时限额 | `test_runtime_limits_are_bounded_by_environment`、`test_same_session_concurrent_run_is_rejected`、`test_cancel_running_run_sets_cancel_event`；`python -m unittest discover -s tests` |
 | P1-12 SQLite 连接级并发基础 | 已部分修复：连接启用 `foreign_keys=ON`、`busy_timeout=5000`、`journal_mode=WAL`、`synchronous=NORMAL` | `python -m py_compile src\shipvoice\sqlite_store.py` |
-| P2-03 前端基础超时/解析保护 | 已部分修复：HTTP 使用 `AbortController`；WebSocket 有 deadline；WS/HTTP 均处理非 JSON/坏 JSON 响应 | `node --check web\static\app.js` |
+| P2-03 前端超时/解析/取消闭环 | 已修复：HTTP 使用 `AbortController`；WebSocket 有 deadline；WS/HTTP 均处理非 JSON/坏 JSON 响应；前端运行中取消会发送 HTTP cancel 或 WebSocket cancel frame，后端记录 `cancelled` | `node --check web\static\app.js`；`test_cancel_running_run_sets_cancel_event` |
 | P1-18/P2-06 容器与生产端口基础 | 已部分修复：Docker 非 root；compose healthcheck 调 `/api/ready`；`.dockerignore` 排除结果/音频/env/模型；`run_app.py --no-auto-port` 让生产端口占用直接失败 | `python -m py_compile run_app.py` |
 
-剩余 ASR 质量、LoRA 真实性和低延迟结论不再卡在这些已修复 bug 上；服务器侧真实批量重跑、adapter hash attestation、独立 ASR 质量报告、浏览器 `onplaying` 批量回传和 30×2×5 重复实验均已完成。按用户当前范围，后续只保留最终报告/PPT/Dashboard 统一生成，以及取消传播、持久队列、认证限流、依赖锁等长期工程化项。
+剩余 ASR 质量、LoRA 真实性和低延迟结论不再卡在这些已修复 bug 上；服务器侧真实批量重跑、adapter hash attestation、独立 ASR 质量报告、浏览器 `onplaying` 批量回传、30×2×5 重复实验、输出 guard、连接复用和运行取消闭环均已完成。按用户当前范围，后续只保留最终报告/PPT/Dashboard 统一生成，以及持久队列、认证限流、依赖锁等长期工程化项。
 
 ---
 
@@ -256,7 +255,7 @@ class StreamingTTS(Protocol):
 - 引用 ID 和长来源不进入第一句语音；UI 单独展示 citation；
 - 对缩写、数字、括号和小数避免误切；
 - TTS 队列必须有界，例如 `maxsize=2`，防止 LLM 快于 TTS 时无限占内存；
-- 客户端断开、用户打断时，取消后续 LLM/TTS task。
+- 客户端断开、用户打断时，已通过运行级 `cancel_event` 取消后续 LLM/TTS task。
 
 ### 5.4 首播指标的唯一正确公式
 
@@ -283,14 +282,13 @@ client_onplaying_ms
 
 ---
 
-## 6. P0-06：并发、超时、取消和模型队列边界
+## 6. P0-06：并发、超时和模型队列边界
 
-认证、公开 session、默认口令、配置 secret、健康检查分层、基础输入限制、全局 pipeline 并发、同 session 互斥、排队等待上限和总 deadline 已经完成。本节只保留仍未完成的资源治理项。
+认证、公开 session、默认口令、配置 secret、健康检查分层、基础输入限制、全局 pipeline 并发、同 session 互斥、排队等待上限、总 deadline 和用户取消传播已经完成。本节只保留仍未完成的资源治理项。
 
 ### 6.1 当前剩余缺口
 
 - 当前只做了主 pipeline 全局信号量，还没有按 ASR/LLM/TTS provider 分别建 worker 队列；
-- WebSocket 断开后，任务是继续完成还是取消还没有统一策略；
 - 已有总 deadline，还没有 ASR/LLM/TTS 分阶段 deadline；
 - live 评测仍可能一键触发完整 LLM/TTS，缺少成本/资源队列控制；
 - MIME/音频时长仍需解码器级校验，不能只依赖 base64 大小。
@@ -310,6 +308,7 @@ client_onplaying_ms
 | 同会话并发 | 已支持同 session 锁，第二个并发请求返回 409 |
 | 全局 pipeline 并发 | 已支持 `SHIPVOICE_MAX_CONCURRENT_RUNS`，课程版建议 1–2 |
 | 请求 deadline | 已支持全局 `SHIPVOICE_RUN_TIMEOUT_SECONDS`；仍需 ASR/LLM/TTS 分阶段 deadline |
+| 用户取消 | 已支持前端取消按钮、WebSocket cancel frame、`POST /api/runs/{run_id}/cancel` 和 pipeline/provider `cancel_event` 传播 |
 
 base64 使用严格解码：
 
@@ -322,7 +321,7 @@ base64.b64decode(value, validate=True)
 ### 6.3 验收
 
 - 并发压测中全局 pipeline 调用数不超过配置上限，后续再拆成 ASR/LLM/TTS worker 上限；
-- 用户取消或连接断开后，后端行为明确：要么继续完成并可查询，要么取消并记录 `cancelled`；
+- 用户取消或连接断开后，后端取消并记录 `cancelled`；
 - 超时、取消、provider 不可用都写入审计；
 - 后台 live 评测排队执行，不会并发抢占模型 worker。
 
@@ -1127,9 +1126,9 @@ v0.3.0-a2-final-candidate
 | `src/shipvoice/__init__.py` | 版本号与最终 tag 一致 |
 | `src/shipvoice/models.py` | 重命名错误 timing 字段；增加 client timing、attestation、request id |
 | `src/shipvoice/config.py` | 增加 Pydantic Settings/URL/枚举/上限校验；敏感配置仅环境变量 |
-| `src/shipvoice/providers.py` | 已加 OpenAI SSE streaming；仍需继续处理 gate 例外、未知放行、规则漂移、LoRA hash attestation |
-| `src/shipvoice/pipeline.py` | 已加 streaming mode 句级 TTS 队列；仍需取消传播、provider 分级 deadline、真实 VAD |
-| `src/shipvoice/fastapi_app.py` | 已补认证、公开 sessions、输入限制、幂等、atomic config、运行时并发/同会话互斥/总超时；仍需拆分模块、jobs 队列与取消传播 |
+| `src/shipvoice/providers.py` | 已加 OpenAI SSE streaming、持久 HTTP client、请求/失败计数和取消边界；仍需继续处理 gate 例外、未知放行、规则漂移、远端认证 |
+| `src/shipvoice/pipeline.py` | 已加 streaming mode 安全闭合 TTS 队列、完整回答输出 guard、provider 取消传播和 provider_status 可观测字段；仍需 provider 分级 deadline、真实 VAD |
+| `src/shipvoice/fastapi_app.py` | 已补认证、公开 sessions、输入限制、幂等、atomic config、运行时并发/同会话互斥/总超时、HTTP cancel endpoint 和 WebSocket cancel frame；仍需拆分模块、jobs 队列 |
 | `src/shipvoice/sqlite_store.py` | 1538 行 God class；已启用 WAL/外键/busy timeout；仍需迁移/事务/outbox/分页/索引 |
 | `src/shipvoice/audit.py` | 与 SQLite audit 功能重叠，统一到 repository/service |
 | `src/shipvoice/knowledge.py` | 与 runtime index/DB同步策略统一，补 schema/provenance |
@@ -1141,8 +1140,8 @@ v0.3.0-a2-final-candidate
 | 文件 | 本轮结论/动作 |
 |---|---|
 | `web/static/index.html` | 检查 mode 文案、可访问性、隐私提示、上传限制 |
-| `web/static/app.js` | 已取消 WS 盲重试，新增首播打点、HTTP/WS 超时、坏 JSON 保护、`audio_chunk` 分段播放队列；仍需 cancel frame、敏感导出治理 |
-| `web/static/styles.css` | 二进制差异不可读；重新构建后人工检查移动端/高对比/状态语义 |
+| `web/static/app.js` | 已取消 WS 盲重试，新增首播打点、HTTP/WS 超时、坏 JSON 保护、`audio_chunk` 分段播放队列和 cancel frame；仍需敏感导出治理 |
+| `web/static/styles.css` | 已扩大左侧快速场景和高级选项展开空间；仍需持续人工检查移动端/高对比/状态语义 |
 | `web/static/admin.html` | 隐藏高危操作、加确认/权限/评测成本提示 |
 | `web/static/admin.js` | config atomic 结果、job cancel、401处理、避免展示内部路径/trace |
 
@@ -1388,16 +1387,14 @@ sha256sum ShipVoice_Final.zip > ShipVoice_Final.zip.sha256
 
 ShipVoice 新版已经具备一个较完整的工程骨架：真实 provider、LoRA 服务、FastAPI、WebSocket、录音上传、RAG、门控、SQLite、后台和多类评测脚本都已存在。与旧版相比，这是实质性升级。
 
-当前第一轮止血和服务器侧复验已经完成：公开 mode 安全门控、ASR hint/回填、错误指标口径、WebSocket 自动重跑、默认管理员口令、公开 session、输入边界、RAG no-evidence、举报例外、ready/live、客户端播放打点、配置原子保存、draft manifest、真实 ASR/LoRA/TTS 接通、LLM SSE 流、WebSocket `audio_chunk` 和 30×2 baseline/streaming 第一轮配对均已落地。
+当前第一轮止血、服务器侧复验和 2026-06-24 追加加固已经完成：公开 mode 安全门控、ASR hint/回填、错误指标口径、WebSocket 自动重跑、默认管理员口令、公开 session、输入边界、RAG no-evidence、举报例外、ready/live、客户端播放打点、配置原子保存、draft manifest、真实 ASR/LoRA/TTS 接通、LoRA adapter SHA attestation、LLM SSE 流、安全闭合句段 TTS、非流式完整回答输出 guard、provider HTTP 连接池复用、provider_status 可观测计数、WebSocket `audio_chunk`、前端取消按钮、WebSocket cancel frame、后端取消传播，以及 30×2×5 baseline/streaming 重复实验均已落地。
 
-剩余最关键的不是继续堆 UI，而是把已完成的服务器侧取证变成最终可提交证据包：
+剩余最关键的不是继续堆 UI，而是把已完成的服务器侧取证变成最终可提交证据包，并继续处理生产化长期项：
 
-1. 扩展真实低延迟实验到 30×2×5，并固定随机顺序、失败率和 p50/p90/p95；
-2. 补齐 provider 分级队列、取消传播、分阶段 deadline 和速率限制；
-3. 在模型服务端输出 LoRA base revision、adapter loaded、adapter SHA，并由 `/api/ready` 强校验；
+1. 用 clean git + final experiment manifest 统一生成报告、PPT、Dashboard；
+2. 补齐 provider 分级队列、分阶段 deadline 和速率限制；
+3. 继续做远端服务认证、依赖锁、SQLite migration/outbox、容器多阶段/read-only/扫描和生产化边界；
 4. 保持公平基线 vs 改进实验只改变串行/流式策略，后续报告不得混用历史单轮数字；
-5. 用 clean git + final experiment manifest 统一生成报告、PPT、Dashboard；
-6. 补依赖锁、远程服务认证、SQLite migration/outbox、容器多阶段/read-only/扫描和生产化边界。
 
 除用户暂缓的报告/PPT/Dashboard 生成外，项目已经从“P0 已止血且服务器侧已复验的工程原型”提升为“安全边界明确、实验可复现、低延迟结论有真实证据支撑的 A2 项目”。剩余长期项主要影响生产化质量，不再阻断 A2 核心验收。
 

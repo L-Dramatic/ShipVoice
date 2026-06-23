@@ -23,7 +23,7 @@ ShipVoice data is designed for a shipyard safety voice QA assistant. It supports
 | Expanded LoRA remote results | `results/remote_autodl_20260621_expanded/summary.json` | 150 base rows + 150 LoRA rows | completed RTX 4090 training/evaluation evidence |
 | Safety gate seed data | `data/training/safety_gate_seed.jsonl` | 32 records | lightweight classifier/rule-gate training seed |
 | Audio manifest | `data/audio/audio_manifest.csv` | 50 recording tasks | schema for real voice sample collection and ASR evaluation |
-| ASR evaluation results | `results/asr_eval_summary.json` | 50 evaluated clips, corrected CER/WER 0.00%, term recall 100.00%; raw baseline kept in `results/asr_eval_raw_summary.json` | CER, WER, and domain-term recall |
+| ASR evaluation results | `results/asr_online_20260623/summary.json` | 50 evaluated clips, online ASR CER/WER 1.58%, term recall 85.71%; historical corrected-manifest results are not used as the main real-ASR conclusion | CER, WER, and domain-term recall |
 
 ## Domain Coverage
 

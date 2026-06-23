@@ -113,7 +113,15 @@ python scripts\generate_browser_onplaying_harness.py --env-file configs\runtime.
 python scripts\run_browser_onplaying_harness.py --url http://127.0.0.1:8026 --html results\browser_onplaying_streamable_20260623.html --output results\browser_onplaying_streamable_20260623.json --screenshot results\browser_onplaying_streamable_20260623.png
 ```
 
-WebSocket 页面复验时，确认运行详情中出现 `llm_first_delta_ms`、`server_first_audio_chunk_ready_ms`、`streamed_audio_segments`，并且前端首段音频由 `audio_chunk` 队列触发播放。2026-06-23 最终低延迟证据见 `results/server_real_repeated_20260623/summary.md` 和 `results/browser_onplaying_streamable_20260623.json`；最终低延迟结论应使用浏览器 `audio.onplaying` 指标，不使用完整 TTS 返回时间替代首播时间。
+WebSocket 页面复验时，确认运行详情中出现 `llm_first_delta_ms`、`server_first_audio_chunk_ready_ms`、`streamed_audio_segments`，并且前端首段音频由 `audio_chunk` 队列触发播放。高风险样本还应出现 `output_guard` 事件，说明系统先播安全前缀或在 TTS 前改写不安全片段；非流式完整回答也应在 TTS 前经过输出 guard。ASR、LLM、TTS provider 使用持久 HTTP 连接池，LLM SSE 流式解析不再走每次请求临时 `urlopen` 的短连接路径，`provider_status` 应能看到连接池类型、keepalive 和请求/失败计数。2026-06-23 最终低延迟证据见 `results/server_real_repeated_20260623/summary.md` 和 `results/browser_onplaying_streamable_20260623.json`；最终低延迟结论应使用浏览器 `audio.onplaying` 指标，不使用完整 TTS 返回时间替代首播时间。
+
+运行中取消复验：
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8026/api/runs/<run_id>/cancel" -ContentType "application/json" -Body '{"session_id":"<session_id>","metrics":{}}'
+```
+
+取消后对应运行状态应变为 `cancelled`，HTTP 路径返回 499；WebSocket 路径可发送 `{ "type": "cancel" }` 控制帧，后端会把取消信号传到 pipeline 和 provider 调用边界。
 
 ## 8. A2 固定音频集与等待体验评分
 

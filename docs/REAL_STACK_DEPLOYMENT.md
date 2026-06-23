@@ -20,7 +20,7 @@ TTS: 8002
 ShipVoice LoRA LLM: 11434 compatible /v1
 ```
 
-ShipVoice LoRA LLM 端点必须支持 OpenAI-compatible `stream=true` SSE。仓库内 `remote/serve_transformers_openai.py` 已使用 `TextIteratorStreamer` 输出 `chat.completion.chunk`，可用于本项目的流式低延迟链路。
+ShipVoice LoRA LLM 端点必须支持 OpenAI-compatible `stream=true` SSE。仓库内 `remote/serve_transformers_openai.py` 已使用 `TextIteratorStreamer` 输出 `chat.completion.chunk`，可用于本项目的流式低延迟链路。本地 ASR、LLM、TTS provider 会复用持久 HTTP client/keep-alive 连接池，因此远端服务应保持标准 HTTP keep-alive 行为，不要在每个 SSE delta 或 JSON 请求后强制异常断开。
 
 ## 本地连接
 
@@ -85,7 +85,7 @@ python scripts\compare_real_chain_batches.py --baseline results\server_real_batc
 python scripts\run_real_chain_repeated.py --env-file configs\runtime.real.env --limit 30 --split test --repeats 5 --require-lora --output-dir results\server_real_repeated_20260623
 ```
 
-浏览器 WebSocket 演示时，确认首个 `audio_chunk` 到达后前端立即入队播放，并记录 `audio.onplaying`。服务器侧重复性能证据见 `results/server_real_repeated_20260623/summary.md`，浏览器首播证据见 `results/browser_onplaying_streamable_20260623.json`。最终性能结论只使用同一批音频在 baseline 与 streaming 下的配对重复结果。
+浏览器 WebSocket 演示时，确认首个 `audio_chunk` 到达后前端立即入队播放，并记录 `audio.onplaying`。高风险样本应先出现安全前缀或 `output_guard` 事件，证明系统不是把单 token 或不完整半句直接播出。服务器侧重复性能证据见 `results/server_real_repeated_20260623/summary.md`，浏览器首播证据见 `results/browser_onplaying_streamable_20260623.json`。最终性能结论只使用同一批音频在 baseline 与 streaming 下的配对重复结果。
 
 ## 关机
 

@@ -37,7 +37,10 @@
         <div id="recordingStatus" class="recording-status">麦克风待命</div>
         <audio id="recordingPreview" class="recording-preview" controls hidden></audio>
         <p id="audioHint" class="hint">未选择音频。</p>
-        <button id="runButton" class="primary-button run-action">获取安全建议</button>
+        <div class="run-action-row">
+          <button id="runButton" class="primary-button run-action">获取安全建议</button>
+          <button id="cancelRunButton" class="secondary-button cancel-run-button" type="button" disabled>取消</button>
+        </div>
       </section>
 
       <details class="sidebar-details quick-case-details">

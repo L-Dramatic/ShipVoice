@@ -1,8 +1,8 @@
 # ShipVoice 项目验收报告
 
-- 生成时间：`2026-06-23T08:21:47.812241+00:00`
+- 生成时间：`2026-06-23T17:10:36.185440+00:00`
 - Git 分支：`main`
-- Git 提交：`41c922b`
+- Git 提交：`e23fd7b`
 - 源代码工作区是否有未提交改动：`True`
 - 建议课程目标分：`97 / 100`
 
@@ -23,7 +23,7 @@
 | 可解释证据引用 | `implemented` | `src/shipvoice/providers.py`<br>`web/static/app.js`<br>`scripts/evaluate_citation_quality.py`<br>`results/citation_quality_summary.json`<br>`tests/test_evidence_citations.py` | 当前 LoRA 链路 citation title hit@3 100.0%，Top-1 schema 完整率 100.0%。 |
 | 当前真实语音链路验收 | `verified_real_repeated` | `scripts/run_real_chain_repeated.py`<br>`results/server_real_repeated_20260623/summary.json`<br>`results/server_real_batch_comparison_20260623.json`<br>`results/browser_onplaying_streamable_20260623.json` | 真实链路重复实验 300 次全部成功，ShipVoice LoRA adapter 在线加载。 |
 | 固定音频集与等待体验量化 | `implemented` | `data/audio/audio_manifest_a2_eval.csv`<br>`docs/FIXED_AUDIO_COMMAND_SET_20260623.md`<br>`scripts/evaluate_waiting_experience.py`<br>`results/waiting_experience_20260623/summary.json` | 50 条录音已按 A2 难度梯度分层；等待体验采用真实延迟日志生成代理评分，不伪造真人问卷。 |
-| 微调与安全数据资产 | `completed_experiment` | `data/training/shipvoice_sft_train_expanded.jsonl`<br>`remote/train_qwen_lora.py`<br>`results/remote_autodl_20260621_expanded/summary.json` | 扩展 SFT 1000 条，holdout 150 条；LoRA train loss 0.1676858789101243，adapter 约 154.1 MB。 |
+| 微调与安全数据资产 | `completed_experiment` | `data/training/shipvoice_sft_train_expanded.jsonl`<br>`remote/train_qwen_lora.py`<br>`results/remote_autodl_20260621_expanded/summary.json`<br>`results/remote_lora_expanded_summary_20260621.json` | 扩展 SFT 1000 条，holdout 150 条；LoRA train loss 0.1676858789101243，adapter 约 154.1 MB。 |
 | 容器化与远程部署 | `implemented` | `Dockerfile`<br>`docker-compose.app.yml`<br>`remote/start_shipvoice_real_services.sh` | 支持本地 FastAPI 应用、Docker 运行、AutoDL 真实模型服务脚本。 |
 
 ## 关键指标
@@ -43,12 +43,12 @@
 
 | 文件 | 状态 | 大小 |
 |---|---|---:|
-| `README.md` | 存在 | 9706 |
-| `docs/PHASE1_SCORECARD.md` | 存在 | 2264 |
-| `docs/OPERATIONS_RUNBOOK.md` | 存在 | 3912 |
-| `docs/ARCHITECTURE.md` | 存在 | 5135 |
-| `docs/A2_REQUIREMENT_COMPLETION_AUDIT_20260623.md` | 存在 | 8569 |
-| `docs/FIXED_AUDIO_COMMAND_SET_20260623.md` | 存在 | 11048 |
+| `README.md` | 存在 | 10432 |
+| `docs/PHASE1_SCORECARD.md` | 存在 | 3318 |
+| `docs/OPERATIONS_RUNBOOK.md` | 存在 | 4613 |
+| `docs/ARCHITECTURE.md` | 存在 | 7350 |
+| `docs/A2_REQUIREMENT_COMPLETION_AUDIT_20260623.md` | 存在 | 8918 |
+| `docs/FIXED_AUDIO_COMMAND_SET_20260623.md` | 存在 | 11046 |
 | `data/audio/audio_manifest_a2_eval.csv` | 存在 | 26824 |
 | `results/citation_quality_report.md` | 存在 | 1272 |
 | `results/citation_quality_summary.json` | 存在 | 510 |
@@ -57,15 +57,15 @@
 | `results/server_real_batch_comparison_20260623.json` | 存在 | 7980 |
 | `results/browser_onplaying_streamable_20260623.json` | 存在 | 13097 |
 | `results/waiting_experience_20260623/summary.json` | 存在 | 4184 |
-| `results/waiting_experience_20260623/report.md` | 存在 | 2957 |
-| `deliverables/ShipVoice_Evaluation_Dashboard.html` | 存在 | 71162 |
+| `results/waiting_experience_20260623/report.md` | 存在 | 2955 |
+| `deliverables/ShipVoice_Evaluation_Dashboard.html` | 存在 | 20324 |
 | `deliverables/ShipVoice_Final_Defense_Deck_Draft.pptx` | 存在 | 236491 |
-| `deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.docx` | 存在 | 55785 |
-| `deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.pdf` | 存在 | 744794 |
-| `deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.md` | 存在 | 30885 |
-| `web/static/index.html` | 存在 | 10208 |
-| `web/static/admin.html` | 存在 | 15073 |
-| `Dockerfile` | 存在 | 520 |
+| `deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.docx` | 存在 | 3377692 |
+| `deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.pdf` | 存在 | 3056052 |
+| `deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.md` | 存在 | 47204 |
+| `web/static/index.html` | 存在 | 10384 |
+| `web/static/admin.html` | 存在 | 15075 |
+| `Dockerfile` | 存在 | 501 |
 
 ## 当前边界
 

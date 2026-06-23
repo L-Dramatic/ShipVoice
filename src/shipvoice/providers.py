@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 import json
 import math
 import os
 import re
 import threading
-import urllib.error
-import urllib.request
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from .config import PipelineConfig, project_path
 from .models import ASRResult, GateResult, RetrievalHit, TTSResult
@@ -57,6 +58,43 @@ def _extract_json_path(data: Any, path: str, default: Any = "") -> Any:
             continue
         return default
     return current
+
+
+def _build_pooled_http_client(timeout_s: int) -> httpx.Client:
+    return httpx.Client(
+        timeout=httpx.Timeout(float(timeout_s)),
+        limits=httpx.Limits(max_keepalive_connections=8, max_connections=32, keepalive_expiry=30.0),
+        follow_redirects=True,
+        headers={"Connection": "keep-alive"},
+    )
+
+
+def _accepts_kwarg(func: Any, name: str) -> bool:
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        return False
+    return name in signature.parameters
+
+
+def _post_json_with_pool(
+    client: Any,
+    url: str,
+    payload: dict[str, Any],
+    *,
+    headers: dict[str, str] | None = None,
+    cancel_event: threading.Event | None = None,
+) -> dict[str, Any]:
+    if cancel_event is not None and cancel_event.is_set():
+        raise RuntimeError("provider request cancelled before dispatch")
+    response = client.post(url, json=payload, headers=headers or {"Content-Type": "application/json"})
+    response.raise_for_status()
+    if cancel_event is not None and cancel_event.is_set():
+        raise RuntimeError("provider request cancelled after response")
+    data = response.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("HTTP JSON provider returned a non-object response.")
+    return data
 
 
 def citation_matched_terms(query: str, title: str, text: str, tags: list[str]) -> list[str]:
@@ -109,11 +147,16 @@ class HttpJsonASRProvider:
         timeout_s: int,
         response_text_path: str,
         text_input: TextInputProvider,
+        http_client: Any | None = None,
     ) -> None:
         self.endpoint = endpoint
         self.timeout_s = timeout_s
         self.response_text_path = response_text_path
         self.text_input = text_input
+        self._http_client = http_client or _build_pooled_http_client(timeout_s)
+        self._owns_http_client = http_client is None
+        self._http_request_count = 0
+        self._http_failure_count = 0
 
     async def transcribe(
         self,
@@ -121,30 +164,46 @@ class HttpJsonASRProvider:
         *,
         audio_bytes: bytes | None = None,
         audio_name: str = "",
+        cancel_event: threading.Event | None = None,
     ) -> ASRResult:
         if not audio_bytes:
             return await self.text_input.transcribe(transcript_hint, audio_bytes=None, audio_name=audio_name)
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("ASR request cancelled before transcription")
 
         payload = {
             "audio_base64": base64.b64encode(audio_bytes).decode("ascii"),
             "audio_name": audio_name,
         }
 
-        data = await asyncio.to_thread(self._post_json, payload)
+        if _accepts_kwarg(self._post_json, "cancel_event"):
+            data = await asyncio.to_thread(self._post_json, payload, cancel_event=cancel_event)
+        else:
+            data = await asyncio.to_thread(self._post_json, payload)
         transcript = str(_extract_json_path(data, self.response_text_path, "")).strip()
         if not transcript:
             raise RuntimeError("ASR service returned an empty transcript.")
         return ASRResult(transcript=transcript, provider=self.name, source="audio")
 
-    def _post_json(self, payload: dict[str, Any]) -> dict[str, Any]:
-        request = urllib.request.Request(
-            self.endpoint,
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
-            return json.loads(response.read().decode("utf-8"))
+    def _post_json(self, payload: dict[str, Any], *, cancel_event: threading.Event | None = None) -> dict[str, Any]:
+        self._http_request_count += 1
+        try:
+            return _post_json_with_pool(self._http_client, self.endpoint, payload, cancel_event=cancel_event)
+        except Exception:
+            self._http_failure_count += 1
+            raise
+
+    def close(self) -> None:
+        if self._owns_http_client and hasattr(self._http_client, "close"):
+            self._http_client.close()
+
+    def status_snapshot(self) -> dict[str, int | str | bool]:
+        return {
+            "http_client": "pooled_httpx",
+            "http_keepalive": True,
+            "http_requests": self._http_request_count,
+            "http_failures": self._http_failure_count,
+        }
 
 
 class TermCorrector:
@@ -411,12 +470,18 @@ class OpenAICompatibleLLMProvider:
         model: str,
         api_key_env: str,
         timeout_s: int,
+        http_client: Any | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key_env = api_key_env
         self.timeout_s = timeout_s
         self.name = f"openai_compatible:{self.model or 'unknown'}"
+        self._http_client = http_client or _build_pooled_http_client(timeout_s)
+        self._owns_http_client = http_client is None
+        self._http_request_count = 0
+        self._http_stream_request_count = 0
+        self._http_failure_count = 0
 
     def _endpoint(self) -> str:
         if self.base_url.endswith("/chat/completions"):
@@ -475,9 +540,12 @@ class OpenAICompatibleLLMProvider:
         evidence: list[RetrievalHit],
         gate: GateResult,
         history: list[dict[str, str]] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> str:
         if not gate.allowed:
             return build_safety_refusal(gate)
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("LLM request cancelled before generation")
 
         payload = {
             "model": self.model,
@@ -485,14 +553,18 @@ class OpenAICompatibleLLMProvider:
             "temperature": 0.2,
             "stream": False,
         }
-        request = urllib.request.Request(
-            self._endpoint(),
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers=self._headers(),
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
-            data = json.loads(response.read().decode("utf-8"))
+        self._http_request_count += 1
+        try:
+            data = _post_json_with_pool(
+                self._http_client,
+                self._endpoint(),
+                payload,
+                headers=self._headers(),
+                cancel_event=cancel_event,
+            )
+        except Exception:
+            self._http_failure_count += 1
+            raise
         content = data["choices"][0]["message"]["content"].strip()
         if not content:
             raise RuntimeError("LLM service returned an empty answer.")
@@ -504,45 +576,53 @@ class OpenAICompatibleLLMProvider:
         evidence: list[RetrievalHit],
         gate: GateResult,
         history: list[dict[str, str]] | None = None,
+        cancel_event: threading.Event | None = None,
     ):
         if not gate.allowed:
             yield build_safety_refusal(gate)
             return
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("LLM stream cancelled before generation")
         payload = {
             "model": self.model,
             "messages": self._build_messages(question, evidence, gate, history),
             "temperature": 0.2,
             "stream": True,
         }
-        request = urllib.request.Request(
-            self._endpoint(),
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers=self._headers(),
-            method="POST",
-        )
         emitted = False
-        with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
-            for raw_line in response:
-                line = raw_line.decode("utf-8", errors="replace").strip()
-                if not line:
-                    continue
-                if not line.startswith("data:"):
-                    continue
-                data = line.removeprefix("data:").strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    payload = json.loads(data)
-                except json.JSONDecodeError:
-                    continue
-                if payload.get("error"):
-                    raise RuntimeError(f"LLM streaming error: {payload['error']}")
-                choice = (payload.get("choices") or [{}])[0]
-                delta = choice.get("delta") or {}
-                text = str(delta.get("content") or choice.get("text") or "").strip("\x00")
-                if text:
-                    emitted = True
-                    yield text
+        self._http_stream_request_count += 1
+        try:
+            with self._http_client.stream("POST", self._endpoint(), json=payload, headers=self._headers()) as response:
+                response.raise_for_status()
+                for raw_line in response.iter_lines():
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise RuntimeError("LLM stream cancelled")
+                    if isinstance(raw_line, bytes):
+                        line = raw_line.decode("utf-8", errors="replace").strip()
+                    else:
+                        line = str(raw_line).strip()
+                    if not line:
+                        continue
+                    if not line.startswith("data:"):
+                        continue
+                    data = line.removeprefix("data:").strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        payload = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    if payload.get("error"):
+                        raise RuntimeError(f"LLM streaming error: {payload['error']}")
+                    choice = (payload.get("choices") or [{}])[0]
+                    delta = choice.get("delta") or {}
+                    text = str(delta.get("content") or choice.get("text") or "").strip("\x00")
+                    if text:
+                        emitted = True
+                        yield text
+        except Exception:
+            self._http_failure_count += 1
+            raise
         if not emitted:
             raise RuntimeError("LLM streaming returned no content.")
 
@@ -552,13 +632,14 @@ class OpenAICompatibleLLMProvider:
         evidence: list[RetrievalHit],
         gate: GateResult,
         history: list[dict[str, str]] | None = None,
+        cancel_event: threading.Event | None = None,
     ):
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[str | BaseException | None] = asyncio.Queue()
 
         def worker() -> None:
             try:
-                for delta in self._stream_answer_sync(question, evidence, gate, history):
+                for delta in self._stream_answer_sync(question, evidence, gate, history, cancel_event=cancel_event):
                     loop.call_soon_threadsafe(queue.put_nowait, delta)
             except BaseException as exc:  # propagate provider errors into the async stream
                 loop.call_soon_threadsafe(queue.put_nowait, exc)
@@ -577,6 +658,19 @@ class OpenAICompatibleLLMProvider:
     def split_chunks(self, answer: str) -> list[str]:
         return split_answer_chunks(answer)
 
+    def close(self) -> None:
+        if self._owns_http_client and hasattr(self._http_client, "close"):
+            self._http_client.close()
+
+    def status_snapshot(self) -> dict[str, int | str | bool]:
+        return {
+            "http_client": "pooled_httpx",
+            "http_keepalive": True,
+            "http_requests": self._http_request_count,
+            "http_stream_requests": self._http_stream_request_count,
+            "http_failures": self._http_failure_count,
+        }
+
 
 class HttpJsonTTSProvider:
     name = "http_json_tts"
@@ -590,31 +684,51 @@ class HttpJsonTTSProvider:
         voice: str,
         response_audio_path: str,
         response_mime_path: str,
+        http_client: Any | None = None,
     ) -> None:
         self.endpoint = endpoint
         self.timeout_s = timeout_s
         self.voice = voice
         self.response_audio_path = response_audio_path
         self.response_mime_path = response_mime_path
+        self._http_client = http_client or _build_pooled_http_client(timeout_s)
+        self._owns_http_client = http_client is None
+        self._http_request_count = 0
+        self._http_failure_count = 0
 
-    async def synthesize(self, text: str) -> TTSResult:
+    async def synthesize(self, text: str, *, cancel_event: threading.Event | None = None) -> TTSResult:
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("TTS request cancelled before synthesis")
         payload = {"text": text, "voice": self.voice}
-        data = await asyncio.to_thread(self._post_json, payload)
+        if _accepts_kwarg(self._post_json, "cancel_event"):
+            data = await asyncio.to_thread(self._post_json, payload, cancel_event=cancel_event)
+        else:
+            data = await asyncio.to_thread(self._post_json, payload)
         audio_base64 = str(_extract_json_path(data, self.response_audio_path, "")).strip()
         mime_type = str(_extract_json_path(data, self.response_mime_path, "audio/wav")).strip() or "audio/wav"
         if not audio_base64:
             raise RuntimeError("TTS service returned an empty audio payload.")
         return TTSResult(provider=self.name, audio_base64=audio_base64, mime_type=mime_type)
 
-    def _post_json(self, payload: dict[str, Any]) -> dict[str, Any]:
-        request = urllib.request.Request(
-            self.endpoint,
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
-            return json.loads(response.read().decode("utf-8"))
+    def _post_json(self, payload: dict[str, Any], *, cancel_event: threading.Event | None = None) -> dict[str, Any]:
+        self._http_request_count += 1
+        try:
+            return _post_json_with_pool(self._http_client, self.endpoint, payload, cancel_event=cancel_event)
+        except Exception:
+            self._http_failure_count += 1
+            raise
+
+    def close(self) -> None:
+        if self._owns_http_client and hasattr(self._http_client, "close"):
+            self._http_client.close()
+
+    def status_snapshot(self) -> dict[str, int | str | bool]:
+        return {
+            "http_client": "pooled_httpx",
+            "http_keepalive": True,
+            "http_requests": self._http_request_count,
+            "http_failures": self._http_failure_count,
+        }
 
 
 def build_asr(config: PipelineConfig) -> TextInputProvider | HttpJsonASRProvider:

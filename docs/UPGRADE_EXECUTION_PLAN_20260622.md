@@ -155,7 +155,7 @@ python scripts\build_final_manifest.py --output results\final_manifest_draft.jso
    - HTTP 请求使用 `AbortController` 和统一 deadline。
    - WebSocket 请求有超时清理，超时后关闭 socket。
    - HTTP 非 JSON 响应和 WebSocket 坏 JSON frame 不再直接抛未处理异常。
-   - 后续仍需 cancel frame 与后端 provider 取消传播。
+   - 2026-06-24 已补齐前端取消按钮、WebSocket cancel frame、`POST /api/runs/{run_id}/cancel` 和后端 `cancel_event` 传播；ASR、LLM、TTS provider 调用边界以及流式 delta/TTS worker 循环都会检查取消信号，取消运行返回 499 并标记为 `cancelled`。
 
 4. 容器与启动边界
    - Dockerfile 创建非 root 用户运行应用。
@@ -218,7 +218,7 @@ python scripts\run_real_chain_repeated.py --env-file configs\runtime.real.env --
 - LoRA 证据不是 base-only 响应，`served_model=shipvoice-qwen2.5-7b-lora`，`adapter_loaded=true`，且 `adapter_sha256=3462dbff405f71ed3d0b0a0d8484498a2be98ffe84ab5b2f56a2d69e7130d1cf`。
 - 报告中非流式 metric source 明确为 `server_audio_payload_ready`，流式首段指标明确为 `server_first_audio_chunk_ready` 或浏览器 `audio.onplaying`。
 
-## 阶段 3：真实流式能力升级（代码与服务器侧复验已落地）
+## 阶段 3：真实流式能力升级（代码、服务器侧复验与安全闭合加固已落地）
 
 验收目标：如果界面写“流式”，后端必须真正流式返回；浏览器端必须测量 `audio.onplaying` 后的真实首播时间。
 
@@ -234,10 +234,18 @@ python scripts\run_real_chain_repeated.py --env-file configs\runtime.real.env --
    - TTS worker 与 LLM stream 并行，首句不等待完整回答。
    - WebSocket 已发送 `audio_chunk` 帧，包含分段 base64、seq、mime、server chunk ready time。
    - 前端已实现分段音频队列，收到首段后立即播放，后续 chunk 顺序播放。
+   - 2026-06-24 已补安全闭合策略：不再按逗号软切半句；高风险问题先播保守安全前缀；每个待播片段进入 TTS 前先过输出片段 guard。
+   - 2026-06-24 已把同一输出 guard 扩展到非流式完整回答，完整答案进入 TTS 前也会检查并改写无条件危险表述。
 
 3. 浏览器计时
    - 前端继续记录真实 `<audio>.onplaying`，并把 `client_audio_onplaying_ms` 合并回 run metrics。
    - 新增指标包括 `llm_first_delta_ms`、`server_first_audio_chunk_ready_ms`、`server_audio_stream_complete_ms`、`streamed_audio_segments`。
+
+4. Provider 连接复用
+   - ASR、LLM、TTS provider 已改为持久 `httpx.Client` 连接池。
+   - LLM 非流式完整回答和 `stream=true` SSE 均复用同一 provider client，不再用每次 `urlopen` 的短连接路径。
+   - pipeline 增加统一 `close()`，配置热重载和应用 shutdown 时关闭旧 provider 连接池。
+   - 2026-06-24 已在 `provider_status` 中补充连接池类型、keepalive、JSON/SSE 请求数、失败数、输出 guard 改写数和高风险输出标记，便于答辩时验证连接复用与输出治理。
 
 服务器侧与浏览器复验结果：
 
@@ -251,7 +259,8 @@ python scripts\run_real_chain_repeated.py --env-file configs\runtime.real.env --
 验收门槛：
 
 - `streaming` mode 首个 LLM delta 在完整答案前到达。
-- TTS chunk 在完整音频生成前到达。
+- TTS chunk 在完整音频生成前到达，且播报单位是安全闭合句段，不是单 token 或条件不完整半句。
+- ASR/LLM/TTS provider 复用持久 HTTP client；LLM SSE 流式解析不能退回一次性短连接。
 - 前端展示“浏览器开始播放”指标，不再用 server payload ready 替代。
 
 ## 阶段 4：质量与安全增强

@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-06-23T08:21:47.812241+00:00",
+  "generated_at": "2026-06-23T17:10:36.185440+00:00",
   "git": {
     "branch": "main",
-    "commit": "41c922b",
+    "commit": "e23fd7b",
     "source_tree_dirty": true,
     "dirty_ignored_paths": [
       "configs/runtime.real.env",
@@ -114,7 +114,8 @@
       "evidence": [
         "data/training/shipvoice_sft_train_expanded.jsonl",
         "remote/train_qwen_lora.py",
-        "results/remote_autodl_20260621_expanded/summary.json"
+        "results/remote_autodl_20260621_expanded/summary.json",
+        "results/remote_lora_expanded_summary_20260621.json"
       ],
       "notes": "扩展 SFT 1000 条，holdout 150 条；LoRA train loss 0.1676858789101243，adapter 约 154.1 MB。"
     },
@@ -204,32 +205,32 @@
     {
       "path": "README.md",
       "exists": true,
-      "bytes": 9706
+      "bytes": 10432
     },
     {
       "path": "docs/PHASE1_SCORECARD.md",
       "exists": true,
-      "bytes": 2264
+      "bytes": 3318
     },
     {
       "path": "docs/OPERATIONS_RUNBOOK.md",
       "exists": true,
-      "bytes": 3912
+      "bytes": 4613
     },
     {
       "path": "docs/ARCHITECTURE.md",
       "exists": true,
-      "bytes": 5135
+      "bytes": 7350
     },
     {
       "path": "docs/A2_REQUIREMENT_COMPLETION_AUDIT_20260623.md",
       "exists": true,
-      "bytes": 8569
+      "bytes": 8918
     },
     {
       "path": "docs/FIXED_AUDIO_COMMAND_SET_20260623.md",
       "exists": true,
-      "bytes": 11048
+      "bytes": 11046
     },
     {
       "path": "data/audio/audio_manifest_a2_eval.csv",
@@ -274,12 +275,12 @@
     {
       "path": "results/waiting_experience_20260623/report.md",
       "exists": true,
-      "bytes": 2957
+      "bytes": 2955
     },
     {
       "path": "deliverables/ShipVoice_Evaluation_Dashboard.html",
       "exists": true,
-      "bytes": 71162
+      "bytes": 20324
     },
     {
       "path": "deliverables/ShipVoice_Final_Defense_Deck_Draft.pptx",
@@ -289,32 +290,32 @@
     {
       "path": "deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.docx",
       "exists": true,
-      "bytes": 55785
+      "bytes": 3377692
     },
     {
       "path": "deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.pdf",
       "exists": true,
-      "bytes": 744794
+      "bytes": 3056052
     },
     {
       "path": "deliverables/final_submission/report/ShipVoice_船厂安全实时语音问答助手_项目报告_最终版.md",
       "exists": true,
-      "bytes": 30885
+      "bytes": 47204
     },
     {
       "path": "web/static/index.html",
       "exists": true,
-      "bytes": 10208
+      "bytes": 10384
     },
     {
       "path": "web/static/admin.html",
       "exists": true,
-      "bytes": 15073
+      "bytes": 15075
     },
     {
       "path": "Dockerfile",
       "exists": true,
-      "bytes": 520
+      "bytes": 501
     }
   ],
   "limitations": [

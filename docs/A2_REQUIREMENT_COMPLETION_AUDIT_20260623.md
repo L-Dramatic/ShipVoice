@@ -16,13 +16,13 @@
 | 构建固定音频指令集，含难度梯度 | 已补齐 | `data/audio/audio_manifest.csv`, `data/audio/audio_manifest_a2_eval.csv`, `docs/FIXED_AUDIO_COMMAND_SET_20260623.md` |
 | 音频集包含专有名词与安全类问句 | 已完成 | 50 条录音清单，24 条显式命中船厂安全术语，L4 安全边界 29 条 |
 | 可重复运行与记录基线实验 | 已完成 | `results/server_real_repeated_20260623/summary.json`, `samples.jsonl` |
-| 至少一项改进：流式 LLM、句级切分、流式 TTS、首句优先播放 | 已完成 | `response_mode=llm_token_stream_sentence_tts`, `results/browser_onplaying_streamable_20260623.json` |
+| 至少一项改进：LLM SSE 增量接收、安全闭合句段 TTS、首段优先播放 | 已完成并加固 | `response_mode=llm_token_stream_sentence_tts`, 输出片段 guard, `results/browser_onplaying_streamable_20260623.json` |
 | 与基线对比首段可播放延迟 | 已完成 | `results/server_real_batch_comparison_20260623.json`, `results/server_real_repeated_20260623/summary.json` |
 | 写清测量点 | 已补强 | 服务端 `server_first_audio_chunk_ready_ms`；浏览器端 `client_audio_onplaying_ms`；新增 `client_recording_stop_to_playing_ms` |
 | 主观等待体验量化对比 | 已补齐 | `scripts/evaluate_waiting_experience.py`, `results/waiting_experience_20260623/report.md` |
-| 调度改进：衔接语或首句优先 | 已完成首句优先，不做无依据衔接语 | 流式输出先合成首句，避免额外播放无实质内容的填充语 |
+| 调度改进：衔接语或首段优先 | 已完成安全闭合首段优先，不做无依据衔接语 | 流式输出先合成安全闭合句段；高风险问题先播保守安全前缀，避免额外播放无实质内容的填充语 |
 | 质量改进：ASR 热词/术语后处理 | 已完成 | `configs/asr_postprocess_rules.json`, `results/asr_eval_raw_summary.json`, `results/asr_eval_summary.json` |
-| 安全模块衔接 | 已完成并强化 | `src/shipvoice/pipeline.py`, `tests/test_p0_hardening.py`, `results/safety_gate_eval_summary.json` |
+| 安全模块衔接 | 已完成并强化 | 输入侧 safety gate + 播报前输出片段 guard；`src/shipvoice/pipeline.py`, `tests/test_p0_hardening.py`, `results/safety_gate_eval_summary.json` |
 | 系统架构图 | 已完成 | 最终报告、`docs/ARCHITECTURE.md` |
 | 模块版本与配置 | 已完成 | 最终报告、`docs/RUNBOOK.md`, `configs/*.example` |
 | 基线 vs 改进延迟与客观指标表 | 已完成并已补强 | 最终报告第 8 节、`results/server_real_repeated_20260623/summary.md` |
@@ -81,8 +81,8 @@
 
 原始 ASR 结果和术语后处理结果都已保留：
 
-- `results/asr_eval_raw_summary.json`：raw ASR 平均 CER/WER 约 1.58%，术语召回率约 85.71%。
-- `results/asr_eval_summary.json`：后处理后 50/50 可评，平均 CER/WER 为 0，术语召回率 100%。
+- `results/asr_online_20260623/summary.json`：在线 ASR 50/50 可评，不向 ASR 服务提供参考转写，平均 CER/WER 约 1.58%，术语召回率约 85.71%。
+- 历史 `results/asr_eval_summary.json` 的 0% 结果只可视为本地修正清单复算，不作为真实 ASR 泛化主结论。
 
 这说明项目不是只写“加入热词/术语表”，而是保存了改进前后的客观对比。
 

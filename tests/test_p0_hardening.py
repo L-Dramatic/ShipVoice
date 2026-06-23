@@ -7,7 +7,6 @@ import sys
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import patch
 
 from fastapi import HTTPException
 
@@ -19,9 +18,10 @@ import shipvoice.fastapi_app as fastapi_app_module  # noqa: E402
 from shipvoice.config import PipelineConfig  # noqa: E402
 from shipvoice.fastapi_app import RunRequest, prepare_run_request, runtime_max_concurrent_runs, runtime_run_timeout_seconds  # noqa: E402
 from shipvoice.models import ASRResult, GateResult, TTSResult  # noqa: E402
-from shipvoice.pipeline import VoiceQAPipeline  # noqa: E402
+from shipvoice.pipeline import STREAM_HIGH_RISK_SAFETY_PREFIX, STREAM_SEGMENT_SAFETY_FALLBACK, VoiceQAPipeline  # noqa: E402
 from shipvoice.providers import (  # noqa: E402
     HttpJsonASRProvider,
+    HttpJsonTTSProvider,
     KeywordSafetyGate,
     OpenAICompatibleLLMProvider,
     TermCorrector,
@@ -84,6 +84,12 @@ class FakeLLM:
         return [answer] if answer else []
 
 
+class UnsafeCompleteLLM(FakeLLM):
+    def build_answer(self, question, evidence, gate, history) -> str:
+        self.calls += 1
+        return "现在可以进入。"
+
+
 class FakeTTS:
     name = "fake_tts"
 
@@ -98,10 +104,16 @@ class FakeTTS:
 class FakeStreamingLLM(FakeLLM):
     name = "fake_streaming_llm"
 
+    def __init__(self, chunks: list[str] | None = None, delay_s: float = 0.2) -> None:
+        super().__init__()
+        self.chunks = chunks or ["第一句先播报。", "第二句随后补充。"]
+        self.delay_s = delay_s
+
     async def stream_answer(self, question, evidence, gate, history):
-        yield "第一句先播报。"
-        await asyncio.sleep(0.2)
-        yield "第二句随后补充。"
+        for idx, chunk in enumerate(self.chunks):
+            if idx:
+                await asyncio.sleep(self.delay_s)
+            yield chunk
 
 
 class FakeStreamingTTS(FakeTTS):
@@ -112,9 +124,10 @@ class FakeStreamingTTS(FakeTTS):
         return TTSResult(provider=self.name, audio_base64="UklGRg==", mime_type="audio/wav")
 
 
-class FakeSSEHTTPResponse:
-    def __init__(self, lines: list[bytes]) -> None:
-        self.lines = lines
+class FakeHTTPXResponse:
+    def __init__(self, payload: dict[str, object] | None = None, lines: list[bytes | str] | None = None) -> None:
+        self.payload = payload or {}
+        self.lines = lines or []
 
     def __enter__(self):
         return self
@@ -122,8 +135,44 @@ class FakeSSEHTTPResponse:
     def __exit__(self, exc_type, exc, tb) -> None:
         return None
 
-    def __iter__(self):
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, object]:
+        return self.payload
+
+    def iter_lines(self):
         return iter(self.lines)
+
+
+class FakePooledHTTPClient:
+    def __init__(
+        self,
+        *,
+        post_payloads: list[dict[str, object]] | None = None,
+        stream_lines: list[bytes | str] | None = None,
+    ) -> None:
+        self.post_payloads = post_payloads or []
+        self.stream_lines = stream_lines or []
+        self.post_calls: list[dict[str, object]] = []
+        self.stream_calls: list[dict[str, object]] = []
+        self.closed = False
+
+    def post(self, url: str, *, json: dict[str, object], headers: dict[str, str]):
+        self.post_calls.append({"url": url, "json": json, "headers": headers})
+        index = len(self.post_calls) - 1
+        if self.post_payloads:
+            payload = self.post_payloads[min(index, len(self.post_payloads) - 1)]
+        else:
+            payload = {}
+        return FakeHTTPXResponse(payload=payload)
+
+    def stream(self, method: str, url: str, *, json: dict[str, object], headers: dict[str, str]):
+        self.stream_calls.append({"method": method, "url": url, "json": json, "headers": headers})
+        return FakeHTTPXResponse(lines=self.stream_lines)
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def build_pipeline() -> VoiceQAPipeline:
@@ -206,13 +255,102 @@ class P0HardeningTests(unittest.TestCase):
         self.assertEqual(result.audio_output.audio_base64, "")
         self.assertEqual(len(result.audio_output.audio_segments), len(audio_chunks))
 
-    def test_openai_compatible_provider_parses_sse_delta_stream(self) -> None:
-        provider = OpenAICompatibleLLMProvider(
-            base_url="http://llm.invalid/v1",
-            model="shipvoice-qwen2.5-7b-lora",
-            api_key_env="SHIPVOICE_TEST_API_KEY",
-            timeout_s=1,
+    def test_streaming_sentence_split_does_not_cut_at_comma(self) -> None:
+        long_clause = (
+            "密闭舱室作业前需要完成审批、通风、检测、隔离和监护确认，"
+            "这句话虽然已经很长但逗号后面的条件仍然属于同一个安全语义片段"
         )
+
+        sentence, rest = VoiceQAPipeline._pop_stream_sentence(long_clause)
+
+        self.assertEqual(sentence, "")
+        self.assertEqual(rest, long_clause)
+
+        closed_sentence, closed_rest = VoiceQAPipeline._pop_stream_sentence(f"{long_clause}。")
+        self.assertEqual(closed_sentence, f"{long_clause}。")
+        self.assertEqual(closed_rest, "")
+
+    def test_high_risk_streaming_queues_safety_prefix_before_model_text(self) -> None:
+        async def run_streaming() -> tuple:
+            pipeline = build_pipeline()
+            pipeline.gate = KeywordSafetyGate([], [], ["密闭舱室"])
+            pipeline.llm = FakeStreamingLLM(["现在可以进入。", "必须先完成通风、检测和监护。"], delay_s=0.01)
+            pipeline.tts = FakeStreamingTTS()
+            audio_chunks = []
+            events = []
+
+            async def collect_event(event):
+                events.append((event.stage, event.payload))
+
+            async def collect_audio_chunk(chunk):
+                audio_chunks.append(chunk)
+
+            result = await pipeline.run_once(
+                "密闭舱室可以进入吗？",
+                mode="streaming",
+                on_event=collect_event,
+                on_audio_chunk=collect_audio_chunk,
+            )
+            return result, audio_chunks, events
+
+        result, audio_chunks, events = asyncio.run(run_streaming())
+
+        self.assertGreaterEqual(len(audio_chunks), 3)
+        self.assertEqual(audio_chunks[0]["text"], STREAM_HIGH_RISK_SAFETY_PREFIX)
+        self.assertEqual(audio_chunks[1]["text"], STREAM_SEGMENT_SAFETY_FALLBACK)
+        self.assertIn(STREAM_HIGH_RISK_SAFETY_PREFIX, result.answer)
+        self.assertIn(STREAM_SEGMENT_SAFETY_FALLBACK, result.answer)
+        self.assertNotIn("现在可以进入。", result.answer)
+        self.assertTrue(any(stage == "output_guard" for stage, _payload in events))
+
+    def test_output_guard_rewrites_unqualified_unsafe_stream_segment(self) -> None:
+        async def run_streaming() -> tuple:
+            pipeline = build_pipeline()
+            pipeline.llm = FakeStreamingLLM(["可以关闭报警继续干。"], delay_s=0.01)
+            pipeline.tts = FakeStreamingTTS()
+            audio_chunks = []
+
+            async def collect_audio_chunk(chunk):
+                audio_chunks.append(chunk)
+
+            result = await pipeline.run_once(
+                "ship safety work",
+                mode="streaming",
+                on_audio_chunk=collect_audio_chunk,
+            )
+            return result, audio_chunks
+
+        result, audio_chunks = asyncio.run(run_streaming())
+
+        self.assertEqual(audio_chunks[0]["text"], STREAM_SEGMENT_SAFETY_FALLBACK)
+        self.assertIn(STREAM_SEGMENT_SAFETY_FALLBACK, result.answer)
+        self.assertNotIn("可以关闭报警继续干。", result.answer)
+
+    def test_output_guard_allows_qualified_conditional_entry_sentence(self) -> None:
+        segment = "必须先完成审批、通风、测氧测爆和监护确认后方可进入。"
+
+        guarded, rewritten, reason = VoiceQAPipeline._guard_stream_segment(segment)
+
+        self.assertFalse(rewritten)
+        self.assertEqual(reason, "")
+        self.assertEqual(guarded, segment)
+
+    def test_non_streaming_output_guard_rewrites_unsafe_complete_answer_before_tts(self) -> None:
+        pipeline = build_pipeline()
+        pipeline.gate = KeywordSafetyGate([], [], ["密闭舱室"])
+        pipeline.llm = UnsafeCompleteLLM()
+        pipeline.tts = FakeTTS()
+
+        result = asyncio.run(pipeline.run_once("密闭舱室可以进入吗？", mode="baseline"))
+
+        self.assertIn(STREAM_HIGH_RISK_SAFETY_PREFIX, result.answer)
+        self.assertIn(STREAM_SEGMENT_SAFETY_FALLBACK, result.answer)
+        self.assertNotIn("现在可以进入。", result.answer)
+        self.assertEqual(result.provider_status["output_guard_rewrites"], "1")
+        self.assertEqual(result.provider_status["high_risk_output"], "true")
+        self.assertEqual(pipeline.tts.calls, 1)
+
+    def test_openai_compatible_provider_parses_sse_delta_stream(self) -> None:
         lines = [
             b": keepalive\n\n",
             f"data: {json.dumps({'choices': [{'delta': {'content': '第一句'}}]}, ensure_ascii=False)}\n\n".encode(
@@ -223,16 +361,91 @@ class P0HardeningTests(unittest.TestCase):
             ),
             b"data: [DONE]\n\n",
         ]
+        client = FakePooledHTTPClient(stream_lines=lines)
+        provider = OpenAICompatibleLLMProvider(
+            base_url="http://llm.invalid/v1",
+            model="shipvoice-qwen2.5-7b-lora",
+            api_key_env="SHIPVOICE_TEST_API_KEY",
+            timeout_s=1,
+            http_client=client,
+        )
         gate = GateResult(label="domain_safe", allowed=True, reason="ok")
 
-        with patch("shipvoice.providers.urllib.request.urlopen", return_value=FakeSSEHTTPResponse(lines)) as mocked:
-            chunks = list(provider._stream_answer_sync("ship safety work", [], gate, []))
+        chunks = list(provider._stream_answer_sync("ship safety work", [], gate, []))
 
         self.assertEqual(chunks, ["第一句", "第二句。"])
-        request = mocked.call_args.args[0]
-        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(len(client.stream_calls), 1)
+        payload = client.stream_calls[0]["json"]
         self.assertTrue(payload["stream"])
         self.assertEqual(payload["model"], "shipvoice-qwen2.5-7b-lora")
+
+    def test_http_asr_tts_reuse_injected_pooled_client_across_calls(self) -> None:
+        asr_client = FakePooledHTTPClient(post_payloads=[{"text": "first transcript"}, {"text": "second transcript"}])
+        asr = HttpJsonASRProvider(
+            endpoint="http://asr.invalid/asr",
+            timeout_s=1,
+            response_text_path="text",
+            text_input=TextInputProvider(),
+            http_client=asr_client,
+        )
+
+        first_asr = asyncio.run(asr.transcribe("", audio_bytes=b"audio-1", audio_name="a.wav"))
+        second_asr = asyncio.run(asr.transcribe("", audio_bytes=b"audio-2", audio_name="b.wav"))
+
+        self.assertEqual(first_asr.transcript, "first transcript")
+        self.assertEqual(second_asr.transcript, "second transcript")
+        self.assertIs(asr._http_client, asr_client)
+        self.assertEqual(len(asr_client.post_calls), 2)
+        self.assertNotIn("transcript_hint", asr_client.post_calls[0]["json"])
+
+        tts_client = FakePooledHTTPClient(
+            post_payloads=[
+                {"audio_base64": "UklGRg==", "mime_type": "audio/wav"},
+                {"audio_base64": "UklGRw==", "mime_type": "audio/wav"},
+            ]
+        )
+        tts = HttpJsonTTSProvider(
+            endpoint="http://tts.invalid/tts",
+            timeout_s=1,
+            voice="alloy",
+            response_audio_path="audio_base64",
+            response_mime_path="mime_type",
+            http_client=tts_client,
+        )
+
+        first_tts = asyncio.run(tts.synthesize("first"))
+        second_tts = asyncio.run(tts.synthesize("second"))
+
+        self.assertEqual(first_tts.audio_base64, "UklGRg==")
+        self.assertEqual(second_tts.audio_base64, "UklGRw==")
+        self.assertIs(tts._http_client, tts_client)
+        self.assertEqual(len(tts_client.post_calls), 2)
+        self.assertEqual(tts_client.post_calls[0]["json"]["voice"], "alloy")
+
+    def test_provider_status_exposes_pooled_http_observability(self) -> None:
+        pipeline = build_pipeline()
+        pipeline.asr = HttpJsonASRProvider(
+            endpoint="http://asr.invalid/asr",
+            timeout_s=1,
+            response_text_path="text",
+            text_input=TextInputProvider(),
+            http_client=FakePooledHTTPClient(post_payloads=[{"text": "ship safety work"}]),
+        )
+        pipeline.tts = HttpJsonTTSProvider(
+            endpoint="http://tts.invalid/tts",
+            timeout_s=1,
+            voice="alloy",
+            response_audio_path="audio_base64",
+            response_mime_path="mime_type",
+            http_client=FakePooledHTTPClient(post_payloads=[{"audio_base64": "UklGRg==", "mime_type": "audio/wav"}]),
+        )
+
+        result = asyncio.run(pipeline.run_once("", audio_bytes=b"audio", audio_name="a.wav", mode="baseline"))
+
+        self.assertEqual(result.provider_status["asr_http_client"], "pooled_httpx")
+        self.assertEqual(result.provider_status["tts_http_client"], "pooled_httpx")
+        self.assertEqual(result.provider_status["asr_http_requests"], "1")
+        self.assertEqual(result.provider_status["tts_http_requests"], "1")
 
     def test_http_asr_does_not_send_transcript_hint_with_audio(self) -> None:
         captured_payload: dict[str, object] = {}

@@ -72,7 +72,9 @@ results/lora_adapter_attestation_20260623.json
 
 ## 5. 流式低延迟检查
 
-低延迟演示必须选择用户端的“流式低延迟”模式。检查运行详情时，应看到 LLM delta 事件、TTS chunk 事件、WebSocket `audio_chunk` 分段，以及浏览器端 `audio.onplaying` 首播打点。
+低延迟演示必须选择用户端的“流式低延迟”模式。检查运行详情时，应看到 LLM delta 事件、输出片段 guard / 高风险安全前缀事件、TTS chunk 事件、WebSocket `audio_chunk` 分段，以及浏览器端 `audio.onplaying` 首播打点。答辩表述应强调 token 只是增量传输单位，真正播报的是经过安全闭合检查的句段；非流式完整回答也会在 TTS 前经过输出 guard；ASR/LLM/TTS provider 使用持久 HTTP 连接池，LLM SSE 流不是每个片段重新建连接。`provider_status` 中的连接池类型、keepalive、请求计数、失败计数和输出 guard 改写数可作为现场核验证据。
+
+运行中取消演示可以直接点击用户端“取消”按钮。HTTP 路径会调用 `POST /api/runs/{run_id}/cancel`，WebSocket 路径会发送 cancel frame；后端状态应从 `running` 进入 `cancelling/cancelled`，取消运行返回 499，不应继续合成后续音频。
 
 若 ASR/LLM/TTS 服务器未全部在线，只能展示离线单元测试和已保存证据。服务器侧重复实验 p50/p90/p95 证据见 `results/server_real_repeated_20260623/summary.md`；浏览器 `audio.onplaying` 批量指标见 `results/browser_onplaying_streamable_20260623.json`。
 

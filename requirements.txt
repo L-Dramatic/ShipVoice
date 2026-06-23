@@ -13,5 +13,6 @@
 # funasr
 # modelscope
 fastapi
+httpx
 uvicorn
 python-docx

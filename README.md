@@ -4,9 +4,9 @@
 
 目标不是只把 ASR、LLM、TTS 串起来，而是做成一个可演示、可测量、可扩展的船厂安全语音助手：
 
-- 延迟治理：真实 ASR、LoRA LLM、TTS 链路已打通并完成 30×2×5 重复实验与浏览器 `audio.onplaying` 批量取证；`streaming` 模式已实现 LLM token/SSE 流、句级切分、TTS 分段合成和 WebSocket 音频 chunk 首句优先播放。
+- 延迟治理：真实 ASR、LoRA LLM、TTS 链路已打通并完成 30×2×5 重复实验与浏览器 `audio.onplaying` 批量取证；`streaming` 模式已实现 LLM SSE 增量接收、安全闭合句段切分、播报前输出片段 guard、TTS 分段合成、WebSocket 音频 chunk 首段优先播放，以及 ASR/LLM/TTS provider HTTP 连接池复用。
 - 领域增强：造船安全知识库、RAG 检索、术语热词、LLM LoRA/QLoRA 微调。
-- 安全增强：领域门控、危险/恶意输入短路拒答、提示注入检测。
+- 安全增强：领域门控、危险/恶意输入短路拒答、提示注入检测、流式片段与非流式完整回答的 TTS 前输出 guard。
 - 实验闭环：基线、改进、消融、延迟统计、术语识别与安全拦截评测。
 
 ## 运行原则
@@ -38,7 +38,7 @@ TTS: http://127.0.0.1:18002/tts
 当前接口也支持 `history` 多轮上下文字段，便于把 Part 1 的对话能力接到 Part 2 的语音链路中。
 用户端支持三种输入方式：文本提问、音频文件上传、浏览器麦克风直接录音。直接录音使用浏览器 MediaRecorder 生成音频，再按和上传文件相同的 `audio_base64` 协议送入后端 ASR。
 回答结果会展示 RAG 证据引用，包括知识条目 ID、来源、风险级别、置信度、标签和匹配词，便于说明答案不是模型凭空生成。
-用户端界面已升级为深色工业安全控制台，包含链路总览、作业场景、实时指标、证据卡片、延迟分布和审计日志。
+用户端界面已升级为深色工业安全控制台，包含链路总览、作业场景、实时指标、证据卡片、延迟分布和审计日志。左侧快速场景与高级选项支持展开滚动，运行中可直接取消请求。
 
 运行真实链路检查：
 
@@ -83,6 +83,8 @@ results\project_acceptance_report.json
 ## 真实 ASR / LLM / TTS 配置
 
 当前版本通过环境变量指定真实 provider，并在 `/api/health` 与前端界面中显示当前实际链路。
+
+ASR、LLM 和 TTS 的真实 provider 请求都使用持久 `httpx.Client` 连接池；普通 JSON 请求和 LLM SSE 流式请求复用同一个 client，避免每个片段或每次问答都重复建立 HTTP 连接。配置热重载和应用关闭时，pipeline 会统一关闭 provider 连接池。运行结果的 `provider_status` 会暴露连接池类型、keepalive、JSON/SSE 请求数、失败数、输出 guard 改写数和高风险输出标记，便于现场验证连接复用与安全治理。
 
 ### 1. 真实 LLM
 
@@ -212,7 +214,7 @@ web/static/              答辩演示面板
 
 1. ASR：SenseVoice/FunASR，先接热词和术语纠错，再评估微调。
 2. LLM：当前主线为 Qwen + ShipVoice LoRA adapter 在线服务；后续可继续做 DPO/安全偏好优化。
-3. TTS：CosyVoice，优先完成句级流式播报与首句优先播放。
+3. TTS：CosyVoice，优先完成安全闭合句段播报与首段优先播放。
 4. 安全：先规则门控，再训练轻量分类器，最后加入提示注入与越权请求测试集。
 
 ## 托管执行文档

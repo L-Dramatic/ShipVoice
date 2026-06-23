@@ -102,13 +102,14 @@ button {
 .sidebar {
   position: sticky;
   top: 0;
-  min-height: 100vh;
+  height: 100vh;
   padding: 24px 20px;
   background: var(--sidebar);
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   gap: 22px;
+  overflow-y: auto;
   box-shadow: 10px 0 30px rgba(0, 0, 0, 0.4);
   z-index: 10;
 }
@@ -1276,6 +1277,19 @@ select.text-input {
   margin-top: 2px;
 }
 
+.run-action-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  gap: 8px;
+}
+
+.cancel-run-button {
+  min-height: 44px;
+  color: #ffd6e4;
+  border-color: rgba(255, 0, 85, 0.55);
+  background: rgba(255, 0, 85, 0.09);
+}
+
 .sidebar-details {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1318,16 +1332,31 @@ select.text-input {
 }
 
 .compact-scenario-list {
-  max-height: 184px;
+  max-height: min(46vh, 420px);
+  padding: 2px 6px 2px 0;
 }
 
 .compact-scenario-list .scenario-button {
-  min-height: 48px;
+  min-height: 58px;
   padding: 9px 10px;
 }
 
 .advanced-details .control-group {
   margin-top: 4px;
+  padding-bottom: 0;
+}
+
+.advanced-details[open] {
+  flex-shrink: 0;
+}
+
+.quick-case-details[open] {
+  flex: 1 1 auto;
+  min-height: 220px;
+}
+
+.quick-case-details[open] .compact-scenario-list {
+  max-height: min(52vh, 520px);
 }
 
 .utility-actions {
