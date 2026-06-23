@@ -273,7 +273,7 @@ def configure_document(doc):
         set_run_font(run, size=9, color=MUTED)
 
     footer = section.footer.paragraphs[0]
-    footer.text = "最终提交版 | 小组成员与学号请在提交前补齐"
+    footer.text = "ShipVoice 船厂安全实时语音问答助手 | 信息安全基础 A2"
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
     for run in footer.runs:
         set_run_font(run, size=9, color=MUTED)
@@ -330,7 +330,7 @@ def add_cover(doc, markdown_text):
     shade_paragraph(callout, CALLOUT_FILL)
     add_rich_text(
         callout,
-        "摘要：本报告系统说明 ShipVoice 的设计背景、级联链路、核心实现、安全增强、实验结果、可复现步骤和局限展望，作为课程最终提交的主评分文档。",
+        "摘要：本报告围绕船厂安全语音问答场景，说明系统需求、架构设计、级联链路实现、安全控制、实验结果、复现方法和后续改进方向。",
         size=10.5,
     )
     paragraph_bottom_border(callout)
