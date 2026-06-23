@@ -1758,6 +1758,14 @@ select.text-input {
 }
 
 @media (max-width: 520px) {
+  html,
+  body,
+  .shipvoice-console {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
   .sidebar {
     padding: 18px 14px;
     gap: 16px;
@@ -1780,6 +1788,32 @@ select.text-input {
   .workspace,
   .admin-workspace {
     padding: 16px 12px 24px;
+  }
+
+  .mission-brief,
+  .primary-input-group,
+  .sidebar-details,
+  .control-group,
+  .file-control,
+  .record-control,
+  .recording-status,
+  .recording-preview,
+  .run-action,
+  .primary-button,
+  .secondary-button,
+  textarea,
+  input,
+  select {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .sidebar > *,
+  .mission-brief,
+  .primary-input-group,
+  .sidebar-details {
+    justify-self: stretch;
+    max-width: calc(100vw - 28px);
   }
 
   .metrics-grid,

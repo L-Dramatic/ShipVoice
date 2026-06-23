@@ -87,7 +87,11 @@ class FakeLLM:
 class FakeTTS:
     name = "fake_tts"
 
+    def __init__(self) -> None:
+        self.calls = 0
+
     async def synthesize(self, text: str) -> TTSResult:
+        self.calls += 1
         return TTSResult(provider=self.name, audio_base64="UklGRg==", mime_type="audio/wav")
 
 
@@ -144,6 +148,11 @@ class P0HardeningTests(unittest.TestCase):
                 self.assertEqual(result.gate.label, "unsafe")
                 self.assertEqual(pipeline.llm.calls, 0)
                 self.assertEqual(pipeline.retriever.calls, 0)
+                self.assertEqual(pipeline.tts.calls, 0)
+                self.assertEqual(result.provider_status["execution_profile"], "real_guarded")
+                self.assertEqual(result.provider_status["tts"], "not_called_safety_gate")
+                self.assertEqual(result.metrics.timing_source, "safety_gate_no_audio")
+                self.assertEqual(result.audio_output.audio_base64, "")
 
         asyncio.run(run_modes())
 

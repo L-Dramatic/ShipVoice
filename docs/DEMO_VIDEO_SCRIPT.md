@@ -1,4 +1,4 @@
-# ShipVoice Demo Video Script
+# ShipVoice System Walkthrough Script
 
 Target length: 2.5 to 3.5 minutes.
 
@@ -10,7 +10,7 @@ Narration:
 
 Show:
 
-- title slide or web demo home screen
+- title slide or web application home screen
 - project name and one-line positioning
 
 ## 1. Why This Problem Matters
@@ -22,7 +22,7 @@ Narration:
 Show:
 
 - problem slide
-- unsafe scenario in the demo panel
+- unsafe scenario in the application panel
 
 ## 2. Safe Domain Question
 
@@ -112,7 +112,7 @@ Show:
 - Browser zoom: 100%.
 - Use `python run_app.py --env-file configs/runtime.real.env --port 8026`.
 - Keep terminal visible for the first 3 seconds to show local run command.
-- Use 3 demo questions only if time is limited:
+- Use 3 real validation questions only if time is limited:
   - safe domain question
   - unsafe bypass request
   - prompt-injection refusal

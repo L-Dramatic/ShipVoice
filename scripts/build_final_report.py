@@ -566,7 +566,7 @@ def add_cover(doc: Document) -> None:
     add_callout(
         doc,
         "项目一句话摘要",
-        "本项目面向船厂高风险作业场景，构建了带安全门控、RAG 证据检索、可运行演示面板和 Qwen LoRA 微调实验的实时语音问答助手；核心目标不是简单串联 ASR-LLM-TTS，而是把领域知识、安全约束和实验闭环纳入系统设计。",
+        "本项目面向船厂高风险作业场景，构建了带安全门控、RAG 证据检索、真实 provider 链路和 Qwen LoRA 微调实验的实时语音问答助手；核心目标不是简单串联 ASR-LLM-TTS，而是把领域知识、安全约束和实验闭环纳入系统设计。",
         fill=LIGHT_BLUE_FILL,
     )
     doc.add_page_break()
@@ -625,7 +625,7 @@ def add_requirement_mapping(doc: Document) -> None:
 
 def add_architecture(doc: Document) -> None:
     doc.add_heading("3. 系统架构", level=1)
-    add_body_paragraph(doc, "系统采用“门控优先、证据约束、模型生成、演示可降级”的级联设计。正式链路如下：")
+    add_body_paragraph(doc, "系统采用“门控优先、证据约束、模型生成、失败可见”的级联设计。正式链路只接受真实 provider；ASR、LLM、TTS 任一服务不可用时，请求失败并记录错误。")
     add_table(
         doc,
         ["阶段", "模块", "作用"],
@@ -635,7 +635,7 @@ def add_architecture(doc: Document) -> None:
             ["3", "Domain & Safety Gate", "判断是否属于船厂安全问题，拦截危险请求、越权注入和 off-domain 问题"],
             ["4", "Hybrid RAG Retrieval", "从船厂安全知识库检索相关条目，提供可解释证据"],
             ["5", "Answer Synthesis", "基于证据生成保守、专业、可执行、适合语音播报的回答"],
-            ["6", "Playback / Demo Panel", "展示转写、门控结果、证据、回答和延迟指标"],
+            ["6", "Playback / Application UI", "展示转写、门控结果、证据、回答和延迟指标"],
             ["7", "Logging & Evaluation", "记录 latency、retrieval、base-vs-LoRA 和安全拦截结果"],
         ],
         [0.55, 2.0, 3.95],
@@ -668,7 +668,7 @@ def add_safety_evaluation(doc: Document, safety: dict[str, str]) -> None:
     doc.add_heading("5. 安全评测与边界门控增强", level=1)
     add_body_paragraph(
         doc,
-        "为把项目从课程 demo 推进到比赛级原型，我们将安全 benchmark 扩展为 55 条，覆盖 off-domain、unsafe、prompt injection、domain-safe 和 boundary 五类场景。评测脚本会完整跑过 pipeline，并输出 CSV、JSON 和 Markdown 报告。"
+        "为把项目从基础课程原型推进到比赛级原型，我们将安全 benchmark 扩展为 55 条，覆盖 off-domain、unsafe、prompt injection、domain-safe 和 boundary 五类场景。评测脚本会完整跑过 pipeline，并输出 CSV、JSON 和 Markdown 报告。"
     )
     add_table(
         doc,
@@ -836,7 +836,7 @@ def add_latency(doc: Document, latency: dict[str, dict[str, float]]) -> None:
         [0.9, 0.7, 1.0, 1.0, 1.35, 1.3, 1.35],
     )
     for image_name, caption in [
-        ("demo_panel_safety.png", "图 1：安全问答场景演示面板"),
+        ("demo_panel_safety.png", "图 1：安全问答应用界面"),
         ("demo_panel_backend.png", "图 2：后端运行与指标展示"),
     ]:
         image = ROOT / "results" / image_name

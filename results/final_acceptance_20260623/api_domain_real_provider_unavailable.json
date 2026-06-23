@@ -1,0 +1,6 @@
+{
+  "expected_failure": true,
+  "status": 500,
+  "elapsed_ms": 2165,
+  "body": "{\"error\":\"<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>\",\"run_id\":\"e179aec2eccd\",\"session_id\":\"1d87308add7b\",\"created_at\":\"2026-06-23T06:30:47+00:00\"}"
+}

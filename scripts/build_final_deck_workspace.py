@@ -147,7 +147,7 @@ export async function slide03(presentation, ctx) {
   });
   pill(slide,ctx,"原则 1：危险请求在模型前拦截",116,438,290,C.softRed,C.red);
   pill(slide,ctx,"原则 2：领域回答必须带证据",496,438,290,C.softBlue,C.blue);
-  pill(slide,ctx,"原则 3：答辩现场可无 GPU 运行",876,438,290,C.softGreen,C.green);
+  pill(slide,ctx,"原则 3：真实服务缺失则失败可见",876,438,290,C.softGreen,C.green);
   footer(slide,ctx);
   return slide;
 }
@@ -199,11 +199,11 @@ import { C, slideBg, kicker, title, footer } from "./theme.mjs";
 export async function slide06(presentation, ctx) {
   const slide = presentation.slides.add();
   slideBg(slide, ctx);
-  kicker(slide,ctx,"DEMO");
-  title(slide,ctx,"本地演示面板展示完整决策过程","无 GPU 时也可以跑通输入、门控、证据、回答和指标。");
-  await ctx.addImage(slide,{path:`${ctx.assetDir}/demo_panel_safety.png`,x:70,y:190,w:540,h:330,fit:"contain",alt:"ShipVoice safety demo panel"});
+  kicker(slide,ctx,"SYSTEM WALKTHROUGH");
+  title(slide,ctx,"本地应用展示完整决策过程","真实 provider 可达时展示转写、证据、回答和延迟；不可达时暴露失败并写入审计。");
+  await ctx.addImage(slide,{path:`${ctx.assetDir}/demo_panel_safety.png`,x:70,y:190,w:540,h:330,fit:"contain",alt:"ShipVoice safety application panel"});
   await ctx.addImage(slide,{path:`${ctx.assetDir}/demo_panel_backend.png`,x:680,y:190,w:520,h:330,fit:"contain",alt:"ShipVoice backend metrics panel"});
-  ctx.addText(slide,{text:"演示问题覆盖：安全作业、领域术语、off-domain、危险请求、prompt injection。",x:86,y:548,w:1030,h:30,fontSize:20,bold:true,color:C.ink,align:"center"});
+  ctx.addText(slide,{text:"现场问题覆盖：安全作业、领域术语、off-domain、危险请求、prompt injection。",x:86,y:548,w:1030,h:30,fontSize:20,bold:true,color:C.ink,align:"center"});
   footer(slide,ctx);
   return slide;
 }
@@ -279,7 +279,7 @@ export async function slide10(presentation, ctx) {
   title(slide,ctx,"最高价值：安全关键领域的可控语音问答系统","微调是加分项，安全架构才是核心竞争力。",true);
   ctx.addShape(slide,{x:92,y:238,w:500,h:118,fill:"#12345A",line:ctx.line("#4B6F98",1)});
   ctx.addShape(slide,{x:92,y:238,w:5,h:118,fill:C.green,line:ctx.line(C.green,0)});
-  ctx.addText(slide,{text:"已经完成：可运行 demo、RAG、安全门控、benchmark、AutoDL 远端微调、base-vs-LoRA 对比、报告初稿。",x:112,y:260,w:462,h:76,fontSize:19,color:"#DDEBFF",valign:"mid"});
+  ctx.addText(slide,{text:"已经完成：可运行应用、RAG、安全门控、benchmark、AutoDL 远端微调、base-vs-LoRA 对比、报告初稿。",x:112,y:260,w:462,h:76,fontSize:19,color:"#DDEBFF",valign:"mid"});
   ctx.addShape(slide,{x:682,y:238,w:500,h:118,fill:"#12345A",line:ctx.line("#4B6F98",1)});
   ctx.addShape(slide,{x:682,y:238,w:5,h:118,fill:C.gold,line:ctx.line(C.gold,0)});
   ctx.addText(slide,{text:"后续补强：组员姓名学号、真实语音样例、答辩视频和最终提交包清理。",x:702,y:260,w:462,h:76,fontSize:19,color:"#DDEBFF",valign:"mid"});
@@ -313,7 +313,7 @@ def write_workspace() -> None:
                 "task mode: create",
                 "primary deck-profile: engineering-platform",
                 "required proof objects: architecture flow, safety gate matrix, RAG metrics, LoRA training metrics, base-vs-LoRA comparison",
-                "asset requirements: local demo screenshots only, no fabricated logos",
+                "asset requirements: real local application screenshots only, no fabricated logos",
                 "QA gates: 10 slides, varied layouts, no unsupported model claims, readable technical labels",
             ]
         )
@@ -331,7 +331,7 @@ def write_workspace() -> None:
                 "3 Architecture: gate and RAG before generation.",
                 "4 RAG: knowledge base and hit-rate.",
                 "5 Safety gate: refusal boundary.",
-                "6 Demo: runnable local panel.",
+                "6 System walkthrough: runnable local application with real-only failure boundary.",
                 "7 Fine-tuning: real Qwen LoRA run and online serving path.",
                 "8 Evaluation: base vs LoRA tradeoff.",
                 "9 Reproducibility: commands and artifacts.",

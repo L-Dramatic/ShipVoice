@@ -122,7 +122,10 @@ class AudioVisualizer {
       }
     } catch (e) {
       console.warn("Web Audio API not supported or failed to init:", e);
-      this.analyser = null; // Fallback to simulation
+      this.releaseAudioGraph();
+      this.isActive = false;
+      this.canvas.hidden = true;
+      return;
     }
 
     this.draw();
@@ -189,25 +192,26 @@ class AudioVisualizer {
 
   draw() {
     if (!this.isActive) return;
-    this.animationId = requestAnimationFrame(() => this.draw());
+    if (!this.analyser || !this.dataArray) {
+      this.isActive = false;
+      this.canvas.hidden = true;
+      return;
+    }
 
+    this.animationId = requestAnimationFrame(() => this.draw());
     const width = this.canvas.width = this.canvas.offsetWidth;
     const height = this.canvas.height = this.canvas.offsetHeight;
     this.ctx.clearRect(0, 0, width, height);
 
     let level = 0;
 
-    if (this.analyser) {
-      this.analyser.getByteFrequencyData(this.dataArray);
-      let sum = 0;
-      for (let i = 0; i < this.dataArray.length; i++) {
-        sum += this.dataArray[i];
-      }
-      level = sum / this.dataArray.length / 128;
-      if (level > 1) level = 1;
-    } else {
-      level = 0.3 + Math.sin(this.phase * 5) * 0.15 + Math.cos(this.phase * 3.7) * 0.15;
+    this.analyser.getByteFrequencyData(this.dataArray);
+    let sum = 0;
+    for (let i = 0; i < this.dataArray.length; i++) {
+      sum += this.dataArray[i];
     }
+    level = sum / this.dataArray.length / 128;
+    if (level > 1) level = 1;
 
     this.phase += 0.05;
 
@@ -257,11 +261,7 @@ class RadarVisualizer {
     this.ctx = this.canvas.getContext("2d");
     this.angle = 0;
     this.isActive = true;
-    this.targets = [
-      { x: 0.25, y: 0.35, size: 3, opacity: 0.8, color: '#00f2fe', label: "Sec-A" },
-      { x: 0.75, y: 0.65, size: 4, opacity: 0.6, color: '#10b981', label: "Zone-3" },
-      { x: 0.55, y: 0.25, size: 3, opacity: 0.5, color: '#f59e0b', label: "Dock-1" }
-    ];
+    this.targets = [];
     this.draw();
   }
 
@@ -371,6 +371,9 @@ function init() {
 
   const ttsPlayer = $("ttsPlayer");
   ttsPlayer.addEventListener("play", () => {
+    if (ttsPlayer.ended) {
+      resetAudioCurrentTime(ttsPlayer);
+    }
     ttsVisualizer.start(ttsPlayer);
   });
   ttsPlayer.addEventListener("playing", () => {
@@ -382,7 +385,11 @@ function init() {
   ttsPlayer.addEventListener("ended", () => {
     ttsVisualizer.stop();
     streamingAudioPlaying = false;
-    playNextStreamingAudioChunk();
+    if (streamingAudioQueue.length) {
+      playNextStreamingAudioChunk();
+    } else {
+      resetAudioCurrentTime(ttsPlayer);
+    }
   });
   ttsPlayer.addEventListener("error", () => {
     const error = ttsPlayer.error;
@@ -1217,6 +1224,7 @@ function renderAudioOutput(audioOutput) {
     ttsAudioObjectUrl = URL.createObjectURL(blob);
     player.src = ttsAudioObjectUrl;
     player.hidden = false;
+    resetAudioCurrentTime(player);
     player.load();
   } catch (error) {
     player.hidden = true;
@@ -1229,6 +1237,14 @@ function revokeTtsAudioObjectUrl() {
   if (ttsAudioObjectUrl) {
     URL.revokeObjectURL(ttsAudioObjectUrl);
     ttsAudioObjectUrl = null;
+  }
+}
+
+function resetAudioCurrentTime(player) {
+  try {
+    player.currentTime = 0;
+  } catch (error) {
+    console.warn("Failed to reset audio playback position:", error);
   }
 }
 

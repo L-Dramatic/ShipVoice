@@ -1,0 +1,73 @@
+Loaded env file: D:\大三下\信息安全基础\final\configs\runtime.real.env
+Runtime profile: ASR=http_json LLM=openai_compatible TTS=http_json
+ASR endpoint: http://127.0.0.1:18001/asr
+LLM base URL: http://127.0.0.1:18034/v1
+TTS endpoint: http://127.0.0.1:18002/tts
+ShipVoice FastAPI: http://127.0.0.1:8026
+ShipVoice Admin:   http://127.0.0.1:8026/admin.html
+OpenAPI docs:      http://127.0.0.1:8026/docs
+INFO:     127.0.0.1:64605 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55300 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64080 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64081 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64082 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64085 - "POST /api/run HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:58398 - "GET /admin.html?v=acceptance-latest-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56001 - "GET /?v=acceptance-mobile-latest-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58195 - "GET /?v=acceptance-latest-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61562 - "GET /app.js?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49671 - "GET /admin.js?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58195 - "GET /styles.css?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54303 - "GET /app.js?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58398 - "GET /styles.css?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56001 - "GET /styles.css?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58674 - "GET /api/admin/auth/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65181 - "GET /api/sessions?session_id=f5360bd520db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59407 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63125 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53732 - "GET /api/sessions?session_id=fc885661425d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59407 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61476 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53732 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51876 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51877 - "GET /api/admin/knowledge HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51878 - "POST /api/admin/login HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:51879 - "POST /api/admin/login HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:61576 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61576 - "GET /api/admin/auth/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61576 - "GET /api/admin/auth/session HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:61576 - "POST /api/admin/auth/login HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:61576 - "GET /api/admin/knowledge HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:61627 - "GET /api/admin/auth/session HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:61628 - "GET /api/admin/auth/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61629 - "GET /api/admin/knowledge HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:61632 - "POST /api/admin/auth/login HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:61642 - "GET /api/admin/auth/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61643 - "GET /api/admin/auth/session HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:61644 - "POST /api/admin/auth/login HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:61645 - "GET /api/admin/knowledge HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:49179 - "GET /api/admin/auth/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49179 - "GET /api/admin/auth/session HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:49179 - "POST /api/admin/auth/login HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:49179 - "GET /api/admin/knowledge HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:49186 - "GET /api/admin/auth/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49187 - "GET /api/admin/auth/session HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:49188 - "POST /api/admin/auth/login HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:49189 - "GET /api/admin/knowledge HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:57299 - "GET /admin.html?v=acceptance-20260623-final HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57299 - "GET /styles.css?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55088 - "GET /admin.js?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61008 - "GET /api/admin/auth/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61008 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59939 - "GET /?v=acceptance-20260623-final HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59939 - "GET /styles.css?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /app.js?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49923 - "GET /api/sessions?session_id=62b9684b5046 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49856 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49856 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59041 - "GET /?v=acceptance-20260623-final-narrow HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59041 - "GET /styles.css?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52662 - "GET /app.js?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59041 - "GET /api/sessions?session_id=e61541460b48 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52662 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63494 - "GET /favicon.ico HTTP/1.1" 404 Not Found

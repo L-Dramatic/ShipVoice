@@ -53,7 +53,7 @@ The completed higher-quality training run uses the validated expanded SFT datase
 - Default output directory: `outputs/qwen_lora_shipvoice_expanded`
 - Default script: `remote/run_autodl_pipeline.sh`
 
-The expanded dataset covers domain QA, safety refusal, prompt injection, off-domain refusal, boundary handling, multi-turn grounding, and ASR term correction. The final demo path should serve this adapter online behind the safety gate and RAG layer.
+The expanded dataset covers domain QA, safety refusal, prompt injection, off-domain refusal, boundary handling, multi-turn grounding, and ASR term correction. The final real serving path should serve this adapter online behind the safety gate and RAG layer.
 
 ## Evaluation Summary
 
@@ -72,7 +72,7 @@ Recommended chain:
 safety/domain gate -> RAG evidence -> ShipVoice LoRA online model -> answer post-check
 ```
 
-The safety gate, RAG layer, and ShipVoice LoRA online model are mandatory for the final high-quality demo. The base model remains only as an ablation baseline.
+The safety gate, RAG layer, and ShipVoice LoRA online model are mandatory for final real-chain validation. The base model remains only as an ablation baseline.
 
 ## Safety Behavior
 

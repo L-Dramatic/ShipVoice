@@ -192,16 +192,16 @@ class VoiceQAPipeline:
                 latency_ms=0,
                 provider="not_called",
             )
-            tts_start = elapsed()
-            tts_result = await self.tts.synthesize(answer)
-            server_audio_payload_ready_ms = elapsed()
-            tts_complete_ms = server_audio_payload_ready_ms - tts_start
-            tts_first_audio_ms = tts_complete_ms
+            tts_result = TTSResult(provider="not_called_safety_gate")
+            server_audio_payload_ready_ms = 0
+            tts_complete_ms = 0
+            tts_first_audio_ms = 0
             await emit(
                 "tts",
-                "TTS synthesis completed",
+                "TTS skipped because safety gate blocked the request",
                 server_audio_payload_ready_ms=server_audio_payload_ready_ms,
                 tts_complete_ms=tts_complete_ms,
+                skipped=True,
                 provider=tts_result.provider,
             )
         first_audio_ms = server_first_audio_chunk_ready_ms or server_audio_payload_ready_ms
@@ -215,7 +215,13 @@ class VoiceQAPipeline:
         llm_provider = getattr(self.llm, "name", self.llm.__class__.__name__) if gate_result.allowed else "not_called"
         tts_provider = getattr(tts_result, "provider", getattr(self.tts, "name", self.tts.__class__.__name__))
         execution_profile = self._execution_profile(asr_provider, llm_provider, tts_provider)
-        timing_source = "server_first_audio_chunk_ready" if streamed_audio_segments else "server_audio_payload_ready"
+        timing_source = (
+            "server_first_audio_chunk_ready"
+            if streamed_audio_segments
+            else "safety_gate_no_audio"
+            if not gate_result.allowed
+            else "server_audio_payload_ready"
+        )
 
         metrics = RunMetrics(
             question_id=question_id,
@@ -262,6 +268,8 @@ class VoiceQAPipeline:
                 "timing_note": (
                     "Server-side first audio chunk ready time; browser playback start is recorded by client timing."
                     if streamed_audio_segments
+                    else "Safety gate blocked the request before LLM/TTS; no audio payload is produced."
+                    if not gate_result.allowed
                     else "Server-side audio payload ready time; browser playback start is recorded by client timing."
                 ),
                 "response_mode": response_mode,
@@ -466,10 +474,10 @@ class VoiceQAPipeline:
         return TTSResult(provider=getattr(self.tts, "name", self.tts.__class__.__name__))
 
     def _execution_profile(self, asr_provider: str, llm_provider: str, tts_provider: str) -> str:
-        if asr_provider == "text_input":
-            return "real_text"
         if llm_provider == "not_called":
             return "real_guarded"
+        if asr_provider == "text_input":
+            return "real_text"
         return "real_voice"
 
     def _contextualize_question(self, question: str, history: list[dict[str, str]]) -> str:

@@ -1,0 +1,18 @@
+{
+  "auth_status": {
+    "status": 200,
+    "body": "{\"ok\":true,\"auth\":{\"mode\":\"missing_password\",\"token_ttl_seconds\":28800,\"session_secret\":\"ephemeral_process\"}}"
+  },
+  "auth_session_unauthorized": {
+    "status": 401,
+    "body": "{\"error\":\"admin authentication required\"}"
+  },
+  "auth_login_missing_password": {
+    "status": 503,
+    "body": "{\"error\":\"SHIPVOICE_ADMIN_PASSWORD must be set before admin login is enabled.\"}"
+  },
+  "knowledge_unauthorized": {
+    "status": 401,
+    "body": "{\"error\":\"admin authentication required\"}"
+  }
+}

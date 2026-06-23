@@ -1,0 +1,74 @@
+Loaded env file: D:\大三下\信息安全基础\final\configs\runtime.real.env
+Runtime profile: ASR=http_json LLM=openai_compatible TTS=http_json
+ASR endpoint: http://127.0.0.1:18001/asr
+LLM base URL: http://127.0.0.1:18034/v1
+TTS endpoint: http://127.0.0.1:18002/tts
+ShipVoice FastAPI: http://127.0.0.1:8026
+ShipVoice Admin:   http://127.0.0.1:8026/admin.html
+OpenAPI docs:      http://127.0.0.1:8026/docs
+INFO:     127.0.0.1:58739 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57435 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65000 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50459 - "GET /?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50459 - "GET /app.js?v=client-timing-20260622 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61475 - "GET /styles.css?v=product-20260620 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:50459 - "GET /api/sessions?session_id=22fb1b99f63e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61475 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53895 - "GET /?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53895 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63424 - "GET /api/sessions?session_id=22fb1b99f63e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51237 - "GET /?v=acceptance-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53592 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53593 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53594 - "GET /admin.html HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50908 - "GET /?v=headless-wide-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62505 - "GET /?v=headless-mobile-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52469 - "GET /app.js?v=client-timing-20260622 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62505 - "GET /styles.css?v=product-20260620 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50908 - "GET /styles.css?v=product-20260620 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49844 - "GET /app.js?v=client-timing-20260622 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56826 - "GET /api/sessions?session_id=1d48c06c4f15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58255 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54386 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60795 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57281 - "GET /?v=headless-mobile-fixed-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57281 - "GET /styles.css?v=product-20260620 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63961 - "GET /app.js?v=client-timing-20260622 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64824 - "GET /api/sessions?session_id=1aa17219d1f6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51204 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55069 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60726 - "GET /?v=headless-mobile-fixed2-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59441 - "GET /app.js?v=client-timing-20260622 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60726 - "GET /styles.css?v=product-20260620 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59114 - "GET /api/sessions?session_id=a092f6ff686f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57661 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59238 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50488 - "GET /?v=cdp-mobile-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50488 - "GET /styles.css?v=product-20260620 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49671 - "GET /app.js?v=client-timing-20260622 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49671 - "GET /?v=cdp-mobile-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49671 - "GET /styles.css?v=product-20260620 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61018 - "GET /app.js?v=client-timing-20260622 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63507 - "GET /styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63507 - "GET /static/styles.css HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64778 - "GET /?v=cdp-mobile-stable-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64778 - "GET /styles.css?v=product-20260620 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61156 - "GET /app.js?v=client-timing-20260622 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61485 - "GET /api/sessions?session_id=3ed19af09fa7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54551 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59008 - "GET /?v=cdp-mobile-scale-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59008 - "GET /styles.css?v=product-20260620 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51506 - "GET /app.js?v=client-timing-20260622 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54372 - "GET /api/sessions?session_id=153d188dd6e1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57940 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54434 - "GET /?v=cdp-mobile-emulated-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54434 - "GET /styles.css?v=product-20260620 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60510 - "GET /app.js?v=client-timing-20260622 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58764 - "GET /?v=cdp-mobile-emulated2-20260623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58764 - "GET /styles.css?v=product-20260620 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56951 - "GET /app.js?v=client-timing-20260622 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57233 - "POST /api/run HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:57232 - "POST /api/run HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:63867 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63868 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63869 - "POST /api/run HTTP/1.1" 200 OK

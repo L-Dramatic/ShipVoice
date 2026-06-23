@@ -646,7 +646,7 @@ def build() -> None:
     <section>
       <h2>Engineering Conclusion</h2>
       <div class="callout">
-        LoRA is useful as a domain adaptation experiment, and the final high-quality demo should serve the ShipVoice adapter online.
+        LoRA is useful as a domain adaptation experiment, and final real-chain validation should serve the ShipVoice adapter online.
         The recommended chain is <code>safety/domain gate -> RAG evidence -> ShipVoice LoRA online model -> answer post-check</code>.
       </div>
     </section>
