@@ -517,6 +517,66 @@ class AdminApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("unsupported knowledge status", response.json()["error"])
 
+    async def test_admin_knowledge_create_refreshes_runtime_retriever(self) -> None:
+        class FakePipeline:
+            instances: list["FakePipeline"] = []
+
+            def __init__(self) -> None:
+                self.config = object()
+                self.retriever = "old-retriever"
+                FakePipeline.instances.append(self)
+
+            def close(self) -> None:
+                return None
+
+        class FakeStore:
+            def upsert_knowledge(self, payload: dict[str, object], *, record_id: str | None = None) -> dict[str, object]:
+                return {
+                    "ok": True,
+                    "record": {
+                        "id": payload.get("id", "KS101"),
+                        "title": payload.get("title", ""),
+                    },
+                    "record_id": record_id,
+                }
+
+        new_retriever = object()
+        build_call = CallRecorder(return_value=new_retriever)
+        with (
+            replace_attr(fastapi_app_module, "VoiceQAPipeline", FakePipeline),
+            replace_attr(fastapi_app_module, "SQLiteAppStore", FakeStore),
+            replace_attr(fastapi_app_module, "build_retriever", build_call),
+        ):
+            app = create_app()
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+                login_response = await client.post("/api/admin/auth/login", json={"password": "test-admin-password"})
+                self.assertEqual(login_response.status_code, 200, login_response.text)
+                token = login_response.json()["token"]
+                headers = {"Authorization": f"Bearer {token}"}
+
+                response = await client.post(
+                    "/api/admin/knowledge",
+                    headers=headers,
+                    json={
+                        "id": "KS101",
+                        "title": "临时用电检查",
+                        "tags": ["临时用电"],
+                        "text": "检查配电箱、漏保、接地和电缆绝缘。",
+                        "status": "approved",
+                        "owner": "tester",
+                        "source": "manual",
+                        "reviewer": "reviewer-a",
+                        "review_notes": "ready",
+                        "change_note": "add demo record",
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(build_call.call_count, 1)
+        pipeline = FakePipeline.instances[0]
+        self.assertIs(pipeline.retriever, new_retriever)
+        self.assertEqual(build_call.calls[0][0], (pipeline.config,))
+
 
 if __name__ == "__main__":
     unittest.main()

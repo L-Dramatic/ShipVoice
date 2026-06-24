@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 from .config import load_config, project_path
 from .models import AuditRecord
 from .pipeline import PipelineCancelled, VoiceQAPipeline
+from .providers import build_retriever
 from .sqlite_store import SQLiteAppStore, utc_now_iso
 
 
@@ -803,6 +804,15 @@ def create_app() -> FastAPI:
         if fallback is not None:
             fallback.close()
         return replace_pipeline(VoiceQAPipeline())
+
+    def refresh_runtime_retriever() -> None:
+        pipeline = current_pipeline()
+        previous = getattr(pipeline, "retriever", None)
+        pipeline.retriever = build_retriever(pipeline.config)
+        if previous is not None and previous is not pipeline.retriever:
+            close = getattr(previous, "close", None)
+            if callable(close):
+                close()
 
     def public_knowledge_summary() -> dict[str, Any]:
         summary = store.knowledge_summary()
@@ -1676,7 +1686,9 @@ def create_app() -> FastAPI:
     @app.post("/api/admin/knowledge")
     def admin_knowledge_create(payload: KnowledgePayload, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         try:
-            return store.upsert_knowledge(_payload_to_dict(payload))
+            result = store.upsert_knowledge(_payload_to_dict(payload))
+            refresh_runtime_retriever()
+            return result
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
 
@@ -1687,20 +1699,26 @@ def create_app() -> FastAPI:
         admin: dict[str, Any] = Depends(require_admin),
     ) -> dict[str, Any]:
         try:
-            return store.upsert_knowledge(_payload_to_dict(payload), record_id=record_id)
+            result = store.upsert_knowledge(_payload_to_dict(payload), record_id=record_id)
+            refresh_runtime_retriever()
+            return result
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
 
     @app.delete("/api/admin/knowledge/{record_id}")
     def admin_knowledge_delete(record_id: str, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         try:
-            return store.delete_knowledge(record_id)
+            result = store.delete_knowledge(record_id)
+            refresh_runtime_retriever()
+            return result
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"error": f"knowledge record not found: {record_id}"}) from exc
 
     @app.post("/api/admin/reindex")
     def admin_reindex(admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
-        return {"ok": True, "index": store.sync_knowledge_files()}
+        result = {"ok": True, "index": store.sync_knowledge_files()}
+        refresh_runtime_retriever()
+        return result
 
     @app.get("/api/admin/evaluations")
     def admin_evaluations(admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:

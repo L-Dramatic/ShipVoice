@@ -1,7 +1,7 @@
 {
   "sample_id": "A001",
-  "env_file": "D:\\大三下\\信息安全基础\\final\\configs\\runtime.real.env",
-  "audio_path": "D:\\大三下\\信息安全基础\\final\\data\\audio\\raw\\A001.m4a",
+  "env_file": "D:\\Course Project\\ShipVoice\\configs\\runtime.real.env",
+  "audio_path": "D:\\Course Project\\ShipVoice\\data\\audio\\raw\\A001.m4a",
   "asr_health": {
     "ok": "true",
     "service": "funasr_asr",
@@ -10,8 +10,10 @@
   },
   "asr_result": {
     "text": "密闭舱室动火作业前要检查什么？",
+    "text_raw": "<|zh|><|NEUTRAL|><|Speech|><|withitn|>密闭舱室动火作业前要检查什么？",
     "provider": "funasr_sensevoice_service",
-    "audio_name": "A001.m4a"
+    "audio_name": "A001.m4a",
+    "reference_text_used": "false"
   },
   "tts_health": {
     "ok": "true",
@@ -21,11 +23,11 @@
   "tts_audio_base64_len": 17856,
   "llm_health": {
     "ok": true,
-    "probe_url": "http://127.0.0.1:11434/v1/models",
+    "probe_url": "http://127.0.0.1:18034/v1/models",
     "models": [
       "shipvoice-qwen2.5-7b-lora"
     ],
-    "health_url": "http://127.0.0.1:11434/health",
+    "health_url": "http://127.0.0.1:18034/health",
     "health": {
       "ok": true,
       "service": "transformers_openai",
@@ -34,18 +36,23 @@
       "adapter_loaded": true,
       "adapter_path": "/root/autodl-tmp/shipvoice/outputs/qwen_lora_shipvoice_expanded",
       "require_adapter": true,
+      "adapter_hash_algorithm": "sha256-tree-v1",
+      "adapter_sha256": "3462dbff405f71ed3d0b0a0d8484498a2be98ffe84ab5b2f56a2d69e7130d1cf",
+      "adapter_file_count": 10,
+      "adapter_bytes": 177423363,
       "device": "cuda:0",
       "dtype": "bfloat16",
       "quantization": "4bit",
-      "loaded_at": 1782119530
+      "loaded_at": 1782263230
     }
   },
   "llm_require_lora": true,
   "llm_required_model_substring": "shipvoice",
+  "llm_required_adapter_sha256": "3462dbff405f71ed3d0b0a0d8484498a2be98ffe84ab5b2f56a2d69e7130d1cf",
   "pipeline_result": {
     "question": "密闭舱室动火作业前要检查什么？",
     "transcript": "密闭舱室动火作业前要检查什么？",
-    "answer": "关于密闭舱室动火作业，应优先执行以下要求：动火作业前应完成审批，通风换气，测氧测爆，有毒有害气体检测，照明检查，通信确认和专人监护。氧含量、可燃气体浓度和有毒气体浓度均应满足现场安全规范后方可进入。动火作业时应准备灭火器材，清理可燃物，确认动火票有效。 如果现场条件不满足，应立即暂停作业，重新完成风险确认、审批和监护安排。 依据：[KS001] 密闭舱室与有限空间作业；[KS004] 焊接与动火作业。",
+    "answer": "安全提示：不要直接行动，应先停止作业并完成审批、检测、隔离和监护确认。 关于密闭舱室动火作业，应优先执行以下要求：动火作业前应完成审批，清理可燃物，准备灭火器材。 氧含量、可燃气体浓度和有毒气体浓度均应满足现场安全规范后方可进入。 高处动火还应检查火花坠落范围，安排下方监护，避免引燃保温材料、油污或电缆。 如果现场条件不满足，应立即暂停作业，重新完成风险确认、审批和监护安排。 依据：[KS001] 密闭舱室与有限空间作业； [KS004] 焊接与动火作业。",
     "gate": {
       "label": "domain_safe",
       "allowed": true,
@@ -57,7 +64,24 @@
       "llm": "openai_compatible:shipvoice-qwen2.5-7b-lora",
       "tts": "http_json_tts",
       "execution_profile": "real_voice",
-      "timing_source": "observed"
+      "timing_source": "server_audio_payload_ready",
+      "timing_note": "Server-side audio payload ready time; browser playback start is recorded by client timing.",
+      "response_mode": "complete_payload_non_streaming",
+      "output_guard_rewrites": "0",
+      "high_risk_output": "true",
+      "asr_http_client": "pooled_httpx",
+      "asr_http_keepalive": "true",
+      "asr_http_requests": "1",
+      "asr_http_failures": "0",
+      "llm_http_client": "pooled_httpx",
+      "llm_http_keepalive": "true",
+      "llm_http_requests": "1",
+      "llm_http_stream_requests": "0",
+      "llm_http_failures": "0",
+      "tts_http_client": "pooled_httpx",
+      "tts_http_keepalive": "true",
+      "tts_http_requests": "1",
+      "tts_http_failures": "0"
     },
     "metrics": {
       "question_id": "manual",
@@ -69,23 +93,30 @@
       "llm_provider": "openai_compatible:shipvoice-qwen2.5-7b-lora",
       "tts_provider": "http_json_tts",
       "execution_profile": "real_voice",
-      "timing_source": "observed",
-      "first_audio_ms": 12570,
-      "total_ms": 12570,
-      "asr_ms": 337,
+      "timing_source": "server_audio_payload_ready",
+      "first_audio_ms": 12813,
+      "total_ms": 12813,
+      "asr_ms": 583,
       "retrieval_ms": 3,
-      "llm_first_token_ms": 7578,
-      "tts_first_audio_ms": 4651,
-      "answer_chars": 202,
-      "evidence_count": 3
+      "llm_first_token_ms": 7644,
+      "tts_first_audio_ms": 4582,
+      "answer_chars": 230,
+      "evidence_count": 3,
+      "server_audio_payload_ready_ms": 12813,
+      "llm_complete_ms": 7644,
+      "tts_complete_ms": 4582,
+      "llm_first_delta_ms": 0,
+      "server_first_audio_chunk_ready_ms": 0,
+      "server_audio_stream_complete_ms": 12813,
+      "streamed_audio_segments": 0
     },
     "audio_output": {
       "provider": "http_json_tts",
       "audio_segments": [],
       "audio_base64": "<redacted>",
       "mime_type": "audio/mpeg",
-      "audio_base64_len": 359808,
-      "audio_base64_sha256": "6248ca5f0d24b7991db6580d4391464fd84b4ef9c6eb483c78a8ac590b5d9a6f"
+      "audio_base64_len": 406272,
+      "audio_base64_sha256": "333b7218f9036e27df3369103808bc49f2cab93c01b9e364711ca2d55b8e117d"
     }
   }
 }
