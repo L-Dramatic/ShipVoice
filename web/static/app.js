@@ -82,6 +82,8 @@ let streamingAudioUrls = [];
 let streamingAudioPlaying = false;
 let streamingAudioRunId = "";
 let activeRunControl = null;
+let currentRuntimeProfile = "gpu_lora";
+let runtimeProfiles = {};
 
 class AudioVisualizer {
   constructor(canvasId, type = "mic") {
@@ -355,6 +357,7 @@ const $ = (id) => document.getElementById(id);
 function init() {
   renderScenarios();
   bindModes();
+  bindRuntimeProfiles();
   $("runButton").addEventListener("click", () => runDemo());
   $("cancelRunButton").addEventListener("click", () => cancelActiveRun());
   $("exportButton").addEventListener("click", () => exportLog());
@@ -493,6 +496,8 @@ function resetMetrics() {
   $("statusBadge").textContent = "待机";
   $("statusBadge").className = "status-badge";
   $("providerSummary").innerHTML = "";
+  $("activePathSummary").textContent = "本次实际链路：等待运行。";
+  $("activePathSummary").className = "active-path-summary";
   $("ttsPlayer").hidden = true;
   $("ttsPlayer").removeAttribute("src");
   resetStageRail();
@@ -500,15 +505,14 @@ function resetMetrics() {
 
 async function loadHealth() {
   try {
-    const response = await fetch("/api/health");
+    const response = await fetch("/api/ready");
     const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error || "health check failed");
-    }
     healthSnapshot = payload;
     renderSystemHealth(payload);
+    renderRuntimeProfiles(payload.runtime_profiles || []);
   } catch (error) {
     $("healthSummary").innerHTML = `<span class="inline-error">服务健康检查失败：${escapeHtml(error.message)}</span>`;
+    renderRuntimeProfiles([]);
   }
 }
 
@@ -532,6 +536,12 @@ async function runDemo() {
   const token = ++runToken;
   const question = activeQuestion();
   const audioSource = currentAudioSource();
+  const selectedProfile = currentRuntimeProfile || "gpu_lora";
+  const profile = runtimeProfiles[selectedProfile];
+  if (profile && profile.ready === false) {
+    showError(`${profile.label || selectedProfile} 当前不可用：${profile.error || profileNotReadyReason(profile)}`);
+    return;
+  }
   renderScenario({ ...currentScenario, question });
   resetMetrics();
   resetStreamingAudioQueue();
@@ -561,6 +571,7 @@ async function runDemo() {
       client_request_id: clientRequestId,
       question,
       mode: currentMode,
+      runtime_profile: selectedProfile,
       history: buildHistory(),
       ...audioPayload
     };
@@ -571,6 +582,7 @@ async function runDemo() {
     lastResult = {
       ...payload,
       mode: currentMode,
+      runtime_profile: selectedProfile,
       audio_file: audioSource?.name || "",
       client_request_id: clientRequestId,
       client_timestamp: new Date().toISOString()
@@ -775,6 +787,7 @@ async function runViaHttp(question, audioSource, token) {
       client_request_id: clientRequestId,
       question,
       mode: currentMode,
+      runtime_profile: currentRuntimeProfile,
       history: buildHistory(),
       ...audioPayload
     })
@@ -1077,10 +1090,21 @@ function renderRuntimeMeta(result) {
   $("runIdValue").textContent = result.run_id || "--";
   $("runTimeValue").textContent = formatTimestamp(result.created_at || "");
   $("modeValue").textContent = formatModeLabel(result.mode || currentMode);
+  if (result.runtime_profile || result.provider_status?.runtime_profile) {
+    updateRuntimeProfileHeader(result.runtime_profile || result.provider_status.runtime_profile);
+  }
 }
 
 function renderSystemHealth(payload) {
-  const providers = payload.providers || {};
+  const defaultProfile = (payload.runtime_profiles || []).find((profile) => profile.id === (payload.default_runtime_profile || "gpu_lora"))
+    || (payload.runtime_profiles || [])[0]
+    || {};
+  const components = defaultProfile.components || payload.components || {};
+  const providers = payload.providers || {
+    asr: components.asr?.provider,
+    llm: components.llm?.provider,
+    tts: components.tts?.provider
+  };
   const audit = payload.audit || {};
   const rows = [
     `ASR: ${providers.asr || "unknown"}`,
@@ -1089,6 +1113,106 @@ function renderSystemHealth(payload) {
     `审计日志: ${audit.recent_runs ?? 0} 条`
   ];
   $("healthSummary").innerHTML = rows.map((item) => `<span class="provider-chip">${escapeHtml(item)}</span>`).join("");
+}
+
+function bindRuntimeProfiles() {
+  document.querySelectorAll("[data-runtime-profile]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextProfile = button.dataset.runtimeProfile || "gpu_lora";
+      const profile = runtimeProfiles[nextProfile];
+      if (profile && profile.ready === false) {
+        showError(`${profile.label || nextProfile} 当前不可用：${profile.error || profileNotReadyReason(profile)}。仍可查看该链路状态，但运行前需要恢复对应服务。`);
+      } else {
+        clearError();
+      }
+      currentRuntimeProfile = nextProfile;
+      updateRuntimeProfileHeader(nextProfile);
+      renderRuntimeProfiles(Object.values(runtimeProfiles));
+    });
+  });
+}
+
+function renderRuntimeProfiles(profiles) {
+  runtimeProfiles = {};
+  profiles.forEach((profile) => {
+    if (profile?.id) {
+      runtimeProfiles[profile.id] = profile;
+    }
+  });
+  if (!runtimeProfiles[currentRuntimeProfile]) {
+    currentRuntimeProfile = "gpu_lora";
+  }
+  updateRuntimeProfileHeader(currentRuntimeProfile);
+  document.querySelectorAll("[data-runtime-profile]").forEach((button) => {
+    const profileId = button.dataset.runtimeProfile || "gpu_lora";
+    const profile = runtimeProfiles[profileId];
+    const isActive = profileId === currentRuntimeProfile;
+    button.classList.toggle("is-active", isActive);
+    button.classList.toggle("is-unavailable", Boolean(profile && profile.ready === false));
+    button.title = profile && profile.ready === false ? profileNotReadyReason(profile) : "";
+  });
+}
+
+function updateRuntimeProfileHeader(profileId) {
+  const profile = runtimeProfiles[profileId] || { id: profileId, label: profileId === "api_fallback" ? "API 备用模式" : "GPU LoRA 主模式" };
+  const readyText = profile.ready === true ? "Ready" : profile.ready === false ? "不可用" : "待检查";
+  const roleText = profile.id === "api_fallback" ? "备用链路" : "主链路";
+  $("runtimeProfileTitle").textContent = `${roleText}：${profile.label || profile.id} · ${readyText}`;
+  $("runtimeProfileDetail").textContent = runtimeProfileDetail(profile);
+  renderRuntimeProfileEvidence(profile);
+}
+
+function runtimeProfileDetail(profile) {
+  const components = profile.components || {};
+  if (profile.id === "api_fallback") {
+    return `备用链路用于显卡 LLM 不可用时兜底：ASR ${componentReadyText(components.asr, "asr")} / LLM ${componentReadyText(components.llm, "llm")} / TTS ${componentReadyText(components.tts, "tts")}。`;
+  }
+  return `主链路用于展示自训 LoRA 模型：ASR ${componentReadyText(components.asr, "asr")} / LLM ${componentReadyText(components.llm, "llm")} / TTS ${componentReadyText(components.tts, "tts")}。`;
+}
+
+function renderRuntimeProfileEvidence(profile) {
+  const components = profile.components || {};
+  const rows = [
+    profile.id === "api_fallback" ? "路径: DeepSeek API 备用" : "路径: GPU LoRA 主链路",
+    `ASR: ${componentProviderText(components.asr)}`,
+    `LLM: ${componentProviderText(components.llm)}`,
+    `TTS: ${componentProviderText(components.tts)}`
+  ];
+  $("runtimeProfileEvidence").innerHTML = rows.map((item) => `<span class="runtime-evidence-chip">${escapeHtml(item)}</span>`).join("");
+}
+
+function componentProviderText(component) {
+  if (!component) {
+    return "未配置";
+  }
+  return component.provider || component.model || "unknown";
+}
+
+function componentReadyText(component, kind) {
+  if (!component) {
+    return "未配置";
+  }
+  if (component.ready === false) {
+    return "不可用";
+  }
+  if (component.ready === true) {
+    if (kind === "llm" && component.adapter_loaded) {
+      return "LoRA 已加载";
+    }
+    return "已连接";
+  }
+  return "待检查";
+}
+
+function profileNotReadyReason(profile) {
+  if (profile.error) {
+    return profile.error;
+  }
+  const components = profile.components || {};
+  const reasons = Object.values(components)
+    .map((item) => item.ready_reason)
+    .filter(Boolean);
+  return reasons.join("；") || "provider 未就绪";
 }
 
 function renderGate(gate) {
@@ -1201,6 +1325,7 @@ function renderSessionSummary(sessions) {
 
 function renderProviderSummary(providers) {
   const rows = [
+    `Runtime: ${providers.runtime_profile_label || providers.runtime_profile || "gpu_lora"}`,
     `输入: ${providers.input_mode || "text"}`,
     `ASR: ${providers.asr || "unknown"}`,
     `LLM: ${providers.llm || "unknown"}`,
@@ -1209,6 +1334,22 @@ function renderProviderSummary(providers) {
     `Response: ${providers.response_mode || "complete_payload"}`
   ];
   $("providerSummary").innerHTML = rows.map((item) => `<span class="provider-chip">${escapeHtml(item)}</span>`).join("");
+  renderActivePathSummary(providers);
+}
+
+function renderActivePathSummary(providers) {
+  const runtimeProfile = providers.runtime_profile || currentRuntimeProfile || "gpu_lora";
+  const role = runtimeProfile === "api_fallback" ? "备用链路" : "主链路";
+  const route = runtimeProfile === "api_fallback" ? "DeepSeek API 备用" : "GPU LoRA 主链路";
+  const rows = [
+    `本次实际链路：${role}`,
+    `路径：${route}`,
+    `ASR：${providers.asr || "unknown"}`,
+    `LLM：${providers.llm || "unknown"}`,
+    `TTS：${providers.tts || "unknown"}`
+  ];
+  $("activePathSummary").className = `active-path-summary ${runtimeProfile === "api_fallback" ? "is-fallback" : "is-gpu"}`;
+  $("activePathSummary").innerHTML = rows.map((item) => `<span>${escapeHtml(item)}</span>`).join("");
 }
 
 function handleAudioChunk(chunk, clientTiming, envelope = {}) {

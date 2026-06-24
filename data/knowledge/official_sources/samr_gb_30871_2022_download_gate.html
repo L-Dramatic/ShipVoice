@@ -1,0 +1,225 @@
+
+
+
+
+
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<title>全文下载|GB 30871-2022</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<link href="/bzgk/css/qbcx.css" rel="stylesheet" type="text/css" />
+<link href="/bzgk/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="/bzgk/css/docs.min.css" rel="stylesheet"/>
+<link href="/bzgk/css/jquery-ui-1.10.4.min.css" rel="stylesheet" type="text/css" />
+<script type="text/javascript" src="/bzgk/js/jquery-1.11.3.min.js"></script>
+<script type="text/javascript" src="/bzgk/js/jquery-ui-1.10.4.min.js"></script>
+<!--[if lt IE 9]>
+<script type="text/javascript" src="/bzgk/js/html5.js"></script>
+<script type="text/javascript" src="/bzgk/js/respond.min.js"></script> 
+<script type="text/javascript" src="/bzgk/js/requestAnimationFrame.js"></script> 
+<script type="text/javascript" src="/bzgk/js/es5.min.js"></script> 
+<![endif]-->
+<script type="text/javascript" src='/bzgk/js/bootstrap.js'></script>
+<style type="text/css">
+.mtr {
+    height: 25px;
+}
+span{
+    overflow:visible;
+}
+.verifyCodeChange {
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 38px;
+    color: #b3b3b3;
+    margin-left: 5px;
+    -webkit-transition: transform 218ms;
+    -moz-transition: transform 218ms;
+    -o-transition: transform 218ms;
+}
+.verifyCodeChange:hover {
+    color: gray;
+    transform: rotate(90deg);
+    -ms-transform: rotate(90deg);
+    -moz-transform: rotate(90deg);
+    -webkit-transform: rotate(90deg);
+    -o-transform: rotate(90deg);
+}
+.verifyCode {
+    height: 40px;
+    border: 1px solid #b39a9a;
+    margin-left: 5px;
+    float: left;
+    cursor: pointer;
+}
+.modal-dialog {
+    top: 50%;
+    margin-top: -140px; 
+}
+.repbg1 {
+    background-color: #EDEDF0;
+}
+</style>
+<script type="text/javascript">
+var currentLang = 'zh';
+
+// 国际化文本映射
+var i18n = {
+    'zh': {
+        'verifyCode': '验证码',
+        'refresh': '换一张',
+        'warmTip': '温馨提示',
+        'disclaimer': '本系统所提供的电子文本仅供参考，请以正式标准出版物为准。',
+        'verify': '验证',
+        'serverError': '服务器出错，请联系管理员',
+        'codeError': '验证码不正确，请重新输入'
+    },
+    'en': {
+        'verifyCode': 'CAPTCHA',
+        'refresh': 'Refresh',
+        'warmTip': 'Warm Tip',
+        'disclaimer': 'The electronic texts provided are for reference only. Please refer to the official standard publications.',
+        'verify': 'Verify',
+        'serverError': 'Server error, please contact administrator',
+        'codeError': 'Incorrect verification code, please re-enter'
+    }
+};
+
+var currentI18n = currentLang === 'zh' ? i18n.zh : i18n.en;
+
+$(function(){
+    // 更新页面文本
+    $('#verifyCode').attr('placeholder', currentI18n.verifyCode);
+    $('.verifyCodeChange').attr('title', currentI18n.refresh);
+    $('.warm-tip-text').text(currentI18n.warmTip);
+    $('.disclaimer-text').text(currentI18n.disclaimer);
+    $('.verify-btn').text(currentI18n.verify);
+    
+    download();
+});
+var hcno = '561B95121C30853A6B45CA9471F39239';
+function download(){
+	var isValid = 'true';
+	if(isValid=='true') {
+        window.location.href = "viewGb?hcno=" + hcno;
+	} else if(isValid=='false') {
+		$('.verifyCode').click(); 
+	    $('#myModal').modal('show');
+	}
+    
+}
+
+function checkCode(){
+    
+    $.ajax({
+        url:'verifyCode',
+        data:{'verifyCode':$('#verifyCode').val()},
+        method:'post',
+        dataType:"text",
+        error:function(data){
+            winRef.close();
+            alert(currentI18n.serverError);
+        },
+        success:function(data){
+            if(data=='success'){
+            	var winRef = window.open("url","_blank");
+                winRef.location = "viewGb?hcno=" + hcno;
+                window.close();
+               }else {
+                   alert(currentI18n.codeError);
+                   $('#verifyCode').val('')
+                    $('.verifyCode').click(); 
+              }
+        }
+    });
+}
+
+function downloadTools(oid) {
+    var url = 'getAdobeReader';
+    if (oid == 2) {
+        var sysType = getSysType();
+        switch (sysType) {
+        case 'Win': {
+            url = 'http://c.gb688.cn/bzgk/FileOpenInstaller.exe';
+        }
+            break;
+        case 'Mac': {
+            url = 'http://plugin.fileopen.com/current/FileOpenInstaller.dmg';
+        }
+            break;
+        case 'Linux': {
+            url = 'http://plugin.fileopen.com/current/FileOpenInstaller.tar.gz';
+        }
+            break;
+        }
+    }
+    window.open(url);
+}
+/**
+ * 获取系统类型
+ * @return {'Mac' or 'Win' or 'Linux'}
+ */
+function getSysType() {
+    var os = navigator.platform.match(/(Win|Mac|Linux)/);//系统
+    var x = os && os[1];
+    return x;
+}
+
+function showTips(showAlert) {
+    if (showAlert) {
+        $('.tips').stop().animate({
+            height : '140px'
+        }, 300, function() {
+            alert('请按网页提示安装所需插件');
+        });
+    } else {
+        $('.tips').stop().animate({
+            height : '140px'
+        }, 300);
+    }
+    $('#tipTitle')
+            .html(
+                    '如已安装以下软件点击<a style="text-decoration:underline;" href="javascript:hideTips();void(0);">此处</a>隐藏下列内容');
+}
+
+function hideTips() {
+    $('.tips').stop().animate({
+        height : '0px'
+    }, 300);
+    $('#tipTitle')
+            .html(
+                    '如第一次下载请先点击<a style="text-decoration:underline;" href="javascript:showTips(false);void(0);">此处</a>查看需要安装的软件');
+}
+function refreshVerifyCode(){
+    $('.verifyCode').attr('src','gc?_'+ new Date().getTime()); 
+} 
+</script>
+</head>
+<body style="background-color:#EDEDF0">
+    <div class="repbg1">
+        <div class="modal bs-example-modal-sm" id="myModal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" data-backdrop="false">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h4 class="modal-title" id="myModalLabel">GB 30871-2022 全文下载</h4>
+                    </div>
+                    <div class="modal-body"> 
+                        <input type="text" id="verifyCode" maxlength="4" placeholder="验证码" class="necessary" style="float: left; letter-spacing: 3px; font-size: 20px; text-align: center; width: 100px; height: 40px;" onkeyDown="if(event.keyCode==13){checkCode();}">
+                        <img class="verifyCode" title="" style="" onclick="refreshVerifyCode()">
+                        <span class="verifyCodeChange glyphicon glyphicon-refresh" onclick="refreshVerifyCode()" title="换一张"></span>
+                        <hr/>
+                        <span style="color:#c4251f"><span class="glyphicon glyphicon-info-sign"></span><span class="warm-tip-text">温馨提示</span>：</span><span class="disclaimer-text">本系统所提供的电子文本仅供参考，请以正式标准出版物为准。</span>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-primary verify-btn" onclick="checkCode();">验证</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

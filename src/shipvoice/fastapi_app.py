@@ -18,7 +18,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -50,6 +50,16 @@ MAX_HISTORY_CONTENT_CHARS = 2000
 MAX_HISTORY_TOTAL_CHARS = 8000
 MAX_CLIENT_REQUEST_ID_CHARS = 96
 _EPHEMERAL_ADMIN_SESSION_SECRET = secrets.token_urlsafe(32)
+DEFAULT_RUNTIME_PROFILE = "gpu_lora"
+RUNTIME_PROFILE_ORDER = ("gpu_lora", "api_fallback")
+RUNTIME_PROFILE_LABELS = {
+    "gpu_lora": "GPU LoRA 主模式",
+    "api_fallback": "API 备用模式",
+}
+RUNTIME_PROFILE_KINDS = {
+    "gpu_lora": "gpu",
+    "api_fallback": "api_fallback",
+}
 
 
 class RunRequest(BaseModel):
@@ -57,6 +67,7 @@ class RunRequest(BaseModel):
     client_request_id: str = ""
     question: str = ""
     mode: str = "full"
+    runtime_profile: str = ""
     history: list[dict[str, str]] = Field(default_factory=list)
     audio_base64: str = ""
     audio_name: str = ""
@@ -189,6 +200,17 @@ def normalize_run_mode(value: str) -> str:
     return mode
 
 
+def normalize_runtime_profile(value: str) -> str:
+    profile = (value or os.environ.get("SHIPVOICE_DEFAULT_RUNTIME_PROFILE", DEFAULT_RUNTIME_PROFILE)).strip().lower()
+    profile = profile or DEFAULT_RUNTIME_PROFILE
+    if profile not in RUNTIME_PROFILE_ORDER:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": f"unsupported runtime profile: {profile}", "allowed_profiles": list(RUNTIME_PROFILE_ORDER)},
+        )
+    return profile
+
+
 def sanitize_history(history: list[dict[str, str]]) -> list[dict[str, str]]:
     sanitized: list[dict[str, str]] = []
     total_chars = 0
@@ -245,6 +267,7 @@ def prepare_run_request(request: RunRequest) -> dict[str, Any]:
         allow_empty=True,
     )
     mode = normalize_run_mode(request.mode)
+    runtime_profile = normalize_runtime_profile(request.runtime_profile)
     audio_name = sanitize_limited_text(
         request.audio_name,
         field_name="audio_name",
@@ -260,6 +283,7 @@ def prepare_run_request(request: RunRequest) -> dict[str, Any]:
         "client_request_id": client_request_id,
         "question": question,
         "mode": mode,
+        "runtime_profile": runtime_profile,
         "audio_name": audio_name,
         "audio_bytes": audio_bytes,
         "history": history,
@@ -272,6 +296,7 @@ def result_to_payload(run_id: str, session_id: str, created_at: str, result) -> 
         "session_id": session_id,
         "created_at": created_at,
         "mode": result.metrics.mode,
+        "runtime_profile": result.provider_status.get("runtime_profile", DEFAULT_RUNTIME_PROFILE),
         "question": result.question,
         "transcript": result.transcript,
         "answer": result.answer,
@@ -472,14 +497,21 @@ def provider_health_snapshot(pipeline: VoiceQAPipeline) -> dict[str, Any]:
         "asr": item("ASR", asr, asr_endpoint, probe=asr_probe),
         "llm": item("LLM", llm, llm_endpoint, extra={"model": llm_model}, probe=llm_probe),
         "tts": item("TTS", tts, tts_endpoint, probe=tts_probe),
+        "runtime_profile": getattr(pipeline, "runtime_profile_id", DEFAULT_RUNTIME_PROFILE),
+        "runtime_profile_label": getattr(pipeline, "runtime_profile_label", RUNTIME_PROFILE_LABELS[DEFAULT_RUNTIME_PROFILE]),
+        "runtime_profile_kind": getattr(pipeline, "runtime_profile_kind", RUNTIME_PROFILE_KINDS[DEFAULT_RUNTIME_PROFILE]),
+        "require_lora": bool(getattr(pipeline, "require_lora", truthy_env("SHIPVOICE_REQUIRE_LORA"))),
+        "expected_adapter_sha256": str(getattr(pipeline, "expected_adapter_sha256", os.environ.get("SHIPVOICE_LORA_ADAPTER_SHA256", ""))).strip(),
         "updated_at": utc_now_iso(),
     }
 
 
 def provider_ready_report(snapshot: dict[str, Any]) -> dict[str, Any]:
     components: dict[str, Any] = {}
-    require_lora = truthy_env("SHIPVOICE_REQUIRE_LORA")
-    expected_adapter_sha = os.environ.get("SHIPVOICE_LORA_ADAPTER_SHA256", "").strip().lower()
+    require_lora = bool(snapshot.get("require_lora", truthy_env("SHIPVOICE_REQUIRE_LORA")))
+    expected_adapter_sha = str(
+        snapshot.get("expected_adapter_sha256", os.environ.get("SHIPVOICE_LORA_ADAPTER_SHA256", ""))
+    ).strip().lower()
     for key in ("asr", "llm", "tts"):
         item = dict(snapshot.get(key, {}))
         reachable = item.get("reachable")
@@ -512,9 +544,75 @@ def provider_ready_report(snapshot: dict[str, Any]) -> dict[str, Any]:
     ready = all(item.get("ready") for item in components.values())
     return {
         "ready": ready,
+        "runtime_profile": snapshot.get("runtime_profile", DEFAULT_RUNTIME_PROFILE),
+        "runtime_profile_label": snapshot.get("runtime_profile_label", RUNTIME_PROFILE_LABELS[DEFAULT_RUNTIME_PROFILE]),
+        "runtime_profile_kind": snapshot.get("runtime_profile_kind", RUNTIME_PROFILE_KINDS[DEFAULT_RUNTIME_PROFILE]),
+        "require_lora": require_lora,
         "components": components,
         "updated_at": snapshot.get("updated_at", utc_now_iso()),
     }
+
+
+@contextmanager
+def temporary_env(overrides: dict[str, str | None]):
+    previous = {key: os.environ.get(key) for key in overrides}
+    for key, value in overrides.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def fallback_env_overrides() -> dict[str, str | None]:
+    asr_provider = os.environ.get("SHIPVOICE_FALLBACK_ASR_PROVIDER", "text_input").strip() or "text_input"
+    tts_provider = os.environ.get("SHIPVOICE_FALLBACK_TTS_PROVIDER", "http_json").strip() or "http_json"
+    return {
+        "SHIPVOICE_ASR_PROVIDER": asr_provider,
+        "SHIPVOICE_ASR_ENDPOINT": os.environ.get("SHIPVOICE_FALLBACK_ASR_ENDPOINT", "").strip(),
+        "SHIPVOICE_LLM_PROVIDER": os.environ.get("SHIPVOICE_FALLBACK_LLM_PROVIDER", "openai_compatible").strip() or "openai_compatible",
+        "SHIPVOICE_OPENAI_BASE_URL": os.environ.get("SHIPVOICE_FALLBACK_OPENAI_BASE_URL", "").strip(),
+        "SHIPVOICE_LLM_MODEL": os.environ.get("SHIPVOICE_FALLBACK_LLM_MODEL", "").strip(),
+        "SHIPVOICE_LLM_API_KEY_ENV": "SHIPVOICE_FALLBACK_OPENAI_API_KEY",
+        "SHIPVOICE_LLM_THINKING": os.environ.get("SHIPVOICE_FALLBACK_LLM_THINKING", "").strip() or None,
+        "SHIPVOICE_LLM_MAX_TOKENS": os.environ.get("SHIPVOICE_FALLBACK_LLM_MAX_TOKENS", "").strip() or None,
+        "SHIPVOICE_REQUIRE_LORA": "0",
+        "SHIPVOICE_REQUIRE_LLM_MODEL_SUBSTRING": None,
+        "SHIPVOICE_TTS_PROVIDER": tts_provider,
+        "SHIPVOICE_TTS_ENDPOINT": os.environ.get("SHIPVOICE_FALLBACK_TTS_ENDPOINT", "").strip(),
+        "SHIPVOICE_TTS_VOICE": os.environ.get("SHIPVOICE_FALLBACK_TTS_VOICE", "zh-CN-XiaoxiaoNeural").strip() or "zh-CN-XiaoxiaoNeural",
+    }
+
+
+def profile_metadata(profile: str) -> dict[str, str | bool]:
+    return {
+        "runtime_profile_id": profile,
+        "runtime_profile_label": RUNTIME_PROFILE_LABELS[profile],
+        "runtime_profile_kind": RUNTIME_PROFILE_KINDS[profile],
+        "require_lora": profile == "gpu_lora" and truthy_env("SHIPVOICE_REQUIRE_LORA"),
+        "expected_adapter_sha256": os.environ.get("SHIPVOICE_LORA_ADAPTER_SHA256", "").strip() if profile == "gpu_lora" else "",
+    }
+
+
+def apply_profile_metadata(pipeline: VoiceQAPipeline, profile: str) -> VoiceQAPipeline:
+    for key, value in profile_metadata(profile).items():
+        setattr(pipeline, key, value)
+    return pipeline
+
+
+def build_runtime_profile_pipeline(profile: str) -> VoiceQAPipeline:
+    profile = normalize_runtime_profile(profile)
+    if profile == "gpu_lora":
+        return apply_profile_metadata(VoiceQAPipeline(), profile)
+    with temporary_env(fallback_env_overrides()):
+        return apply_profile_metadata(VoiceQAPipeline(), profile)
 
 
 def write_config_atomically(raw_text: str) -> tuple[dict[str, Any], VoiceQAPipeline, str]:
@@ -640,14 +738,19 @@ def require_admin(request: Request) -> dict[str, Any]:
 
 
 def create_app() -> FastAPI:
-    runtime: dict[str, VoiceQAPipeline] = {"pipeline": VoiceQAPipeline()}
+    default_pipeline = build_runtime_profile_pipeline(DEFAULT_RUNTIME_PROFILE)
+    runtime: dict[str, Any] = {
+        "pipeline": default_pipeline,
+        "pipelines": {DEFAULT_RUNTIME_PROFILE: default_pipeline},
+    }
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         try:
             yield
         finally:
-            runtime["pipeline"].close()
+            for pipeline in list(runtime.get("pipelines", {}).values()):
+                pipeline.close()
 
     app = FastAPI(title="ShipVoice API", version="0.2.0", lifespan=lifespan)
     store = SQLiteAppStore()
@@ -659,12 +762,29 @@ def create_app() -> FastAPI:
     run_statuses: dict[str, dict[str, Any]] = {}
     run_cancellations: dict[str, threading.Event] = {}
 
-    def current_pipeline() -> VoiceQAPipeline:
-        return runtime["pipeline"]
+    def current_pipeline(profile: str = "") -> VoiceQAPipeline:
+        normalized_profile = normalize_runtime_profile(profile)
+        pipelines: dict[str, VoiceQAPipeline] = runtime["pipelines"]
+        pipeline = pipelines.get(normalized_profile)
+        if pipeline is None:
+            try:
+                pipeline = build_runtime_profile_pipeline(normalized_profile)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "error": f"runtime profile {normalized_profile} is not available: {exc}",
+                        "runtime_profile": normalized_profile,
+                    },
+                ) from exc
+            pipelines[normalized_profile] = pipeline
+        return pipeline
 
     def replace_pipeline(pipeline: VoiceQAPipeline) -> VoiceQAPipeline:
+        pipeline = apply_profile_metadata(pipeline, DEFAULT_RUNTIME_PROFILE)
         previous = runtime.get("pipeline")
         runtime["pipeline"] = pipeline
+        runtime["pipelines"][DEFAULT_RUNTIME_PROFILE] = pipeline
         if previous is not None and previous is not pipeline:
             previous.close()
         return pipeline
@@ -679,6 +799,9 @@ def create_app() -> FastAPI:
 
     def reload_pipeline_from_disk() -> VoiceQAPipeline:
         load_config(CONFIG_PATH)
+        fallback = runtime["pipelines"].pop("api_fallback", None)
+        if fallback is not None:
+            fallback.close()
         return replace_pipeline(VoiceQAPipeline())
 
     def public_knowledge_summary() -> dict[str, Any]:
@@ -690,6 +813,72 @@ def create_app() -> FastAPI:
             "status_counts": summary.get("status_counts", {}),
             "top_tags": summary.get("top_tags", []),
         }
+
+    def runtime_profile_report(profile: str, *, probe: bool = True) -> dict[str, Any]:
+        profile = normalize_runtime_profile(profile)
+        base = {
+            "id": profile,
+            "label": RUNTIME_PROFILE_LABELS[profile],
+            "kind": RUNTIME_PROFILE_KINDS[profile],
+            "default": profile == DEFAULT_RUNTIME_PROFILE,
+        }
+        try:
+            pipeline = current_pipeline(profile)
+            has_real_provider_shape = all(hasattr(pipeline, attr) for attr in ("asr", "llm", "tts"))
+            if not probe:
+                return {
+                    **base,
+                    "available": True,
+                    "ready": None,
+                    "providers": {
+                        "asr": getattr(getattr(pipeline, "asr", None), "name", "unprobed"),
+                        "llm": getattr(getattr(pipeline, "llm", None), "name", pipeline.__class__.__name__),
+                        "tts": getattr(getattr(pipeline, "tts", None), "name", "unprobed"),
+                    },
+                }
+            if not has_real_provider_shape:
+                return {
+                    **base,
+                    "available": True,
+                    "ready": True,
+                    "components": {},
+                    "updated_at": utc_now_iso(),
+                }
+            report = provider_ready_report(provider_health_snapshot(pipeline))
+            return {
+                **base,
+                "available": True,
+                **report,
+            }
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {"error": str(exc.detail)}
+            return {
+                **base,
+                "available": False,
+                "ready": False,
+                "error": detail.get("error", str(detail)),
+                "components": {},
+                "updated_at": utc_now_iso(),
+            }
+
+    def runtime_profiles_report(*, probe: bool = True) -> list[dict[str, Any]]:
+        return [runtime_profile_report(profile, probe=probe) for profile in RUNTIME_PROFILE_ORDER]
+
+    def require_ready_runtime_profile(profile: str) -> VoiceQAPipeline:
+        pipeline = current_pipeline(profile)
+        if not all(hasattr(pipeline, attr) for attr in ("asr", "llm", "tts")):
+            return pipeline
+        report = provider_ready_report(provider_health_snapshot(pipeline))
+        if not report["ready"]:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": f"runtime profile {profile} is not ready",
+                    "runtime_profile": profile,
+                    "components": report["components"],
+                },
+            )
+        return pipeline
 
     def reserve_run(run_id: str, session_id: str, created_at: str, mode: str) -> dict[str, Any] | None:
         with run_cache_lock:
@@ -962,14 +1151,16 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:
-        pipeline = current_pipeline()
+        pipeline = current_pipeline(DEFAULT_RUNTIME_PROFILE)
         return {
             "ok": True,
             "service": "shipvoice-fastapi",
+            "default_runtime_profile": DEFAULT_RUNTIME_PROFILE,
+            "runtime_profiles": runtime_profiles_report(probe=False),
             "providers": {
-                "asr": getattr(pipeline.asr, "name", pipeline.asr.__class__.__name__),
-                "llm": getattr(pipeline.llm, "name", pipeline.llm.__class__.__name__),
-                "tts": getattr(pipeline.tts, "name", pipeline.tts.__class__.__name__),
+                "asr": getattr(getattr(pipeline, "asr", None), "name", "unprobed"),
+                "llm": getattr(getattr(pipeline, "llm", None), "name", pipeline.__class__.__name__),
+                "tts": getattr(getattr(pipeline, "tts", None), "name", "unprobed"),
             },
             "audit": {
                 "recent_runs": store.audit_stats()["total_runs"],
@@ -992,14 +1183,17 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/ready")
-    def ready() -> JSONResponse:
-        snapshot = provider_health_snapshot(current_pipeline())
+    def ready(runtime_profile: str = "") -> JSONResponse:
+        profile = normalize_runtime_profile(runtime_profile)
+        snapshot = provider_health_snapshot(current_pipeline(profile))
         report = provider_ready_report(snapshot)
         return JSONResponse(
             status_code=200 if report["ready"] else 503,
             content={
                 "ok": bool(report["ready"]),
                 "service": "shipvoice-fastapi",
+                "default_runtime_profile": DEFAULT_RUNTIME_PROFILE,
+                "runtime_profiles": runtime_profiles_report(probe=True),
                 **report,
             },
         )
@@ -1023,12 +1217,13 @@ def create_app() -> FastAPI:
 
     @app.post("/api/run")
     async def run_question(request: RunRequest) -> dict[str, Any]:
-        pipeline = current_pipeline()
+        pipeline: VoiceQAPipeline | None = None
         run_id = uuid.uuid4().hex[:12]
         created_at = utc_now_iso()
         session_id = request.session_id.strip() or uuid.uuid4().hex[:12]
         question = request.question.strip()
         mode = request.mode
+        runtime_profile = normalize_runtime_profile(request.runtime_profile)
         audio_name = request.audio_name.strip()
         transcript = ""
         reserved = False
@@ -1039,7 +1234,9 @@ def create_app() -> FastAPI:
             run_id = prepared["client_request_id"] or run_id
             question = prepared["question"]
             mode = prepared["mode"]
+            runtime_profile = prepared["runtime_profile"]
             audio_name = prepared["audio_name"]
+            pipeline = require_ready_runtime_profile(runtime_profile)
             existing = reserve_run(run_id, session_id, created_at, mode)
             if existing:
                 if existing["state"] == "forbidden":
@@ -1090,6 +1287,7 @@ def create_app() -> FastAPI:
                 )
             )
             payload = result_to_payload(run_id, session_id, created_at, result)
+            payload["runtime_profile"] = runtime_profile
             complete_run(run_id, payload)
             return payload
         except HTTPException as exc:
@@ -1591,7 +1789,7 @@ def create_app() -> FastAPI:
     @app.websocket("/ws/run")
     async def ws_run(websocket: WebSocket) -> None:
         await websocket.accept()
-        pipeline = current_pipeline()
+        pipeline: VoiceQAPipeline | None = None
         send_lock = asyncio.Lock()
         run_id = uuid.uuid4().hex[:12]
         created_at = utc_now_iso()
@@ -1600,6 +1798,7 @@ def create_app() -> FastAPI:
         transcript = ""
         audio_name = ""
         mode = "full"
+        runtime_profile = DEFAULT_RUNTIME_PROFILE
         reserved = False
         cancel_event = threading.Event()
         cancel_listener: asyncio.Task | None = None
@@ -1612,6 +1811,8 @@ def create_app() -> FastAPI:
             question = prepared["question"]
             audio_name = prepared["audio_name"]
             mode = prepared["mode"]
+            runtime_profile = prepared["runtime_profile"]
+            pipeline = require_ready_runtime_profile(runtime_profile)
             existing = reserve_run(run_id, session_id, created_at, mode)
             if existing:
                 if existing["state"] == "forbidden":
@@ -1660,6 +1861,7 @@ def create_app() -> FastAPI:
                     "session_id": session_id,
                     "created_at": created_at,
                     "mode": mode,
+                    "runtime_profile": runtime_profile,
                 }
             )
 
@@ -1733,6 +1935,7 @@ def create_app() -> FastAPI:
                 )
             )
             payload = result_to_payload(run_id, session_id, created_at, result)
+            payload["runtime_profile"] = runtime_profile
             complete_run(run_id, payload)
             try:
                 await websocket.send_json({"type": "result", "result": payload})

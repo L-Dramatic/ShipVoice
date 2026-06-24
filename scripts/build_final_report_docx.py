@@ -398,6 +398,7 @@ def add_markdown_body(doc, markdown_text):
         nonlocal code_lines
         if code_lines:
             paragraph = doc.add_paragraph()
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
             paragraph.paragraph_format.space_before = Pt(2)
             paragraph.paragraph_format.space_after = Pt(8)
             paragraph.paragraph_format.line_spacing = 1.05

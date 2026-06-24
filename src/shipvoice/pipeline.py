@@ -85,6 +85,98 @@ STREAM_SEGMENT_SAFETY_FALLBACK = "安全提示：不要直接进入、关闭报�
 OUTPUT_GUARD_SAFE_PREFIXES = ("不要", "不能", "禁止", "不得", "严禁", "停止", "暂停", "不可以", "不允许")
 OUTPUT_GUARD_COMPLETION_QUALIFIERS = ("完成", "确认", "满足", "审批", "检测", "通风", "测氧", "测爆", "隔离", "监护")
 OUTPUT_GUARD_CONDITIONAL_TRAPS = ("除非", "否则", "但是", "但", "不过")
+IDENTITY_HELP_TERMS = (
+    "你是什么",
+    "你是谁",
+    "你能做什么",
+    "你可以做什么",
+    "介绍一下你",
+    "介绍一下shipvoice",
+    "shipvoice是什么",
+    "怎么使用",
+    "如何使用",
+    "使用说明",
+)
+HIGH_RISK_SPECIFIC_TERMS = (
+    "多少",
+    "阈值",
+    "浓度",
+    "氧含量",
+    "爆炸下限",
+    "报警值",
+    "标准编号",
+    "标准号",
+    "条款",
+    "法规",
+    "载荷",
+    "吨",
+    "电压",
+    "电流",
+    "几伏",
+    "几安",
+    "距离",
+    "几米",
+    "多长时间",
+)
+DOMAIN_GENERAL_TERMS = (
+    "安全",
+    "作业",
+    "船",
+    "舱",
+    "动火",
+    "吊装",
+    "试压",
+    "有限空间",
+    "密闭",
+    "监护",
+    "审批",
+    "检测",
+    "通风",
+    "应急",
+)
+FOLLOW_UP_CONTEXT_TERMS = (
+    "还有",
+    "还要",
+    "还需要",
+    "继续",
+    "补充",
+    "刚才",
+    "上面",
+    "上述",
+    "这个",
+    "这种",
+    "这种情况",
+    "那",
+    "那怎么办",
+    "怎么办",
+    "可以吗",
+    "需要吗",
+    "注意什么",
+    "注意事项",
+)
+IDENTITY_HELP_ANSWER = (
+    "我是 ShipVoice 船厂安全实时语音问答助手。"
+    "我可以接收文字、上传音频或现场录音，将语音转写成问题，"
+    "结合船厂安全知识库和 ShipVoice 模型给出保守的安全建议，并把回答合成为语音播放。"
+    "我主要面向动火、有限空间、吊装、管路试压、临时用电、个人防护和应急处置等造船现场场景。"
+    "对于危险、越权、离题或提示注入类请求，我会进行安全拦截；"
+    "对于缺少证据的高风险具体阈值或标准编号，我不会编造答案。"
+)
+EVIDENCE_GAP_ANSWER = (
+    "当前知识库没有足够依据回答这个高风险具体问题。"
+    "我不能凭模型常识给出未经验证的标准编号、阈值、浓度、载荷、电压、电流、距离或许可条件。"
+    "建议立即查阅本船厂现场规程、作业票和设备说明，并由现场负责人或安全管理人员确认。"
+    "在依据未确认前，应按保守原则暂停相关高风险作业，完成审批、检测、隔离、通风、监护和应急准备。"
+)
+NO_EVIDENCE_GENERAL_NOTICE = (
+    "当前知识库未命中可引用依据。"
+    "以下为通用安全建议，不能替代现场制度、作业票或安全负责人确认。"
+)
+SCOPE_GAP_ANSWER = (
+    "我还缺少具体的造船现场作业场景，不能直接给出安全建议。"
+    "请补充作业类型、地点和主要风险点，例如动火、有限空间、吊装、管路试压、临时用电或应急处置。"
+    "如果现场已经存在人员受伤、气体报警、火情、泄漏或设备失控，请先停止作业并通知现场负责人或安全管理人员。"
+)
 
 
 class PipelineCancelled(RuntimeError):
@@ -94,6 +186,11 @@ class PipelineCancelled(RuntimeError):
 class VoiceQAPipeline:
     def __init__(self, config: PipelineConfig | None = None) -> None:
         self.config = config or load_config()
+        self.runtime_profile_id = "gpu_lora"
+        self.runtime_profile_label = "GPU LoRA 主模式"
+        self.runtime_profile_kind = "gpu"
+        self.require_lora = False
+        self.expected_adapter_sha256 = ""
         self.asr = build_asr(self.config)
         self.corrector = TermCorrector(self.config.domain_terms)
         self.gate = KeywordSafetyGate(
@@ -149,7 +246,7 @@ class VoiceQAPipeline:
         mode = (mode or "full").strip().lower()
         if mode not in PUBLIC_RUN_MODES:
             raise ValueError(f"Unsupported run mode: {mode}")
-        rag_enabled = mode in {"rag", "full"}
+        rag_enabled = mode in {"rag", "full", "streaming"}
         input_mode = "audio" if audio_bytes else "text"
 
         await emit(
@@ -176,8 +273,19 @@ class VoiceQAPipeline:
         if corrected != transcript or term_hits:
             await emit("term", "Domain term correction completed", corrected=corrected, term_hits=term_hits)
 
-        contextual_question = self._contextualize_question(corrected, history)
+        contextual_question = (
+            self._contextualize_question(corrected, history)
+            if self._should_use_history_context(corrected, history)
+            else corrected
+        )
+        controlled_answer = ""
+        controlled_answer_source = ""
+        if self._is_identity_help_question(corrected):
+            controlled_answer = IDENTITY_HELP_ANSWER
+            controlled_answer_source = "identity_help"
         gate_result = self.gate.classify(contextual_question)
+        if controlled_answer_source == "identity_help":
+            gate_result = GateResult("identity_help", True, "系统身份和使用帮助问题，使用受控产品说明回答")
         await emit(
             "gate",
             "Safety gate completed",
@@ -188,7 +296,9 @@ class VoiceQAPipeline:
 
         retrieval_ms = 0
         evidence = []
-        if rag_enabled and gate_result.allowed:
+        if controlled_answer_source:
+            await emit("retrieval", "Controlled help answer, retrieval skipped", source=controlled_answer_source)
+        elif rag_enabled and gate_result.allowed:
             check_cancelled("retrieval")
             retrieval_start = elapsed()
             evidence = await self.retriever.retrieve(contextual_question)
@@ -221,10 +331,98 @@ class VoiceQAPipeline:
         response_mode = "complete_payload_non_streaming"
         output_guard_rewrites = 0
         high_risk_output = False
+        llm_provider_override = ""
 
         if gate_result.allowed:
             llm_start = elapsed()
-            if mode == "streaming" and hasattr(self.llm, "stream_answer"):
+            if controlled_answer_source:
+                answer = controlled_answer
+                llm_ms = 0
+                llm_first_token_ms = 0
+                llm_provider_override = f"not_called_{controlled_answer_source}"
+                await emit(
+                    "llm",
+                    "LLM skipped because controlled answer was available",
+                    chunks=len(self.llm.split_chunks(answer)),
+                    latency_ms=0,
+                    provider=llm_provider_override,
+                    source=controlled_answer_source,
+                )
+                tts_start = elapsed()
+                tts_result = await self._synthesize(answer, cancel_event=cancel_event)
+                check_cancelled("tts")
+                server_audio_payload_ready_ms = elapsed()
+                tts_complete_ms = server_audio_payload_ready_ms - tts_start
+                tts_first_audio_ms = tts_complete_ms
+                await emit(
+                    "tts",
+                    "TTS synthesis completed",
+                    server_audio_payload_ready_ms=server_audio_payload_ready_ms,
+                    tts_complete_ms=tts_complete_ms,
+                    provider=tts_result.provider,
+                )
+            elif not evidence and self._is_high_risk_specific_question(contextual_question):
+                answer = EVIDENCE_GAP_ANSWER
+                llm_ms = 0
+                llm_first_token_ms = 0
+                high_risk_output = True
+                llm_provider_override = "not_called_evidence_gap"
+                await emit(
+                    "evidence_policy",
+                    "High-risk specific question has no retrieval evidence; concrete answer withheld",
+                    policy="no_specific_thresholds_without_evidence",
+                )
+                await emit(
+                    "llm",
+                    "LLM skipped because evidence was insufficient for high-risk specifics",
+                    chunks=len(self.llm.split_chunks(answer)),
+                    latency_ms=0,
+                    provider=llm_provider_override,
+                )
+                tts_start = elapsed()
+                tts_result = await self._synthesize(answer, cancel_event=cancel_event)
+                check_cancelled("tts")
+                server_audio_payload_ready_ms = elapsed()
+                tts_complete_ms = server_audio_payload_ready_ms - tts_start
+                tts_first_audio_ms = tts_complete_ms
+                await emit(
+                    "tts",
+                    "TTS synthesis completed",
+                    server_audio_payload_ready_ms=server_audio_payload_ready_ms,
+                    tts_complete_ms=tts_complete_ms,
+                    provider=tts_result.provider,
+                )
+            elif not evidence and gate_result.label == "uncertain" and not self._is_domain_general_question(contextual_question):
+                answer = SCOPE_GAP_ANSWER
+                llm_ms = 0
+                llm_first_token_ms = 0
+                llm_provider_override = "not_called_scope_gap"
+                await emit(
+                    "scope_policy",
+                    "Question lacks shipyard safety context and retrieval evidence; asking for concrete work context",
+                    policy="ask_for_domain_context_without_llm",
+                )
+                await emit(
+                    "llm",
+                    "LLM skipped because the question lacks domain context",
+                    chunks=len(self.llm.split_chunks(answer)),
+                    latency_ms=0,
+                    provider=llm_provider_override,
+                )
+                tts_start = elapsed()
+                tts_result = await self._synthesize(answer, cancel_event=cancel_event)
+                check_cancelled("tts")
+                server_audio_payload_ready_ms = elapsed()
+                tts_complete_ms = server_audio_payload_ready_ms - tts_start
+                tts_first_audio_ms = tts_complete_ms
+                await emit(
+                    "tts",
+                    "TTS synthesis completed",
+                    server_audio_payload_ready_ms=server_audio_payload_ready_ms,
+                    tts_complete_ms=tts_complete_ms,
+                    provider=tts_result.provider,
+                )
+            elif mode == "streaming" and hasattr(self.llm, "stream_answer"):
                 (
                     answer,
                     tts_result,
@@ -257,6 +455,8 @@ class VoiceQAPipeline:
                     question=corrected,
                     evidence=evidence,
                 )
+                if rag_enabled and not evidence:
+                    answer = self._prepend_no_evidence_notice(answer)
                 llm_ms = elapsed() - llm_start
                 chunks = self.llm.split_chunks(answer)
                 llm_first_token_ms = llm_ms
@@ -322,7 +522,10 @@ class VoiceQAPipeline:
         await emit("done", "Pipeline finished", total_ms=total_ms)
 
         asr_provider = asr_result.provider
-        llm_provider = getattr(self.llm, "name", self.llm.__class__.__name__) if gate_result.allowed else "not_called"
+        llm_provider = (
+            llm_provider_override
+            or (getattr(self.llm, "name", self.llm.__class__.__name__) if gate_result.allowed else "not_called")
+        )
         tts_provider = getattr(tts_result, "provider", getattr(self.tts, "name", self.tts.__class__.__name__))
         execution_profile = self._execution_profile(asr_provider, llm_provider, tts_provider)
         timing_source = (
@@ -370,6 +573,9 @@ class VoiceQAPipeline:
             metrics=metrics,
             provider_status={
                 "input_mode": input_mode,
+                "runtime_profile": getattr(self, "runtime_profile_id", "gpu_lora"),
+                "runtime_profile_label": getattr(self, "runtime_profile_label", "GPU LoRA 主模式"),
+                "runtime_profile_kind": getattr(self, "runtime_profile_kind", "gpu"),
                 "asr": asr_provider,
                 "llm": llm_provider,
                 "tts": tts_provider,
@@ -430,6 +636,18 @@ class VoiceQAPipeline:
             nonlocal output_guard_rewrites
             self._ensure_not_cancelled(cancel_event, "tts_queue")
             segment = text.strip()
+            if not segment:
+                return
+            segment, citation_rewritten = self._strip_unsupported_citation_text(segment, evidence)
+            if citation_rewritten:
+                output_guard_rewrites += 1
+                await emit(
+                    "output_guard",
+                    "Unsupported model citation removed before TTS",
+                    source=source,
+                    reason="citation_not_backed_by_retrieval_evidence",
+                    replacement_chars=len(segment),
+                )
             if not segment:
                 return
             guarded_segment, rewritten, reason = self._guard_output_segment(segment)
@@ -522,6 +740,13 @@ class VoiceQAPipeline:
                     prefix_chars=len(STREAM_HIGH_RISK_SAFETY_PREFIX),
                 )
                 await queue_spoken_segment(STREAM_HIGH_RISK_SAFETY_PREFIX, source="high_risk_safety_prefix")
+            if not evidence:
+                await emit(
+                    "evidence_policy",
+                    "No retrieval evidence available; unverified general-advice notice queued",
+                    policy="llm_general_advice_without_citations",
+                )
+                await queue_spoken_segment(NO_EVIDENCE_GENERAL_NOTICE, source="no_evidence_notice")
             stream_kwargs = {"cancel_event": cancel_event} if self._accepts_kwarg(self.llm.stream_answer, "cancel_event") else {}
             async for delta in self.llm.stream_answer(question, evidence, gate, history, **stream_kwargs):
                 self._ensure_not_cancelled(cancel_event, "llm_stream")
@@ -544,8 +769,11 @@ class VoiceQAPipeline:
             if high_risk_stream:
                 answer = f"{STREAM_HIGH_RISK_SAFETY_PREFIX}\n{answer}"
             cited_answer = self._attach_answer_citations(answer, evidence)
+            if not evidence:
+                cited_answer = self._prepend_no_evidence_notice(cited_answer)
             if cited_answer != answer:
-                buffer = f"{buffer}{cited_answer[len(answer):]}"
+                suffix = cited_answer[len(answer):] if cited_answer.startswith(answer) else self._format_citation_sentence(evidence)
+                buffer = f"{buffer}{suffix}"
                 answer = cited_answer
             final_sentence = buffer.strip()
             if final_sentence:
@@ -659,6 +887,39 @@ class VoiceQAPipeline:
         return any(term in text for term in terms)
 
     @classmethod
+    def _is_identity_help_question(cls, question: str) -> bool:
+        compact = re.sub(r"\s+", "", question.lower())
+        return any(term.lower() in compact for term in IDENTITY_HELP_TERMS)
+
+    @classmethod
+    def _is_high_risk_specific_question(cls, question: str) -> bool:
+        compact = re.sub(r"\s+", "", question)
+        if not cls._contains_any(compact, STREAM_HIGH_RISK_TERMS):
+            return False
+        return cls._contains_any(compact, HIGH_RISK_SPECIFIC_TERMS)
+
+    @classmethod
+    def _is_domain_general_question(cls, question: str) -> bool:
+        return cls._contains_any(question, DOMAIN_GENERAL_TERMS)
+
+    @classmethod
+    def _should_use_history_context(cls, question: str, history: list[dict[str, str]]) -> bool:
+        if not history:
+            return False
+        compact = re.sub(r"\s+", "", question)
+        if cls._is_identity_help_question(question):
+            return False
+        if not cls._contains_any(compact, FOLLOW_UP_CONTEXT_TERMS):
+            return False
+        recent_user_turns = [
+            str(item.get("content", "")).strip()
+            for item in history
+            if item.get("role") == "user" and str(item.get("content", "")).strip()
+        ]
+        recent_context = " ".join(recent_user_turns[-2:])
+        return cls._is_domain_general_question(recent_context)
+
+    @classmethod
     def _is_high_risk_stream_context(cls, question: str, evidence: list) -> bool:
         evidence_text = " ".join(
             " ".join(
@@ -717,15 +978,68 @@ class VoiceQAPipeline:
     def _guard_stream_segment(cls, segment: str) -> tuple[str, bool, str]:
         return cls._guard_output_segment(segment)
 
-    @staticmethod
-    def _attach_answer_citations(answer: str, evidence: list) -> str:
+    @classmethod
+    def _attach_answer_citations(cls, answer: str, evidence: list) -> str:
+        answer, _rewritten = cls._strip_model_citation_text(answer)
         citation_hits = [hit for hit in evidence if getattr(hit, "record_id", "")]
         if not citation_hits:
             return answer
-        if any(hit.record_id in answer for hit in citation_hits):
+        citation_sentence = cls._format_citation_sentence(citation_hits)
+        if citation_sentence in answer:
             return answer
+        return f"{answer.rstrip()} {citation_sentence}"
+
+    @staticmethod
+    def _format_citation_sentence(evidence: list) -> str:
+        citation_hits = [hit for hit in evidence if getattr(hit, "record_id", "")]
+        if not citation_hits:
+            return ""
         citations = "；".join(f"[{hit.record_id}] {hit.title}" for hit in citation_hits[:2])
-        return f"{answer.rstrip()} 依据：{citations}。"
+        return f"依据：{citations}。"
+
+    @classmethod
+    def _strip_model_citation_text(cls, answer: str) -> tuple[str, bool]:
+        original = answer
+        cleaned = re.sub(
+            r"\s*(?:依据|引用依据|参考依据|证据)\s*[:：][^。！？!?]*(?:[。！？!?]|$)",
+            "",
+            answer,
+        )
+        cleaned = re.sub(r"\[[A-Za-z]{1,8}\d{2,5}\]", "", cleaned)
+        cleaned = re.sub(r"\b[A-Z]{1,8}\d{2,5}\b", "", cleaned)
+        cleaned = re.sub(r"\s+([，。；！？!?])", r"\1", cleaned)
+        cleaned = re.sub(r"([：:])\s+", r"\1", cleaned)
+        cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+        return cleaned, cleaned != original.strip()
+
+    @classmethod
+    def _strip_unsupported_citation_text(cls, answer: str, evidence: list) -> tuple[str, bool]:
+        citation_ids = cls._citation_ids(answer)
+        if not citation_ids:
+            return answer.strip(), False
+        allowed_ids = {str(getattr(hit, "record_id", "") or "") for hit in evidence}
+        allowed_ids.discard("")
+        if citation_ids.issubset(allowed_ids):
+            return answer.strip(), False
+        return cls._strip_model_citation_text(answer)
+
+    @staticmethod
+    def _citation_ids(text: str) -> set[str]:
+        bracketed = set(re.findall(r"\[([A-Za-z]{1,8}\d{2,5})\]", text))
+        bare = set(re.findall(r"\b([A-Z]{1,8}\d{2,5})\b", text))
+        return bracketed | bare
+
+    @staticmethod
+    def _prepend_no_evidence_notice(answer: str) -> str:
+        answer = answer.strip()
+        if not answer or answer.startswith(NO_EVIDENCE_GENERAL_NOTICE):
+            return answer or NO_EVIDENCE_GENERAL_NOTICE
+        if answer.startswith(EVIDENCE_GAP_ANSWER) or answer.startswith(SCOPE_GAP_ANSWER):
+            return answer
+        if answer.startswith(STREAM_HIGH_RISK_SAFETY_PREFIX):
+            remainder = answer[len(STREAM_HIGH_RISK_SAFETY_PREFIX):].strip()
+            return f"{STREAM_HIGH_RISK_SAFETY_PREFIX} {NO_EVIDENCE_GENERAL_NOTICE} {remainder}".strip()
+        return f"{NO_EVIDENCE_GENERAL_NOTICE} {answer}"
 
     def tts_default_result(self):
         from .models import TTSResult

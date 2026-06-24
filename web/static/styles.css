@@ -832,6 +832,101 @@ textarea:focus {
   box-shadow: 0 0 15px rgba(0, 242, 254, 0.06);
 }
 
+.runtime-mode-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-height: 64px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(10, 18, 30, 0.72);
+}
+
+.runtime-mode-bar strong {
+  display: block;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.runtime-mode-bar p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.runtime-profile-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.runtime-evidence-chip {
+  padding: 3px 8px;
+  border: 1px solid rgba(0, 242, 254, 0.14);
+  border-radius: 4px;
+  background: rgba(0, 242, 254, 0.04);
+  color: #9fb2c7;
+  font-family: var(--font-tech);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.runtime-mode-kicker {
+  display: block;
+  color: var(--accent);
+  font-family: var(--font-tech);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.runtime-profile-controls {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.runtime-profile-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(0, 242, 254, 0.18);
+  border-radius: 6px;
+  background: rgba(0, 242, 254, 0.04);
+  color: var(--muted);
+  font-family: var(--font-tech);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.runtime-profile-button.is-active {
+  color: #041017;
+  background: linear-gradient(135deg, var(--accent), #42a5f5);
+  border-color: transparent;
+}
+
+.runtime-profile-button.is-unavailable {
+  color: var(--danger);
+  border-color: rgba(255, 0, 85, 0.35);
+  background: rgba(255, 0, 85, 0.06);
+}
+
+.runtime-profile-button:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
 .panel-head {
   display: flex;
   justify-content: space-between;
@@ -908,6 +1003,38 @@ textarea:focus {
   color: #e2e8f0;
   white-space: pre-wrap;
   min-height: 120px;
+}
+
+.active-path-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 10px;
+  padding: 8px;
+  border: 1px solid rgba(0, 242, 254, 0.12);
+  border-radius: 6px;
+  background: rgba(0, 242, 254, 0.035);
+  color: var(--muted);
+  font-family: var(--font-tech);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.active-path-summary span {
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.active-path-summary.is-gpu {
+  border-color: rgba(0, 242, 254, 0.22);
+  color: var(--accent);
+}
+
+.active-path-summary.is-fallback {
+  border-color: rgba(255, 193, 7, 0.26);
+  background: rgba(255, 193, 7, 0.045);
+  color: var(--warning);
 }
 
 .provider-summary {
@@ -1604,6 +1731,28 @@ select.text-input {
 }
 
 @media (max-width: 1080px) {
+  .runtime-mode-bar {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .runtime-mode-bar > div {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .runtime-profile-controls {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .runtime-profile-button {
+    flex: 1 1 0;
+  }
+
   body {
     grid-template-columns: 1fr;
   }
@@ -1626,6 +1775,7 @@ select.text-input {
 
   .ops-overview,
   .main-grid,
+  .shipvoice-console .operator-grid,
   .metrics-grid,
   .diagnostic-grid,
   .admin-grid {
@@ -1709,6 +1859,7 @@ select.text-input {
 
   .ops-overview,
   .main-grid,
+  .shipvoice-console .operator-grid,
   .operator-grid,
   .diagnostic-grid,
   .admin-grid,
@@ -1770,6 +1921,7 @@ select.text-input {
   }
 
   .record-control,
+  .run-action-row,
   .button-row {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1827,6 +1979,7 @@ select.text-input {
   .record-control,
   .recording-status,
   .recording-preview,
+  .run-action-row,
   .run-action,
   .primary-button,
   .secondary-button,

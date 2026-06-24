@@ -1,0 +1,44 @@
+﻿[
+    {
+        "id":  "MEM_LIMITED_SPACE_2023_ORDER_13",
+        "url":  "https://www.mem.gov.cn/gk/zfxxgkpt/fdzdgknr/202312/t20231208_471355.shtml",
+        "file":  "mem_limited_space_order_13.html",
+        "bytes":  249422,
+        "downloaded_at":  "2026-06-23T21:36:11Z"
+    },
+    {
+        "id":  "MEM_SAFETY_PRODUCTION_LAW_2021",
+        "url":  "https://www.mem.gov.cn/fw/flfgbz/fg/202107/t20210716_416558.shtml",
+        "file":  "mem_safety_production_law_2021.html",
+        "bytes":  158867,
+        "downloaded_at":  "2026-06-23T21:36:11Z"
+    },
+    {
+        "id":  "SAMR_GB_30871_2022_META",
+        "url":  "https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=561B95121C30853A6B45CA9471F39239",
+        "file":  "samr_gb_30871_2022_meta.html",
+        "bytes":  24105,
+        "downloaded_at":  "2026-06-23T21:36:12Z"
+    },
+    {
+        "id":  "SAMR_GB_30871_2022_ONLINE_PREVIEW",
+        "url":  "https://openstd.samr.gov.cn/bzgk/std/showGb?type=online\u0026hcno=561B95121C30853A6B45CA9471F39239\u0026request_locale=zh_CN",
+        "file":  "samr_gb_30871_2022_online_preview.html",
+        "bytes":  257109,
+        "downloaded_at":  "2026-06-23T21:47:32Z"
+    },
+    {
+        "id":  "SAMR_GB_30871_2022_DOWNLOAD_GATE",
+        "url":  "https://openstd.samr.gov.cn/bzgk/std/showGb?type=download\u0026hcno=561B95121C30853A6B45CA9471F39239\u0026request_locale=zh_CN",
+        "file":  "samr_gb_30871_2022_download_gate.html",
+        "bytes":  7709,
+        "downloaded_at":  "2026-06-23T21:47:32Z"
+    },
+    {
+        "id":  "SAMR_GB_30871_2022_REVIEW",
+        "url":  "https://openstd.samr.gov.cn/bzgk/gb/review?hcno=561B95121C30853A6B45CA9471F39239",
+        "file":  "samr_gb_30871_2022_review.html",
+        "bytes":  76349,
+        "downloaded_at":  "2026-06-23T21:47:32Z"
+    }
+]

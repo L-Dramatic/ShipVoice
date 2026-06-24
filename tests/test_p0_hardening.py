@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import shipvoice.fastapi_app as fastapi_app_module  # noqa: E402
 from shipvoice.config import PipelineConfig  # noqa: E402
 from shipvoice.fastapi_app import RunRequest, prepare_run_request, runtime_max_concurrent_runs, runtime_run_timeout_seconds  # noqa: E402
-from shipvoice.models import ASRResult, GateResult, TTSResult  # noqa: E402
+from shipvoice.models import ASRResult, GateResult, RetrievalHit, TTSResult  # noqa: E402
 from shipvoice.pipeline import STREAM_HIGH_RISK_SAFETY_PREFIX, STREAM_SEGMENT_SAFETY_FALLBACK, VoiceQAPipeline  # noqa: E402
 from shipvoice.providers import (  # noqa: E402
     HttpJsonASRProvider,
@@ -26,6 +26,7 @@ from shipvoice.providers import (  # noqa: E402
     OpenAICompatibleLLMProvider,
     TermCorrector,
     TextInputProvider,
+    build_safety_refusal,
     build_llm,
 )
 
@@ -70,6 +71,16 @@ class FakeRetriever:
         return []
 
 
+class StaticRetriever(FakeRetriever):
+    def __init__(self, hits: list[RetrievalHit]) -> None:
+        super().__init__()
+        self.hits = hits
+
+    async def retrieve(self, query: str):
+        self.calls += 1
+        return self.hits
+
+
 class FakeLLM:
     name = "fake_llm"
 
@@ -88,6 +99,15 @@ class UnsafeCompleteLLM(FakeLLM):
     def build_answer(self, question, evidence, gate, history) -> str:
         self.calls += 1
         return "现在可以进入。"
+
+
+class CitationHallucinatingLLM(FakeLLM):
+    def build_answer(self, question, evidence, gate, history) -> str:
+        self.calls += 1
+        return (
+            "关于密闭舱室动火作业，应先完成审批、通风、检测和监护。"
+            "依据：[KS003] 船体分段吊装； [KS010] 起重指挥与信号。"
+        )
 
 
 class FakeTTS:
@@ -220,6 +240,109 @@ class P0HardeningTests(unittest.TestCase):
         self.assertGreaterEqual(result.metrics.tts_complete_ms, 0)
         self.assertIn("audio payload ready", result.provider_status["timing_note"])
 
+    def test_identity_help_uses_controlled_answer_without_llm(self) -> None:
+        pipeline = build_pipeline()
+
+        result = asyncio.run(pipeline.run_once("你是什么？", mode="full"))
+
+        self.assertEqual(result.gate.label, "identity_help")
+        self.assertIn("ShipVoice", result.answer)
+        self.assertIn("船厂安全实时语音问答助手", result.answer)
+        self.assertEqual(pipeline.llm.calls, 0)
+        self.assertEqual(pipeline.retriever.calls, 0)
+        self.assertEqual(pipeline.tts.calls, 1)
+        self.assertEqual(result.provider_status["llm"], "not_called_identity_help")
+
+    def test_identity_help_history_does_not_leak_into_unrelated_question(self) -> None:
+        pipeline = build_pipeline()
+        history = [
+            {"role": "user", "content": "你是什么？"},
+            {"role": "assistant", "content": "我是 ShipVoice 船厂安全实时语音问答助手。"},
+        ]
+
+        result = asyncio.run(pipeline.run_once("小明是谁？", mode="full", history=history))
+
+        self.assertEqual(result.gate.label, "uncertain")
+        self.assertIn("具体的造船现场作业场景", result.answer)
+        self.assertNotIn("我是 ShipVoice", result.answer)
+        self.assertEqual(pipeline.llm.calls, 0)
+        self.assertEqual(result.provider_status["llm"], "not_called_scope_gap")
+
+    def test_follow_up_can_reuse_recent_shipyard_context(self) -> None:
+        pipeline = build_pipeline()
+        history = [
+            {"role": "user", "content": "密闭舱室动火前需要确认什么？"},
+            {"role": "assistant", "content": "需要完成审批、通风、检测和监护。"},
+        ]
+
+        result = asyncio.run(pipeline.run_once("还有什么注意事项？", mode="full", history=history))
+
+        self.assertEqual(result.gate.label, "domain_safe")
+        self.assertEqual(pipeline.llm.calls, 1)
+        self.assertNotEqual(result.provider_status["llm"], "not_called_scope_gap")
+
+    def test_uncertain_no_evidence_asks_for_context_without_policy_text(self) -> None:
+        pipeline = build_pipeline()
+
+        result = asyncio.run(pipeline.run_once("有什么重要的注意事项？", mode="full"))
+
+        self.assertEqual(result.gate.label, "uncertain")
+        self.assertIn("具体的造船现场作业场景", result.answer)
+        self.assertIn("请补充作业类型", result.answer)
+        self.assertNotIn("系统应", result.answer)
+        self.assertNotIn("低风险通用咨询", result.answer)
+        self.assertNotIn("不属于船厂安全", result.answer)
+        self.assertEqual(pipeline.llm.calls, 0)
+        self.assertEqual(pipeline.retriever.calls, 1)
+        self.assertEqual(pipeline.tts.calls, 1)
+        self.assertEqual(result.provider_status["llm"], "not_called_scope_gap")
+
+    def test_safety_refusal_is_user_facing_without_internal_gate_reason(self) -> None:
+        off_domain = build_safety_refusal(GateResult("off_domain", False, "命中非造船安全领域关键词: 股票"))
+        unsafe = build_safety_refusal(GateResult("unsafe", False, "命中危险或提示注入关键词: 绕过安全检查"))
+
+        self.assertIn("ShipVoice", off_domain)
+        self.assertIn("船厂安全问答范围", off_domain)
+        self.assertIn("不能提供操作步骤", unsafe)
+        for answer in (off_domain, unsafe):
+            self.assertNotIn("系统应", answer)
+            self.assertNotIn("安全门控", answer)
+            self.assertNotIn("拦截原因", answer)
+            self.assertNotIn("命中", answer)
+
+    def test_high_risk_specific_without_evidence_does_not_call_llm(self) -> None:
+        pipeline = build_pipeline()
+        pipeline.gate = KeywordSafetyGate([], [], ["密闭舱室"])
+
+        result = asyncio.run(pipeline.run_once("密闭舱室氧含量达到多少可以进入？", mode="full"))
+
+        self.assertEqual(result.gate.label, "domain_safe")
+        self.assertIn("当前知识库没有足够依据", result.answer)
+        self.assertIn("不能凭模型常识", result.answer)
+        self.assertNotIn("20.9", result.answer)
+        self.assertEqual(pipeline.llm.calls, 0)
+        self.assertEqual(pipeline.retriever.calls, 1)
+        self.assertEqual(result.provider_status["llm"], "not_called_evidence_gap")
+        self.assertEqual(result.provider_status["high_risk_output"], "true")
+
+    def test_no_evidence_domain_answer_strips_hallucinated_citations_and_marks_unverified(self) -> None:
+        pipeline = build_pipeline()
+        pipeline.gate = KeywordSafetyGate([], [], ["密闭舱室", "动火作业"])
+        pipeline.llm = CitationHallucinatingLLM()
+
+        result = asyncio.run(pipeline.run_once("密闭舱室动火作业前要完成哪些安全确认？", mode="full"))
+
+        self.assertEqual(result.gate.label, "domain_safe")
+        self.assertEqual(pipeline.llm.calls, 1)
+        self.assertIn("当前知识库未命中可引用依据", result.answer)
+        self.assertIn("通用安全建议", result.answer)
+        self.assertIn("审批、通风、检测和监护", result.answer)
+        self.assertNotIn("[KS003]", result.answer)
+        self.assertNotIn("[KS010]", result.answer)
+        self.assertNotIn("船体分段吊装", result.answer)
+        self.assertNotIn("起重指挥与信号", result.answer)
+        self.assertEqual(result.metrics.evidence_count, 0)
+
     def test_streaming_mode_emits_tts_chunk_before_llm_complete(self) -> None:
         async def run_streaming() -> tuple:
             pipeline = build_pipeline()
@@ -241,14 +364,15 @@ class P0HardeningTests(unittest.TestCase):
                 on_event=collect_event,
                 on_audio_chunk=collect_audio_chunk,
             )
-            return result, audio_chunks, events
+            return result, audio_chunks, events, pipeline.retriever.calls
 
-        result, audio_chunks, events = asyncio.run(run_streaming())
+        result, audio_chunks, events, retriever_calls = asyncio.run(run_streaming())
 
         self.assertEqual(result.provider_status["response_mode"], "llm_token_stream_sentence_tts")
         self.assertEqual(result.metrics.timing_source, "server_first_audio_chunk_ready")
         self.assertGreaterEqual(result.metrics.streamed_audio_segments, 2)
         self.assertGreaterEqual(len(audio_chunks), 2)
+        self.assertEqual(retriever_calls, 1)
         self.assertLess(result.metrics.llm_first_delta_ms, result.metrics.llm_complete_ms)
         self.assertLess(events.index("audio_chunk"), events.index("llm"))
         self.assertLess(result.metrics.server_first_audio_chunk_ready_ms, result.metrics.llm_complete_ms)
@@ -297,8 +421,10 @@ class P0HardeningTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(audio_chunks), 3)
         self.assertEqual(audio_chunks[0]["text"], STREAM_HIGH_RISK_SAFETY_PREFIX)
-        self.assertEqual(audio_chunks[1]["text"], STREAM_SEGMENT_SAFETY_FALLBACK)
+        self.assertIn("当前知识库未命中可引用依据", audio_chunks[1]["text"])
+        self.assertEqual(audio_chunks[2]["text"], STREAM_SEGMENT_SAFETY_FALLBACK)
         self.assertIn(STREAM_HIGH_RISK_SAFETY_PREFIX, result.answer)
+        self.assertIn("当前知识库未命中可引用依据", result.answer)
         self.assertIn(STREAM_SEGMENT_SAFETY_FALLBACK, result.answer)
         self.assertNotIn("现在可以进入。", result.answer)
         self.assertTrue(any(stage == "output_guard" for stage, _payload in events))
@@ -322,9 +448,88 @@ class P0HardeningTests(unittest.TestCase):
 
         result, audio_chunks = asyncio.run(run_streaming())
 
-        self.assertEqual(audio_chunks[0]["text"], STREAM_SEGMENT_SAFETY_FALLBACK)
+        self.assertIn("当前知识库未命中可引用依据", audio_chunks[0]["text"])
+        self.assertEqual(audio_chunks[1]["text"], STREAM_SEGMENT_SAFETY_FALLBACK)
         self.assertIn(STREAM_SEGMENT_SAFETY_FALLBACK, result.answer)
         self.assertNotIn("可以关闭报警继续干。", result.answer)
+
+    def test_streaming_no_evidence_strips_hallucinated_citations_before_audio(self) -> None:
+        async def run_streaming() -> tuple:
+            pipeline = build_pipeline()
+            pipeline.gate = KeywordSafetyGate([], [], ["密闭舱室"])
+            pipeline.llm = FakeStreamingLLM(
+                [
+                    "动火前应完成审批、通风、检测和监护。",
+                    "依据：[KS003] 船体分段吊装； [KS010] 起重指挥与信号。",
+                ],
+                delay_s=0.01,
+            )
+            pipeline.tts = FakeStreamingTTS()
+            audio_chunks = []
+
+            async def collect_audio_chunk(chunk):
+                audio_chunks.append(chunk)
+
+            result = await pipeline.run_once(
+                "密闭舱室动火作业前要完成哪些安全确认？",
+                mode="streaming",
+                on_audio_chunk=collect_audio_chunk,
+            )
+            return result, audio_chunks
+
+        result, audio_chunks = asyncio.run(run_streaming())
+
+        spoken_text = " ".join(str(chunk["text"]) for chunk in audio_chunks)
+        self.assertIn("当前知识库未命中可引用依据", spoken_text)
+        self.assertIn("动火前应完成审批", spoken_text)
+        self.assertNotIn("[KS003]", spoken_text)
+        self.assertNotIn("[KS010]", spoken_text)
+        self.assertNotIn("[KS003]", result.answer)
+        self.assertNotIn("[KS010]", result.answer)
+        self.assertEqual(result.metrics.evidence_count, 0)
+
+    def test_streaming_with_evidence_replaces_invalid_model_citation_with_real_evidence(self) -> None:
+        async def run_streaming() -> tuple:
+            evidence = [
+                RetrievalHit(
+                    record_id="KS001",
+                    title="密闭舱室与有限空间作业",
+                    text="进入前完成通风、检测和监护。",
+                    score=10,
+                    source="ship_safety_corpus.jsonl",
+                    risk_level="critical",
+                    matched_terms=["密闭舱室"],
+                    confidence=1.0,
+                )
+            ]
+            pipeline = build_pipeline()
+            pipeline.gate = KeywordSafetyGate([], [], ["密闭舱室"])
+            pipeline.retriever = StaticRetriever(evidence)
+            pipeline.llm = FakeStreamingLLM(
+                ["进入前应完成审批、通风、检测和监护。", "依据：[KS999] 错误条目。"],
+                delay_s=0.01,
+            )
+            pipeline.tts = FakeStreamingTTS()
+            audio_chunks = []
+
+            async def collect_audio_chunk(chunk):
+                audio_chunks.append(chunk)
+
+            result = await pipeline.run_once(
+                "密闭舱室动火作业前要完成哪些安全确认？",
+                mode="streaming",
+                on_audio_chunk=collect_audio_chunk,
+            )
+            return result, audio_chunks
+
+        result, audio_chunks = asyncio.run(run_streaming())
+
+        spoken_text = " ".join(str(chunk["text"]) for chunk in audio_chunks)
+        self.assertIn("[KS001]", result.answer)
+        self.assertIn("[KS001]", spoken_text)
+        self.assertNotIn("[KS999]", result.answer)
+        self.assertNotIn("[KS999]", spoken_text)
+        self.assertEqual(result.metrics.evidence_count, 1)
 
     def test_output_guard_allows_qualified_conditional_entry_sentence(self) -> None:
         segment = "必须先完成审批、通风、测氧测爆和监护确认后方可进入。"
@@ -378,6 +583,24 @@ class P0HardeningTests(unittest.TestCase):
         payload = client.stream_calls[0]["json"]
         self.assertTrue(payload["stream"])
         self.assertEqual(payload["model"], "shipvoice-qwen2.5-7b-lora")
+
+    def test_openai_compatible_provider_can_send_optional_deepseek_options(self) -> None:
+        client = FakePooledHTTPClient(post_payloads=[{"choices": [{"message": {"content": "ok"}}]}])
+        gate = GateResult(label="domain_safe", allowed=True, reason="ok")
+        with patched_env(SHIPVOICE_LLM_THINKING="disabled", SHIPVOICE_LLM_MAX_TOKENS="256"):
+            provider = OpenAICompatibleLLMProvider(
+                base_url="https://api.deepseek.com",
+                model="deepseek-v4-flash",
+                api_key_env="SHIPVOICE_TEST_API_KEY",
+                timeout_s=1,
+                http_client=client,
+            )
+            answer = provider.build_answer("ship safety work", [], gate, [])
+
+        self.assertEqual(answer, "ok")
+        payload = client.post_calls[0]["json"]
+        self.assertEqual(payload["thinking"], {"type": "disabled"})
+        self.assertEqual(payload["max_tokens"], 256)
 
     def test_http_asr_tts_reuse_injected_pooled_client_across_calls(self) -> None:
         asr_client = FakePooledHTTPClient(post_payloads=[{"text": "first transcript"}, {"text": "second transcript"}])
@@ -472,20 +695,68 @@ class P0HardeningTests(unittest.TestCase):
             prepare_run_request(RunRequest(question="ship safety", audio_base64="not base64!!"))
         self.assertEqual(audio_context.exception.status_code, 422)
 
+        with self.assertRaises(HTTPException) as profile_context:
+            prepare_run_request(RunRequest(question="ship safety", runtime_profile="silent-auto-fallback"))
+        self.assertEqual(profile_context.exception.status_code, 422)
+
     def test_run_request_accepts_valid_client_request_id(self) -> None:
         prepared = prepare_run_request(
             RunRequest(
                 session_id="session-001",
                 client_request_id="session-001:req-001",
                 question="ship safety",
+                runtime_profile="api_fallback",
             )
         )
 
         self.assertEqual(prepared["client_request_id"], "session-001:req-001")
+        self.assertEqual(prepared["runtime_profile"], "api_fallback")
 
         with self.assertRaises(HTTPException) as context:
             prepare_run_request(RunRequest(question="ship safety", client_request_id="bad id with spaces"))
         self.assertEqual(context.exception.status_code, 422)
+
+    def test_api_fallback_profile_does_not_reuse_gpu_defaults(self) -> None:
+        with patched_env(
+            SHIPVOICE_OPENAI_BASE_URL="http://127.0.0.1:18034/v1",
+            SHIPVOICE_LLM_MODEL="shipvoice-qwen2.5-7b-lora",
+            SHIPVOICE_TTS_ENDPOINT="http://127.0.0.1:18002/tts",
+            SHIPVOICE_FALLBACK_OPENAI_BASE_URL=None,
+            SHIPVOICE_FALLBACK_LLM_MODEL=None,
+            SHIPVOICE_FALLBACK_TTS_ENDPOINT=None,
+        ):
+            with self.assertRaises(RuntimeError) as context:
+                fastapi_app_module.build_runtime_profile_pipeline("api_fallback")
+        self.assertIn("SHIPVOICE_OPENAI_BASE_URL is required", str(context.exception))
+
+    def test_api_fallback_profile_uses_explicit_backup_provider_config(self) -> None:
+        with patched_env(
+            SHIPVOICE_OPENAI_BASE_URL="http://127.0.0.1:18034/v1",
+            SHIPVOICE_LLM_MODEL="shipvoice-qwen2.5-7b-lora",
+            SHIPVOICE_TTS_ENDPOINT="http://127.0.0.1:18002/tts",
+            SHIPVOICE_FALLBACK_ASR_PROVIDER="text_input",
+            SHIPVOICE_FALLBACK_OPENAI_BASE_URL="https://llm-backup.example/v1",
+            SHIPVOICE_FALLBACK_LLM_MODEL="qwen-backup",
+            SHIPVOICE_FALLBACK_LLM_THINKING="disabled",
+            SHIPVOICE_FALLBACK_LLM_MAX_TOKENS="512",
+            SHIPVOICE_FALLBACK_TTS_ENDPOINT="http://127.0.0.1:19002/tts",
+        ):
+            pipeline = fastapi_app_module.build_runtime_profile_pipeline("api_fallback")
+
+        try:
+            self.assertEqual(pipeline.runtime_profile_id, "api_fallback")
+            self.assertEqual(pipeline.asr.name, "text_input")
+            self.assertEqual(pipeline.llm.base_url, "https://llm-backup.example/v1")
+            self.assertEqual(pipeline.llm.model, "qwen-backup")
+            self.assertEqual(pipeline.llm.api_key_env, "SHIPVOICE_FALLBACK_OPENAI_API_KEY")
+            self.assertEqual(pipeline.llm._request_options()["thinking"], {"type": "disabled"})
+            self.assertEqual(pipeline.llm._request_options()["max_tokens"], 512)
+            self.assertEqual(pipeline.tts.endpoint, "http://127.0.0.1:19002/tts")
+            self.assertFalse(pipeline.require_lora)
+        finally:
+            close = getattr(pipeline, "close", None)
+            if close:
+                close()
 
     def test_admin_default_password_is_disabled_unless_explicitly_allowed(self) -> None:
         with patched_env(SHIPVOICE_ADMIN_PASSWORD=None, SHIPVOICE_ALLOW_DEFAULT_ADMIN_PASSWORD=None):

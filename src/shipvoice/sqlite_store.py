@@ -283,9 +283,9 @@ class SQLiteAppStore:
                         str(item["title"]).strip(),
                         json.dumps(item.get("tags", []), ensure_ascii=False),
                         str(item["text"]).strip(),
-                        "approved",
-                        "",
-                        "bootstrap_corpus",
+                        str(item.get("status", "approved") or "approved"),
+                        str(item.get("owner", "") or ""),
+                        str(item.get("source", "bootstrap_corpus") or "bootstrap_corpus"),
                         "",
                         "system",
                         now,
@@ -605,7 +605,7 @@ class SQLiteAppStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, title, tags_json, text, status
+                SELECT id, title, tags_json, text, status, source
                 FROM knowledge_records
                 ORDER BY id
                 """
@@ -616,6 +616,10 @@ class SQLiteAppStore:
                 "title": row["title"],
                 "tags": json.loads(row["tags_json"]),
                 "text": row["text"],
+                "source": "ship_safety_corpus.jsonl"
+                if str(row["source"] or "") == "bootstrap_corpus"
+                else (row["source"] or "shipvoice_admin"),
+                "status": row["status"] or "approved",
             }
             for row in rows
             if str(row["status"] or "draft") == "approved"

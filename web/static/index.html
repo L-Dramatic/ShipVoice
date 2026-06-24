@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ShipVoice 船厂安全实时语音问答助手</title>
-    <link rel="stylesheet" href="./styles.css?v=acceptance-20260623" />
+    <link rel="stylesheet" href="./styles.css?v=runtime-path-20260624" />
   </head>
   <body class="shipvoice-console">
     <aside class="sidebar operator-sidebar">
@@ -75,6 +75,19 @@
         <div id="statusBadge" class="status-badge">待机</div>
       </header>
 
+      <section class="runtime-mode-bar" aria-label="运行链路状态">
+        <div>
+          <span class="runtime-mode-kicker">运行链路</span>
+          <strong id="runtimeProfileTitle">GPU LoRA 主模式</strong>
+          <p id="runtimeProfileDetail">正在检查 ASR、LLM 和 TTS 服务。</p>
+          <div id="runtimeProfileEvidence" class="runtime-profile-evidence" aria-live="polite"></div>
+        </div>
+        <div class="runtime-profile-controls" role="radiogroup" aria-label="运行栈选择">
+          <button id="gpuProfileButton" class="runtime-profile-button is-active" type="button" data-runtime-profile="gpu_lora">主链路 · GPU LoRA</button>
+          <button id="fallbackProfileButton" class="runtime-profile-button" type="button" data-runtime-profile="api_fallback">备用链路 · API</button>
+        </div>
+      </section>
+
       <div id="errorBanner" class="error-banner" hidden></div>
 
       <section class="main-grid operator-grid">
@@ -86,6 +99,7 @@
             </div>
             <span id="answerState">未生成</span>
           </div>
+          <div id="activePathSummary" class="active-path-summary">本次实际链路：等待运行。</div>
           <p id="answerText" class="answer-text"></p>
           <canvas id="outputVisualizerCanvas" class="visualizer-canvas" height="60" hidden></canvas>
           <audio id="ttsPlayer" class="tts-player" controls hidden></audio>
@@ -241,6 +255,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=acceptance-20260623"></script>
+    <script src="./app.js?v=runtime-path-20260624"></script>
   </body>
 </html>
